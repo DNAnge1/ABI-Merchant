@@ -26,6 +26,11 @@ import {
   supportsGetDisplayMedia,
   type VerifyState,
 } from './utils/browserAudio';
+import {
+  captureDisplayWithAudio,
+  DisplayCaptureError,
+  isCouldNotStartAudioSource,
+} from './utils/displayCapture';
 import { redLikelihoodPercent } from './utils/sizeGroups';
 import {
   appendCalibrationEvent,
@@ -381,38 +386,45 @@ export default function App() {
       });
       return;
     }
+
+    // Sync under click: AudioContext before any await
+    const gestureCtx = new AudioContext();
+    void gestureCtx.resume();
+
     setVerifyState({
       phase: 'prompting',
-      message: 'Share the game window / Entire Screen — enable audio…',
+      message: 'Share a Chrome tab (preferred) or Entire Screen — enable audio…',
       rms: 0,
       peakRms: 0,
       hasAudioTrack: false,
     });
-    let stream: MediaStream | null = null;
+
+    let boot;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      boot = await captureDisplayWithAudio(gestureCtx);
     } catch (err) {
+      await gestureCtx.close().catch(() => undefined);
+      const msg = err instanceof Error ? err.message : String(err);
+      const detail =
+        err instanceof DisplayCaptureError
+          ? JSON.stringify(err.diagnostics, null, 2)
+          : undefined;
+      const noAudio = /No Audio Track/i.test(msg);
+      const couldNotStart = isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
       setVerifyState({
-        phase: 'error',
-        message: err instanceof Error ? err.message : 'Share cancelled or failed',
+        phase: noAudio ? 'no-audio' : 'error',
+        message: couldNotStart
+          ? `Could not start audio source (Chromium/OS loopback failed). ${msg}`
+          : msg,
         rms: 0,
         peakRms: 0,
         hasAudioTrack: false,
+        detail,
       });
       return;
     }
-    if (!stream.getAudioTracks().length) {
-      stream.getTracks().forEach((t) => t.stop());
-      setVerifyState({
-        phase: 'no-audio',
-        message: 'No Audio Track Detected',
-        rms: 0,
-        peakRms: 0,
-        hasAudioTrack: false,
-      });
-      return;
-    }
-    const ctx = new AudioContext();
+
+    const { stream, ctx } = boot;
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 2048;
     const source = ctx.createMediaStreamSource(stream);
@@ -426,10 +438,14 @@ export default function App() {
       const elapsed = performance.now() - started;
       setVerifyState({
         phase: elapsed < 3000 ? 'metering' : 'ok',
-        message: elapsed < 3000 ? 'Sampling… move over ABI items' : 'Audio track OK',
+        message:
+          elapsed < 3000
+            ? 'Sampling… move over ABI items or make game sound'
+            : `Audio track OK · ctx=${ctx.state} · tracks=${stream.getAudioTracks().length}`,
         rms,
         peakRms: peak,
         hasAudioTrack: true,
+        detail: JSON.stringify(boot.diagnostics, null, 2),
       });
       raf = requestAnimationFrame(tick);
     };
@@ -437,7 +453,7 @@ export default function App() {
     const cleanup = () => {
       cancelAnimationFrame(raf);
       source.disconnect();
-      stream?.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((t) => t.stop());
       void ctx.close().catch(() => undefined);
     };
     verifyCleanupRef.current = cleanup;
@@ -470,19 +486,28 @@ export default function App() {
     } catch (err) {
       setCapturing(false);
       const msg = err instanceof Error ? err.message : String(err);
+      const detail =
+        err instanceof DisplayCaptureError
+          ? JSON.stringify(err.diagnostics, null, 2)
+          : undefined;
       setStatus('error');
       setStatusDetail(msg);
       setVerifyOpen(true);
+      const couldNotStart =
+        isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
       setVerifyState({
         phase: /No Audio Track/i.test(msg)
           ? 'no-audio'
           : /not supported/i.test(msg)
             ? 'unsupported'
             : 'error',
-        message: msg,
+        message: couldNotStart
+          ? `Could not start audio source — Chromium could not open system audio loopback. Prefer “Chrome Tab” + Share tab audio. Details: ${msg}`
+          : msg,
         rms: 0,
         peakRms: 0,
         hasAudioTrack: false,
+        detail,
       });
     }
   }

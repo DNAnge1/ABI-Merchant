@@ -30,7 +30,9 @@ import {
   captureDisplayWithAudio,
   DisplayCaptureError,
   isCouldNotStartAudioSource,
+  type BootstrappedCapture,
 } from './utils/displayCapture';
+import { captureMicWithAudio } from './utils/micCapture';
 import { redLikelihoodPercent } from './utils/sizeGroups';
 import {
   appendCalibrationEvent,
@@ -83,6 +85,8 @@ export default function App() {
   const [manualSoundId, setManualSoundId] = useState<number | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
+  const [suggestMicFallback, setSuggestMicFallback] = useState(false);
+  const [micBusy, setMicBusy] = useState(false);
   const [singlePhase, setSinglePhase] = useState<SingleLoopPhase>('ready');
   const [locked, setLocked] = useState<LockedScan | null>(null);
   const [slots, setSlots] = useState<SessionSlot[]>([]);
@@ -372,8 +376,77 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  function attachVerifyMeter(boot: BootstrappedCapture) {
+    const { stream, ctx } = boot;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    const source = ctx.createMediaStreamSource(stream);
+    source.connect(analyser);
+    let peak = 0;
+    let raf = 0;
+    const via = boot.sourceKind === 'microphone' ? 'mic/loopback' : 'screen share';
+
+    setSuggestMicFallback(false);
+    setVerifyState({
+      phase: 'waiting',
+      message: `Audio track connected (${via}) — waiting for merchant sounds (OK if not in raid yet)`,
+      rms: 0,
+      peakRms: 0,
+      hasAudioTrack: true,
+      detail: JSON.stringify(boot.diagnostics, null, 2),
+    });
+
+    const tick = () => {
+      const rms = rmsFromAnalyser(analyser);
+      peak = Math.max(peak, rms);
+      setVerifyState((prev) => ({
+        ...prev,
+        phase: 'waiting',
+        message:
+          peak < 0.02
+            ? `Listening (${via})… no signal yet (fine in lobby). Reach Field Merchant when ready.`
+            : `Listening (${via})… signal seen · ctx=${ctx.state} · audioTracks=${stream.getAudioTracks().length}`,
+        rms,
+        peakRms: peak,
+        hasAudioTrack: true,
+      }));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    const failTrackEnded = () => {
+      cancelAnimationFrame(raf);
+      setVerifyState({
+        phase: 'error',
+        message:
+          boot.sourceKind === 'microphone'
+            ? 'Mic / loopback track ended — pick the input again.'
+            : 'Audio track ended — re-share with tab/system audio, or use mic / loopback.',
+        rms: 0,
+        peakRms: peak,
+        hasAudioTrack: false,
+      });
+      if (boot.sourceKind === 'display') setSuggestMicFallback(true);
+      source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => undefined);
+      verifyCleanupRef.current = null;
+    };
+
+    const cleanup = () => {
+      cancelAnimationFrame(raf);
+      source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => undefined);
+    };
+    verifyCleanupRef.current = cleanup;
+    stream.getVideoTracks().forEach((t) => t.addEventListener('ended', cleanup));
+    stream.getAudioTracks().forEach((t) => t.addEventListener('ended', failTrackEnded));
+  }
+
   async function runVerify() {
     stopVerifySession();
+    setSuggestMicFallback(false);
     setVerifyOpen(true);
     const browser = detectBrowser();
     if (!supportsGetDisplayMedia() || !browser.autoCaptureSupported) {
@@ -387,7 +460,6 @@ export default function App() {
       return;
     }
 
-    // Sync under click: AudioContext before any await
     const gestureCtx = new AudioContext();
     void gestureCtx.resume();
 
@@ -410,11 +482,13 @@ export default function App() {
           ? JSON.stringify(err.diagnostics, null, 2)
           : undefined;
       const noAudio = /No Audio Track/i.test(msg);
-      const couldNotStart = isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
+      const couldNotStart =
+        isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
+      if (couldNotStart || noAudio) setSuggestMicFallback(true);
       setVerifyState({
         phase: noAudio ? 'no-audio' : 'error',
         message: couldNotStart
-          ? `Could not start audio source (Chromium/OS loopback failed). ${msg}`
+          ? `Could not start audio source (Chromium/OS loopback failed — often G560 exclusive mode). ${msg}`
           : msg,
         rms: 0,
         peakRms: 0,
@@ -424,66 +498,84 @@ export default function App() {
       return;
     }
 
-    const { stream, ctx } = boot;
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    const source = ctx.createMediaStreamSource(stream);
-    source.connect(analyser);
-    let peak = 0;
-    let raf = 0;
+    attachVerifyMeter(boot);
+  }
 
-    // Immediate success: audio track exists. Silence is NOT a failure — wait indefinitely.
+  /** Verify meter via getUserMedia mic / virtual loopback (no getDisplayMedia). */
+  async function runVerifyMic(deviceId?: string) {
+    stopVerifySession();
+    setMicBusy(true);
+    setVerifyOpen(true);
     setVerifyState({
-      phase: 'waiting',
-      message: 'Audio track connected — waiting for merchant sounds (OK if not in raid yet)',
+      phase: 'prompting',
+      message: 'Opening microphone / loopback device…',
       rms: 0,
       peakRms: 0,
-      hasAudioTrack: true,
-      detail: JSON.stringify(boot.diagnostics, null, 2),
+      hasAudioTrack: false,
     });
 
-    const tick = () => {
-      const rms = rmsFromAnalyser(analyser);
-      peak = Math.max(peak, rms);
-      setVerifyState((prev) => ({
-        ...prev,
-        phase: 'waiting',
-        message:
-          peak < 0.02
-            ? 'Listening… no signal yet (fine in lobby). Reach Field Merchant and drag cargo when ready.'
-            : `Listening… signal seen · ctx=${ctx.state} · audioTracks=${stream.getAudioTracks().length}`,
-        rms,
-        peakRms: peak,
-        hasAudioTrack: true,
-      }));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
+    const gestureCtx = new AudioContext();
+    void gestureCtx.resume();
 
-    const failTrackEnded = () => {
-      cancelAnimationFrame(raf);
+    try {
+      const boot = await captureMicWithAudio(deviceId, gestureCtx);
+      attachVerifyMeter(boot);
+    } catch (err) {
+      await gestureCtx.close().catch(() => undefined);
+      const msg = err instanceof Error ? err.message : String(err);
+      const detail =
+        err instanceof DisplayCaptureError
+          ? JSON.stringify(err.diagnostics, null, 2)
+          : undefined;
+      setSuggestMicFallback(true);
       setVerifyState({
         phase: 'error',
-        message: 'Audio track ended — re-share with tab/system audio enabled.',
+        message: msg,
         rms: 0,
-        peakRms: peak,
+        peakRms: 0,
         hasAudioTrack: false,
+        detail,
       });
-      source.disconnect();
-      stream.getTracks().forEach((t) => t.stop());
-      void ctx.close().catch(() => undefined);
-      verifyCleanupRef.current = null;
-    };
+    } finally {
+      setMicBusy(false);
+    }
+  }
 
-    const cleanup = () => {
-      cancelAnimationFrame(raf);
-      source.disconnect();
-      stream.getTracks().forEach((t) => t.stop());
-      void ctx.close().catch(() => undefined);
-    };
-    verifyCleanupRef.current = cleanup;
-    stream.getVideoTracks().forEach((t) => t.addEventListener('ended', cleanup));
-    stream.getAudioTracks().forEach((t) => t.addEventListener('ended', failTrackEnded));
+  function prepareMatcherSession() {
+    setLocked(null);
+    setSinglePhase('ready');
+    setManualSoundId(null);
+    matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
+    matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
+  }
+
+  function openCaptureFailure(err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const detail =
+      err instanceof DisplayCaptureError
+        ? JSON.stringify(err.diagnostics, null, 2)
+        : undefined;
+    setStatus('error');
+    setStatusDetail(msg);
+    setVerifyOpen(true);
+    const couldNotStart =
+      isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
+    const noAudio = /No Audio Track/i.test(msg);
+    if (couldNotStart || noAudio) setSuggestMicFallback(true);
+    setVerifyState({
+      phase: noAudio
+        ? 'no-audio'
+        : /not supported/i.test(msg)
+          ? 'unsupported'
+          : 'error',
+      message: couldNotStart
+        ? `Could not start audio source — Chromium OS loopback failed (common with G560). Use mic/loopback below, or Chrome Tab + Share tab audio. Details: ${msg}`
+        : msg,
+      rms: 0,
+      peakRms: 0,
+      hasAudioTrack: false,
+      detail,
+    });
   }
 
   async function startCapture() {
@@ -500,41 +592,45 @@ export default function App() {
       return;
     }
     stopVerifySession();
+    setSuggestMicFallback(false);
     setVerifyOpen(false);
     try {
-      setLocked(null);
-      setSinglePhase('ready');
-      setManualSoundId(null);
-      matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
-      matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
+      prepareMatcherSession();
       await matcherRef.current?.startCapture();
       setCapturing(true);
     } catch (err) {
       setCapturing(false);
-      const msg = err instanceof Error ? err.message : String(err);
-      const detail =
-        err instanceof DisplayCaptureError
-          ? JSON.stringify(err.diagnostics, null, 2)
-          : undefined;
-      setStatus('error');
-      setStatusDetail(msg);
+      openCaptureFailure(err);
+    }
+  }
+
+  /** Live Automatic Mode via mic / virtual loopback (same matcher pipeline). */
+  async function startCaptureFromMic(deviceId?: string) {
+    const browser = detectBrowser();
+    if (!browser.autoCaptureSupported) {
       setVerifyOpen(true);
-      const couldNotStart =
-        isCouldNotStartAudioSource(err) || /Could not start audio source/i.test(msg);
       setVerifyState({
-        phase: /No Audio Track/i.test(msg)
-          ? 'no-audio'
-          : /not supported/i.test(msg)
-            ? 'unsupported'
-            : 'error',
-        message: couldNotStart
-          ? `Could not start audio source — Chromium could not open system audio loopback. Prefer “Chrome Tab” + Share tab audio. Details: ${msg}`
-          : msg,
+        phase: 'unsupported',
+        message: `${browser.label} is not supported for Automatic capture.`,
         rms: 0,
         peakRms: 0,
         hasAudioTrack: false,
-        detail,
       });
+      return;
+    }
+    stopVerifySession();
+    setMicBusy(true);
+    setVerifyOpen(false);
+    try {
+      prepareMatcherSession();
+      await matcherRef.current?.startCaptureFromMic(deviceId);
+      setCapturing(true);
+      setSuggestMicFallback(false);
+    } catch (err) {
+      setCapturing(false);
+      openCaptureFailure(err);
+    } finally {
+      setMicBusy(false);
     }
   }
 
@@ -611,13 +707,29 @@ export default function App() {
         onStart={() => void startCapture()}
         onStop={() => void stopCapture()}
         onVerify={() => void runVerify()}
+        onMicFallback={() => {
+          stopVerifySession();
+          setSuggestMicFallback(true);
+          setVerifyOpen(true);
+          setVerifyState({
+            phase: 'idle',
+            message:
+              'Screen share optional — pick a mic / loopback device below (VB-Cable, Stereo Mix, etc.).',
+            rms: 0,
+            peakRms: 0,
+            hasAudioTrack: false,
+          });
+        }}
       />
 
       <AudioVerifyPanel
         open={verifyOpen}
         state={verifyState}
+        suggestMicFallback={suggestMicFallback}
+        micBusy={micBusy}
         onClose={() => {
           stopVerifySession();
+          setSuggestMicFallback(false);
           setVerifyOpen(false);
         }}
         onRetry={() => void runVerify()}
@@ -627,6 +739,16 @@ export default function App() {
           stopVerifySession();
           setVerifyOpen(false);
           void startCapture();
+        }}
+        onUseMicLoopback={(deviceId) => {
+          // Prefer live Automatic Listening when user picks fallback after a share failure;
+          // if they only want a Verify meter, they can open Verify first — both paths work.
+          // Live path keeps them in Automatic Mode without a second share dialog.
+          if (suggestMicFallback || verifyState.phase === 'error' || verifyState.phase === 'no-audio') {
+            void startCaptureFromMic(deviceId);
+          } else {
+            void runVerifyMic(deviceId);
+          }
         }}
       />
 

@@ -114,7 +114,7 @@ export function formatCaptureError(err: unknown, diagnostics: CaptureDiagnostics
 
   if (/could not start audio source/i.test(msg) || name === 'NotReadableError') {
     lines.push(
-      'Hint: Chromium failed to open Windows system-audio loopback. Try Chrome Tab + “Share tab audio”, or fix the default recording device / close apps using exclusive mode. See Verify panel tips.',
+      'Hint: Chromium failed to open system-audio loopback (common with G560 exclusive mode). Use “Microphone / loopback” fallback (VB-Cable / Stereo Mix), or Chrome Tab + Share tab audio.',
     );
   }
 
@@ -132,11 +132,15 @@ export function displayMediaOptions(): DisplayMediaStreamOptions {
   } as DisplayMediaStreamOptions;
 }
 
+export type CaptureSourceKind = 'display' | 'microphone';
+
 export interface BootstrappedCapture {
   stream: MediaStream;
   ctx: AudioContext;
   diagnostics: CaptureDiagnostics;
   browser: BrowserInfo;
+  /** How the MediaStream was obtained */
+  sourceKind: CaptureSourceKind;
 }
 
 /**
@@ -243,12 +247,22 @@ export async function captureDisplayWithAudio(
     throw new DisplayCaptureError(formatCaptureError(err, diagnostics), diagnostics, err);
   }
 
-  return { stream, ctx, diagnostics, browser };
+  return { stream, ctx, diagnostics, browser, sourceKind: 'display' };
 }
 
 export function isCouldNotStartAudioSource(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err ?? '');
   const name =
-    err && typeof err === 'object' && 'name' in err ? String((err as { name: string }).name) : '';
-  return /could not start audio source/i.test(msg) || (name === 'NotReadableError' && /audio/i.test(msg));
+    err && typeof err === 'object' && 'name' in err
+      ? String((err as { name: string }).name)
+      : err instanceof DisplayCaptureError
+        ? err.domName || ''
+        : '';
+  const diagName =
+    err instanceof DisplayCaptureError ? err.diagnostics.errorName || '' : '';
+  return (
+    /could not start audio source/i.test(msg) ||
+    name === 'NotReadableError' ||
+    diagName === 'NotReadableError'
+  );
 }

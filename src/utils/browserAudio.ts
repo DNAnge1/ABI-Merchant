@@ -92,20 +92,20 @@ export function browserFixSteps(info: BrowserInfo): string[] {
     case 'edge':
     case 'chromium':
       return [
-        'Share a Chrome/Edge tab with “Share tab audio” (most reliable).',
-        'Entire Screen + system audio can fail with “Could not start audio source” — that’s an OS loopback issue, not a timeout.',
-        'Windows: set a working default input; turn off Exclusive Mode on playback devices; close Discord exclusive / DAWs.',
-        'Silence after a good share is normal until you’re at Field Merchant.',
+        'Prefer Chrome/Edge tab + “Share tab audio”. Entire Screen + system audio often fails on gaming headsets (G560).',
+        'If NotReadableError / “Could not start audio source”: use Microphone / loopback (VB-Cable, Stereo Mix) — Automatic Mode still works.',
+        'Exclusive mode (≠ site Allow): classic Sound Control Panel (mmsys.cpl) → Playback → your speakers (e.g. Logitech G560) → Properties → Advanced → uncheck both “Allow applications to take exclusive control”.',
+        'Silence after a good share/mic attach is normal until you’re at Field Merchant.',
       ];
     case 'brave':
       return [
         'Set Shields Down for this site.',
-        'Prefer tab share + “Share tab audio”. Same Windows loopback tips as Chrome if system audio fails.',
+        'Prefer tab share + “Share tab audio”, or Microphone / loopback if system audio fails.',
       ];
     case 'firefox':
     case 'safari':
       return [
-        `${info.label} can’t reliably share game audio here — use Chrome/Edge or Manual Mode.`,
+        `${info.label} can’t reliably share game audio here — use Chrome/Edge (screen or mic/loopback) or Manual Mode.`,
       ];
     default:
       return ['Use Chrome or Edge for Automatic Mode, or Manual Mode by ear.'];

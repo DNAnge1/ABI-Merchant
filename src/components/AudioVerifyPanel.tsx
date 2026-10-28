@@ -1,6 +1,17 @@
 import type { ReactNode } from 'react';
 import { browserFixSteps, detectBrowser, type VerifyState } from '../utils/browserAudio';
+import { MicLoopbackFallback } from './MicLoopbackFallback';
 export { playTestTone } from '../utils/browserAudio';
+
+function looksLikeDisplayAudioFail(message: string | undefined): boolean {
+  if (!message) return false;
+  return (
+    /Could not start audio source/i.test(message) ||
+    /NotReadableError/i.test(message) ||
+    /system-audio loopback/i.test(message) ||
+    /0 tracks/i.test(message)
+  );
+}
 
 export function AudioVerifyPanel(props: {
   open: boolean;
@@ -11,6 +22,11 @@ export function AudioVerifyPanel(props: {
   onPlayTone: () => void;
   /** Jump straight into live Automatic listening using this verified share when possible */
   onStartListening?: () => void;
+  /** Fallback: open mic/loopback for Verify meter or live listen */
+  onUseMicLoopback?: (deviceId: string | undefined) => void;
+  micBusy?: boolean;
+  /** Force showing mic fallback (e.g. after Live Start NotReadableError) */
+  suggestMicFallback?: boolean;
 }) {
   if (!props.open) return null;
   const browser = detectBrowser();
@@ -25,6 +41,11 @@ export function AudioVerifyPanel(props: {
     props.state.phase === 'ok';
   const meterPct = Math.min(100, Math.round(props.state.rms * 400));
   const silent = props.state.hasAudioTrack && props.state.peakRms < 0.02;
+  const displayFail =
+    props.suggestMicFallback ||
+    (props.state.phase === 'error' && looksLikeDisplayAudioFail(props.state.message)) ||
+    (props.state.phase === 'no-audio' && looksLikeDisplayAudioFail(props.state.message));
+  const showMicFallback = !!props.onUseMicLoopback && browser.autoCaptureSupported;
 
   return (
     <div className="border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 py-3">
@@ -34,9 +55,10 @@ export function AudioVerifyPanel(props: {
             Verify audio access
           </h2>
           <p className="m-0 mt-1 text-[12px] text-[var(--muted)] max-w-2xl leading-relaxed">
-            Optional check that the browser can share audio. This is <strong className="text-[var(--text)]">not</strong> the live scanner —
-            after a good share you can wait quietly (not in a raid yet is fine). Use{' '}
-            <strong className="text-[var(--text)]">Start Listening</strong> for Automatic Mode.
+            Optional check that Chrome can hear game audio. This is{' '}
+            <strong className="text-[var(--text)]">not</strong> the live scanner — silence is OK if
+            you’re not in a raid. Automatic Mode can use <strong className="text-[var(--text)]">screen
+            share</strong> or a <strong className="text-[var(--text)]">mic / loopback</strong> input.
           </p>
           <p className="m-0 mt-1 text-[11px] text-[var(--muted)]">
             Browser: <span className="text-[var(--text)]">{browser.label}</span>
@@ -51,16 +73,17 @@ export function AudioVerifyPanel(props: {
         </button>
       </div>
 
-      {/* Numbered how-to — always visible, low density */}
       <ol className="m-0 mt-3 grid gap-2 list-none p-0 sm:grid-cols-3">
-        <Step n={1} title="Share with audio">
-          Prefer a Chrome/Edge <strong>tab</strong> + “Share tab audio”. Entire Screen + system audio is optional.
+        <Step n={1} title="Share or mic">
+          Prefer tab + “Share tab audio”. If Entire Screen fails (G560), use{' '}
+          <strong>mic / loopback</strong> below.
         </Step>
         <Step n={2} title="Confirm track">
-          Success = an audio track connects. Silence is OK — you do not need merchant sounds yet.
+          Success = any audio track connects. Silence is OK — you do not need merchant sounds yet.
         </Step>
-        <Step n={3} title="Then listen live">
-          Close Verify (or keep meter) and click <strong>Start Listening</strong>. It waits until you drag cargo.
+        <Step n={3} title="Exclusive ≠ Allow">
+          Site microphone Allow is not enough. For G560: classic Sound → Playback → Properties →
+          Advanced → uncheck exclusive control.
         </Step>
       </ol>
 
@@ -74,7 +97,7 @@ export function AudioVerifyPanel(props: {
       {props.state.phase === 'no-audio' && (
         <div className="mt-3 rounded border border-[var(--mythic)]/50 bg-[#2a1014] px-3 py-2 text-xs text-[#ffb4bc]">
           <strong className="block mb-1">No audio track</strong>
-          The share picker returned video only. Re-share with tab/system audio enabled.
+          The share picker returned video only. Re-share with tab/system audio, or use mic / loopback.
           {props.state.detail && (
             <pre className="m-0 mt-2 max-h-28 overflow-auto rounded bg-black/40 p-2 text-[10px] text-[var(--muted)] whitespace-pre-wrap">
               {props.state.detail}
@@ -85,12 +108,15 @@ export function AudioVerifyPanel(props: {
 
       {props.state.phase === 'error' && (
         <div className="mt-3 rounded border border-[var(--mythic)]/40 bg-[#2a1014] px-3 py-2 text-xs text-[#ffb4bc]">
-          <strong className="block mb-1">Could not open capture</strong>
+          <strong className="block mb-1">
+            {displayFail ? 'Screen / system audio failed' : 'Could not open capture'}
+          </strong>
           <p className="m-0 whitespace-pre-wrap break-words">{props.state.message}</p>
-          {/Could not start audio source/i.test(props.state.message || '') && (
+          {displayFail && (
             <p className="m-0 mt-2 text-[11px] text-[var(--mythic-gold)]">
-              Chromium/OS loopback failed — try <strong>Chrome Tab + Share tab audio</strong>, or fix Windows
-              recording device / exclusive-mode apps, then Retry.
+              Chromium could not open OS loopback (common with Logitech G560 exclusive mode). You can
+              still run Automatic Mode — use the <strong>microphone / loopback</strong> fallback below
+              (VB-Cable / Stereo Mix), or fix exclusive mode and retry tab share.
             </p>
           )}
           {props.state.detail && (
@@ -99,6 +125,15 @@ export function AudioVerifyPanel(props: {
             </pre>
           )}
         </div>
+      )}
+
+      {/* Prominent mic fallback immediately under display-audio failure */}
+      {showMicFallback && displayFail && (
+        <MicLoopbackFallback
+          prominent
+          busy={props.micBusy}
+          onUseDevice={(id) => props.onUseMicLoopback?.(id)}
+        />
       )}
 
       {(props.state.phase === 'prompting' || props.state.phase === 'idle') && (
@@ -130,8 +165,8 @@ export function AudioVerifyPanel(props: {
           </div>
           {silent ? (
             <p className="m-0 text-[11px] text-[var(--warn)]">
-              No signal yet — that’s fine if you’re in lobby / not at the merchant. Silence is not a failure.
-              When you drag cargo in-raid, this meter (or Live Listening) should spike.
+              No signal yet — that’s fine if you’re in lobby / not at the merchant. Silence is not a
+              failure. When you drag cargo in-raid, this meter (or Live Listening) should spike.
             </p>
           ) : (
             <p className="m-0 text-[11px] text-[var(--ok)]">Signal detected on the shared audio track.</p>
@@ -164,8 +199,16 @@ export function AudioVerifyPanel(props: {
         </div>
       )}
 
+      {/* Always offer mic path when not already in a live meter success (unless shown above) */}
+      {showMicFallback && !displayFail && !liveMeter && (
+        <MicLoopbackFallback
+          busy={props.micBusy}
+          onUseDevice={(id) => props.onUseMicLoopback?.(id)}
+        />
+      )}
+
       {(failed || browser.kind === 'brave' || browser.kind === 'chrome' || browser.kind === 'edge') && (
-        <details className="mt-3 rounded border border-[var(--border)] bg-[var(--bg)]/60 px-3 py-2" open={failed}>
+        <details className="mt-3 rounded border border-[var(--border)] bg-[var(--bg)]/60 px-3 py-2" open={failed && !displayFail}>
           <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
             Troubleshooting · {browser.label}
           </summary>
@@ -180,7 +223,7 @@ export function AudioVerifyPanel(props: {
               onClick={props.onRetry}
               className="rounded px-2.5 py-1.5 text-[11px] font-medium bg-[var(--accent)] text-[#041412]"
             >
-              Retry share
+              Retry screen share
             </button>
             <button
               type="button"

@@ -39,6 +39,8 @@ export type VerifyPhase =
   | 'unsupported'
   | 'prompting'
   | 'no-audio'
+  /** Share succeeded; meter runs — silence is OK (not in raid yet). */
+  | 'waiting'
   | 'metering'
   | 'ok'
   | 'error';
@@ -90,29 +92,22 @@ export function browserFixSteps(info: BrowserInfo): string[] {
     case 'edge':
     case 'chromium':
       return [
-        'Preferred: share a Chrome/Edge tab that has game audio (or Discord/OBS monitoring) with “Share tab audio” checked — most reliable.',
-        'Entire Screen + “Also share system audio” (Windows) often throws Chromium NotReadableError “Could not start audio source” when WASAPI loopback fails.',
-        'Windows: Settings → System → Sound → Input — set a working microphone/Stereo Mix as default; disable Exclusive Mode on playback devices.',
-        'Close apps that grab exclusive audio (Discord “Exclusive Mode”, some DAWs, steelseries/sonic drivers), then retry.',
-        'Keep ABI unmuted and move over Field Merchant items while the meter runs.',
+        'Share a Chrome/Edge tab with “Share tab audio” (most reliable).',
+        'Entire Screen + system audio can fail with “Could not start audio source” — that’s an OS loopback issue, not a timeout.',
+        'Windows: set a working default input; turn off Exclusive Mode on playback devices; close Discord exclusive / DAWs.',
+        'Silence after a good share is normal until you’re at Field Merchant.',
       ];
     case 'brave':
       return [
-        'Brave Shields can block capture — set Shields Down for this site.',
-        'Then prefer sharing a Brave/Chrome tab with “Share tab audio”, or Entire Screen + system audio.',
-        'If you see “Could not start audio source”, fix Windows default recording device / exclusive-mode apps (same as Chrome).',
+        'Set Shields Down for this site.',
+        'Prefer tab share + “Share tab audio”. Same Windows loopback tips as Chrome if system audio fails.',
       ];
     case 'firefox':
     case 'safari':
       return [
-        `${info.label} does not reliably expose system/game audio via getDisplayMedia for this tool.`,
-        'Use Google Chrome or Microsoft Edge for Automatic Mode.',
-        'Or switch to Manual Mode and match by ear with the Sound Board.',
+        `${info.label} can’t reliably share game audio here — use Chrome/Edge or Manual Mode.`,
       ];
     default:
-      return [
-        'Use Google Chrome or Microsoft Edge for Automatic Mode.',
-        'Or switch to Manual Mode and pick Sound IDs by ear.',
-      ];
+      return ['Use Chrome or Edge for Automatic Mode, or Manual Mode by ear.'];
   }
 }

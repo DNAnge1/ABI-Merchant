@@ -28,8 +28,10 @@ export function ContinuousGrid(props: {
             Live session feed · Continuous Grid
           </h2>
           <p className="m-0 text-[11px] text-[var(--muted)]">
-            {props.listening ? 'Listening (~600ms debounce)…' : 'Not listening'} · {props.slots.length}{' '}
-            slot{props.slots.length === 1 ? '' : 's'}
+            {props.listening
+              ? 'Listening… waiting for cargo (silence OK until Stop)'
+              : 'Not listening'}{' '}
+            · {props.slots.length} slot{props.slots.length === 1 ? '' : 's'}
           </p>
         </div>
         <div className="flex gap-2">

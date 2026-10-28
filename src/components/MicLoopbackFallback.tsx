@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ensureMicPermission,
+  EXCLUSIVE_MODE_STEPS,
   listAudioInputDevices,
   LOOPBACK_SETUP_STEPS,
   type AudioInputDevice,
@@ -50,12 +51,12 @@ export function MicLoopbackFallback(props: {
       <div>
         <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--accent)]">
           {props.prominent
-            ? 'Fallback — use microphone / loopback'
-            : 'Alternative — microphone / loopback'}
+            ? 'Primary next step — Mic / loopback'
+            : 'Mic / loopback (recommended for desktop ABI)'}
         </p>
         <p className="m-0 mt-1 text-[12px] text-[var(--text)] leading-relaxed">
-          Screen + system audio failed (or you prefer this path). Route game audio into a Chrome input
-          (VB-Cable, Stereo Mix, etc.), then start Automatic Listening the same way.
+          Route ABI game audio into a Chrome input (VB-Cable, Stereo Mix, etc.), then Start Listening.
+          Chrome Tab share won’t hear desktop game audio.
         </p>
       </div>
 
@@ -110,6 +111,14 @@ export function MicLoopbackFallback(props: {
             </li>
           ))}
         </ul>
+        <p className="m-0 mt-3 text-[11px] font-semibold text-[var(--muted)]">
+          Exclusive mode (optional; often still fails on G560 — Mic / loopback is still preferred)
+        </p>
+        <ol className="m-0 mt-1 pl-4 space-y-1 text-[11px] text-[var(--text)] leading-relaxed">
+          {EXCLUSIVE_MODE_STEPS.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
       </details>
     </div>
   );

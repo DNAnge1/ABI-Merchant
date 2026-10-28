@@ -488,7 +488,7 @@ export default function App() {
       setVerifyState({
         phase: noAudio ? 'no-audio' : 'error',
         message: couldNotStart
-          ? `Could not start audio source (Chromium/OS loopback failed — often G560 exclusive mode). ${msg}`
+          ? `Could not start audio source (OS loopback failed — common with G560). Next: Mic / loopback below. Chrome Tab won’t capture ABI game audio. ${msg}`
           : msg,
         rms: 0,
         peakRms: 0,
@@ -569,7 +569,7 @@ export default function App() {
           ? 'unsupported'
           : 'error',
       message: couldNotStart
-        ? `Could not start audio source — Chromium OS loopback failed (common with G560). Use mic/loopback below, or Chrome Tab + Share tab audio. Details: ${msg}`
+        ? `Could not start audio source — OS loopback failed (common with G560). Next: Mic / loopback below (VB-Cable / Stereo Mix). Chrome Tab won’t capture ABI desktop game audio. Details: ${msg}`
         : msg,
       rms: 0,
       peakRms: 0,

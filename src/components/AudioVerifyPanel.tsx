@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { browserFixSteps, detectBrowser, type VerifyState } from '../utils/browserAudio';
+import { EXCLUSIVE_MODE_STEPS } from '../utils/micCapture';
 import { MicLoopbackFallback } from './MicLoopbackFallback';
 export { playTestTone } from '../utils/browserAudio';
 
@@ -57,8 +58,9 @@ export function AudioVerifyPanel(props: {
           <p className="m-0 mt-1 text-[12px] text-[var(--muted)] max-w-2xl leading-relaxed">
             Optional check that Chrome can hear game audio. This is{' '}
             <strong className="text-[var(--text)]">not</strong> the live scanner — silence is OK if
-            you’re not in a raid. Automatic Mode can use <strong className="text-[var(--text)]">screen
-            share</strong> or a <strong className="text-[var(--text)]">mic / loopback</strong> input.
+            you’re not in a raid. For desktop ABI prefer{' '}
+            <strong className="text-[var(--text)]">Mic / loopback</strong> (Chrome Tab won’t capture
+            game audio). Entire Screen may hit NotReadableError on G560.
           </p>
           <p className="m-0 mt-1 text-[11px] text-[var(--muted)]">
             Browser: <span className="text-[var(--text)]">{browser.label}</span>
@@ -74,16 +76,15 @@ export function AudioVerifyPanel(props: {
       </div>
 
       <ol className="m-0 mt-3 grid gap-2 list-none p-0 sm:grid-cols-3">
-        <Step n={1} title="Share or mic">
-          Prefer tab + “Share tab audio”. If Entire Screen fails (G560), use{' '}
-          <strong>mic / loopback</strong> below.
+        <Step n={1} title="Mic / loopback first">
+          For desktop ABI, use <strong>Mic / loopback</strong> (VB-Cable / Stereo Mix). Chrome Tab
+          won’t capture game audio. Entire Screen often hits NotReadableError on G560.
         </Step>
         <Step n={2} title="Confirm track">
           Success = any audio track connects. Silence is OK — you do not need merchant sounds yet.
         </Step>
         <Step n={3} title="Exclusive ≠ Allow">
-          Site microphone Allow is not enough. For G560: classic Sound → Playback → Properties →
-          Advanced → uncheck exclusive control.
+          Site Allow isn’t exclusive mode. Use the numbered mmsys.cpl steps in the tips below.
         </Step>
       </ol>
 
@@ -97,7 +98,8 @@ export function AudioVerifyPanel(props: {
       {props.state.phase === 'no-audio' && (
         <div className="mt-3 rounded border border-[var(--mythic)]/50 bg-[#2a1014] px-3 py-2 text-xs text-[#ffb4bc]">
           <strong className="block mb-1">No audio track</strong>
-          The share picker returned video only. Re-share with tab/system audio, or use mic / loopback.
+          The share picker returned video only. Next: use <strong>Mic / loopback</strong> below
+          (Chrome Tab won’t hear desktop ABI).
           {props.state.detail && (
             <pre className="m-0 mt-2 max-h-28 overflow-auto rounded bg-black/40 p-2 text-[10px] text-[var(--muted)] whitespace-pre-wrap">
               {props.state.detail}
@@ -113,11 +115,21 @@ export function AudioVerifyPanel(props: {
           </strong>
           <p className="m-0 whitespace-pre-wrap break-words">{props.state.message}</p>
           {displayFail && (
-            <p className="m-0 mt-2 text-[11px] text-[var(--mythic-gold)]">
-              Chromium could not open OS loopback (common with Logitech G560 exclusive mode). You can
-              still run Automatic Mode — use the <strong>microphone / loopback</strong> fallback below
-              (VB-Cable / Stereo Mix), or fix exclusive mode and retry tab share.
-            </p>
+            <div className="mt-2 space-y-2 text-[11px] text-[var(--mythic-gold)]">
+              <p className="m-0">
+                <strong className="text-[var(--text)]">Next step: Mic / loopback</strong> below
+                (VB-Cable / Stereo Mix). That keeps Automatic Mode working. Chrome Tab won’t capture
+                ABI desktop game audio — don’t rely on tab share for this game.
+              </p>
+              <p className="m-0 text-[var(--muted)]">
+                If you still want to try fixing exclusive mode (often still fails on G560):
+              </p>
+              <ol className="m-0 pl-4 space-y-1 text-[var(--text)]">
+                {EXCLUSIVE_MODE_STEPS.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+            </div>
           )}
           {props.state.detail && (
             <pre className="m-0 mt-2 max-h-36 overflow-auto rounded bg-black/40 p-2 text-[10px] text-[var(--muted)] whitespace-pre-wrap">
@@ -127,7 +139,7 @@ export function AudioVerifyPanel(props: {
         </div>
       )}
 
-      {/* Prominent mic fallback immediately under display-audio failure */}
+      {/* Primary next step on NotReadableError: mic/loopback */}
       {showMicFallback && displayFail && (
         <MicLoopbackFallback
           prominent

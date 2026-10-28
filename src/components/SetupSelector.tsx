@@ -1,18 +1,27 @@
 import type { MonitorSetup, ScanStyle } from '../utils/calibrationStore';
+import {
+  SENSITIVITY_PRESETS,
+  type SensitivityLevel,
+} from '../utils/sensitivity';
 
 export function SetupSelector(props: {
   monitorSetup: MonitorSetup;
   scanStyle: ScanStyle;
   soundAlerts: boolean;
   useTts: boolean;
+  sensitivity: SensitivityLevel;
+  captureSource?: 'display' | 'microphone' | null;
   onMonitorSetup: (v: MonitorSetup) => void;
   onScanStyle: (v: ScanStyle) => void;
   onSoundAlerts: (v: boolean) => void;
   onUseTts: (v: boolean) => void;
+  onSensitivity: (v: SensitivityLevel) => void;
   onPopOut: () => void;
 }) {
   const singleMonitor = props.monitorSetup === 'single';
   const multiDisabled = singleMonitor;
+  const preset = SENSITIVITY_PRESETS[props.sensitivity];
+  const micStrict = props.captureSource === 'microphone';
 
   return (
     <section className="rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3">
@@ -20,7 +29,28 @@ export function SetupSelector(props: {
         Top setup
       </h2>
 
-      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <p className="m-0 mb-1 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            Detect sensitivity
+          </p>
+          <div className="flex rounded border border-[var(--border)] overflow-hidden text-[11px]">
+            {(['low', 'med', 'high'] as SensitivityLevel[]).map((level, i) => (
+              <Toggle
+                key={level}
+                active={props.sensitivity === level}
+                onClick={() => props.onSensitivity(level)}
+                label={SENSITIVITY_PRESETS[level].label}
+                border={i > 0}
+              />
+            ))}
+          </div>
+          <p className="m-0 mt-1.5 text-[10px] leading-relaxed text-[var(--muted)]">
+            {preset.hint}. Floor ≥{preset.minConfidence}%
+            {micStrict ? ' · mic/loopback runs one step stricter' : ''}.
+          </p>
+        </div>
+
         <div>
           <p className="m-0 mb-1 text-[10px] uppercase tracking-wide text-[var(--muted)]">
             Monitor setup

@@ -46,6 +46,7 @@ import {
 } from './utils/calibrationStore';
 import { alertForMatch } from './utils/soundAlerts';
 import { openDocumentPiP, renderPipContent, type PipHandle } from './utils/pipOverlay';
+import { type SensitivityLevel } from './utils/sensitivity';
 
 const items = merchantData.items as MerchantItem[];
 const fingerprints = fingerprintsData as FingerprintsFile;
@@ -78,7 +79,12 @@ export default function App() {
   const [size, setSize] = useState('');
   const [cargoType, setCargoType] = useState('');
   const [cargoPrice, setCargoPrice] = useState<number | ''>('');
-  const [noiseFloor, setNoiseFloor] = useState(0.18);
+  const [noiseFloor, setNoiseFloor] = useState(0.2);
+  /** Default Med; mic/loopback applies one notch stricter inside the matcher. */
+  const [sensitivity, setSensitivity] = useState<SensitivityLevel>('med');
+  const [captureSource, setCaptureSource] = useState<'display' | 'microphone' | null>(
+    null,
+  );
   const [status, setStatus] = useState<MatcherStatus>('idle');
   const [statusDetail, setStatusDetail] = useState<string>();
   const [capturing, setCapturing] = useState(false);
@@ -173,6 +179,15 @@ export default function App() {
     (payload: MatchPayload) => {
       const top = payload.matches[0];
       if (!top) return;
+      // Belt-and-suspenders: never lock junk below the matcher confidence floor.
+      const floor = matcherRef.current?.getMinConfidence() ?? 60;
+      if (top.confidence < floor) {
+        setStatus('listening');
+        setStatusDetail(
+          `Listening… weak match ignored (${top.confidence}% < ${floor}% floor)`,
+        );
+        return;
+      }
       const resultItems = itemsForSound(top.soundId);
       const redPct = redLikelihoodPercent(resultItems);
 
@@ -228,7 +243,7 @@ export default function App() {
 
   useEffect(() => {
     const matcher = new AudioMatcher(fingerprints, {
-      noiseFloor: 0.18,
+      sensitivity: 'med',
       cooldownMs: 800,
       focusGraceMs: 0,
     });
@@ -322,8 +337,13 @@ export default function App() {
   }, [sessionId]);
 
   useEffect(() => {
-    matcherRef.current?.setNoiseFloor(noiseFloor);
-  }, [noiseFloor]);
+    matcherRef.current?.setSensitivity(sensitivity);
+  }, [sensitivity]);
+
+  useEffect(() => {
+    // Manual Mode slider remains an advanced override when not in auto listening.
+    if (mode === 'manual') matcherRef.current?.setNoiseFloor(noiseFloor);
+  }, [noiseFloor, mode]);
 
   useEffect(() => {
     matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
@@ -332,6 +352,11 @@ export default function App() {
   useEffect(() => {
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
   }, [scanStyle]);
+
+  useEffect(() => {
+    if (!capturing) setCaptureSource(null);
+    else setCaptureSource(matcherRef.current?.getCaptureSource() ?? null);
+  }, [capturing, status]);
 
   useEffect(() => {
     if (monitorSetup === 'single' && scanStyle === 'continuous') {
@@ -545,6 +570,7 @@ export default function App() {
     setLocked(null);
     setSinglePhase('ready');
     setManualSoundId(null);
+    matcherRef.current?.setSensitivity(sensitivity);
     matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
   }
@@ -598,8 +624,10 @@ export default function App() {
       prepareMatcherSession();
       await matcherRef.current?.startCapture();
       setCapturing(true);
+      setCaptureSource(matcherRef.current?.getCaptureSource() ?? 'display');
     } catch (err) {
       setCapturing(false);
+      setCaptureSource(null);
       openCaptureFailure(err);
     }
   }
@@ -621,13 +649,19 @@ export default function App() {
     stopVerifySession();
     setMicBusy(true);
     setVerifyOpen(false);
+    // Mic/loopback defaults to stricter Low unless the user already chose High.
+    const micLevel: SensitivityLevel = sensitivity === 'high' ? 'high' : 'low';
+    setSensitivity(micLevel);
     try {
       prepareMatcherSession();
+      matcherRef.current?.setSensitivity(micLevel);
       await matcherRef.current?.startCaptureFromMic(deviceId);
       setCapturing(true);
+      setCaptureSource('microphone');
       setSuggestMicFallback(false);
     } catch (err) {
       setCapturing(false);
+      setCaptureSource(null);
       openCaptureFailure(err);
     } finally {
       setMicBusy(false);
@@ -637,6 +671,7 @@ export default function App() {
   async function stopCapture() {
     await matcherRef.current?.stop();
     setCapturing(false);
+    setCaptureSource(null);
     setSinglePhase('ready');
   }
 
@@ -804,10 +839,13 @@ export default function App() {
                 scanStyle={scanStyle}
                 soundAlerts={soundAlerts}
                 useTts={useTts}
+                sensitivity={sensitivity}
+                captureSource={captureSource}
                 onMonitorSetup={setMonitorSetup}
                 onScanStyle={setScanStyle}
                 onSoundAlerts={setSoundAlerts}
                 onUseTts={setUseTts}
+                onSensitivity={setSensitivity}
                 onPopOut={() => void popOutOverlay()}
               />
               <AccuracyPanel

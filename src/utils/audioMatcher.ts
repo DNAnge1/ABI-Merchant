@@ -4,7 +4,12 @@
  * and cosine similarity against precomputed fingerprints filtered by cargo size+price.
  */
 
-import { captureDisplayWithAudio } from './displayCapture';
+import {
+  captureDisplayWithAudio,
+  type BootstrappedCapture,
+  type CaptureSourceKind,
+} from './displayCapture';
+import { captureMicWithAudio } from './micCapture';
 
 export type SoundKind = 'pickup' | 'drop';
 
@@ -219,6 +224,7 @@ export class AudioMatcher {
   private focusGraceMs: number;
   private focusBlockUntil = 0;
   private listeningPaused = false;
+  private captureSource: CaptureSourceKind | null = null;
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
   private fingerprints: FingerprintsFile;
@@ -280,6 +286,10 @@ export class AudioMatcher {
     return this.status;
   }
 
+  getCaptureSource() {
+    return this.captureSource;
+  }
+
   private armFocusGrace() {
     if (this.focusGraceMs > 0) {
       this.focusBlockUntil = performance.now() + this.focusGraceMs;
@@ -291,28 +301,11 @@ export class AudioMatcher {
     this.onStatus?.(s, detail);
   }
 
-  /** Capture game window via getDisplayMedia (must include audio). */
-  async startCapture(): Promise<void> {
-    // CRITICAL: create AudioContext synchronously under the click gesture,
-    // before any await (stop / getDisplayMedia) clears user activation.
-    const gestureCtx = new AudioContext();
-    void gestureCtx.resume();
-
-    // Tear down prior session without touching gestureCtx
-    await this.stop({ skipStatus: true });
-
-    let boot;
-    try {
-      boot = await captureDisplayWithAudio(gestureCtx);
-    } catch (err) {
-      await gestureCtx.close().catch(() => undefined);
-      const msg = err instanceof Error ? err.message : String(err);
-      this.setStatus('error', msg);
-      throw err instanceof Error ? err : new Error(msg);
-    }
-
+  /** Attach any MediaStream with audio (display share or mic/loopback) into the matcher pipeline. */
+  private attachBoot(boot: BootstrappedCapture): void {
     this.stream = boot.stream;
     this.ctx = boot.ctx;
+    this.captureSource = boot.sourceKind;
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.2;
@@ -325,7 +318,12 @@ export class AudioMatcher {
     });
     this.stream.getAudioTracks().forEach((t) => {
       t.addEventListener('ended', () => {
-        this.setStatus('error', 'Audio track ended — re-share with system/tab audio');
+        this.setStatus(
+          'error',
+          boot.sourceKind === 'microphone'
+            ? 'Mic / loopback track ended — re-select the input device.'
+            : 'Audio track ended — re-share with system/tab audio, or use mic/loopback.',
+        );
         void this.stop();
       });
     });
@@ -335,11 +333,55 @@ export class AudioMatcher {
     this.listeningPaused = false;
     this.armFocusGrace();
 
+    const via =
+      boot.sourceKind === 'microphone' ? 'via mic/loopback' : 'via screen share';
     this.setStatus(
       'listening',
-      'Listening… waiting for Field Merchant sounds (OK if not in raid yet). Stop when done.',
+      `Listening… waiting for Field Merchant sounds (${via}; OK if not in raid yet). Stop when done.`,
     );
     this.loop();
+  }
+
+  /** Primary: capture via getDisplayMedia (must include audio). */
+  async startCapture(): Promise<void> {
+    // CRITICAL: create AudioContext synchronously under the click gesture,
+    // before any await (stop / getDisplayMedia) clears user activation.
+    const gestureCtx = new AudioContext();
+    void gestureCtx.resume();
+
+    await this.stop({ skipStatus: true });
+
+    let boot;
+    try {
+      boot = await captureDisplayWithAudio(gestureCtx);
+    } catch (err) {
+      await gestureCtx.close().catch(() => undefined);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatus('error', msg);
+      throw err instanceof Error ? err : new Error(msg);
+    }
+
+    this.attachBoot(boot);
+  }
+
+  /** Fallback: capture via getUserMedia mic / virtual loopback device. */
+  async startCaptureFromMic(deviceId?: string): Promise<void> {
+    const gestureCtx = new AudioContext();
+    void gestureCtx.resume();
+
+    await this.stop({ skipStatus: true });
+
+    let boot;
+    try {
+      boot = await captureMicWithAudio(deviceId, gestureCtx);
+    } catch (err) {
+      await gestureCtx.close().catch(() => undefined);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatus('error', msg);
+      throw err instanceof Error ? err : new Error(msg);
+    }
+
+    this.attachBoot(boot);
   }
 
   async stop(opts?: { skipStatus?: boolean }): Promise<void> {
@@ -352,6 +394,7 @@ export class AudioMatcher {
     this.analyser = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
+    this.captureSource = null;
     this.listeningPaused = false;
     if (this.ctx) {
       await this.ctx.close().catch(() => undefined);

@@ -51,6 +51,8 @@ export function StatusBar(props: {
   onStart: () => void;
   onStop: () => void;
   onVerify: () => void;
+  /** Open Verify with mic/loopback fallback highlighted */
+  onMicFallback?: () => void;
 }) {
   const { step, detail } = stepFromStatus(
     props.status,
@@ -121,6 +123,17 @@ export function StatusBar(props: {
           >
             Verify / Test Audio Access
           </button>
+
+          {props.onMicFallback && !props.capturing && props.mode === 'automatic' && (
+            <button
+              type="button"
+              onClick={props.onMicFallback}
+              className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--accent)]/50 text-[var(--accent)] hover:bg-[var(--accent-dim)]/30"
+              title="Use VB-Cable / Stereo Mix / mic when screen system-audio fails"
+            >
+              Mic / loopback
+            </button>
+          )}
 
           {!props.capturing ? (
             <button

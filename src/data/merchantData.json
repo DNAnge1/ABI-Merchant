@@ -1,0 +1,5837 @@
+{
+  "source": "https://abibuilder.com/merchant",
+  "extractedFrom": "https://web.archive.org/web/20261009010813id_/https://abibuilder.com/merchant",
+  "extractedAt": "2026-10-28T18:28:20.870Z",
+  "soundIds": [
+    {
+      "soundId": 1,
+      "pickupSound": "Item_Misc_Med_Comp_Up",
+      "dropSound": "Item_Misc_Med_Comp_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Comp_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Comp_Down.ogg",
+      "itemIds": [
+        408010005,
+        408010012,
+        408060043
+      ],
+      "itemNames": [
+        "Oil",
+        "Kerosene Lamp",
+        "Film Stock"
+      ]
+    },
+    {
+      "soundId": 2,
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "pickupFile": "/sounds/Item_Container_Big_Metal_Up.ogg",
+      "dropFile": "/sounds/Item_Container_Big_Metal_Down.ogg",
+      "itemIds": [
+        408010006,
+        408010008,
+        408010009,
+        408010014,
+        498010001
+      ],
+      "itemNames": [
+        "Oil Drum",
+        "Propane Tank",
+        "Fuel Tank",
+        "High Energy Fuel",
+        "Portable Fuel Canister"
+      ]
+    },
+    {
+      "soundId": 3,
+      "pickupSound": "Item_Misc_Med_Fabric_Up",
+      "dropSound": "Item_Misc_Med_Fabric_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Fabric_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Fabric_Down.ogg",
+      "itemIds": [
+        408010015,
+        408010016,
+        408060042,
+        408120003
+      ],
+      "itemNames": [
+        "Nitrocellulose",
+        "Large-Caliber Artillery Gunpowder Pack",
+        "Camping Tarp",
+        "Paracord"
+      ]
+    },
+    {
+      "soundId": 4,
+      "pickupSound": "Prop_Acc_Fuel_UP",
+      "dropSound": "Prop_Acc_Fuel_Down",
+      "pickupFile": "/sounds/Prop_Acc_Fuel_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Fuel_Down.ogg",
+      "itemIds": [
+        408020015
+      ],
+      "itemNames": [
+        "Impact-resistant Hard Rubber"
+      ]
+    },
+    {
+      "soundId": 5,
+      "pickupSound": "Prop_Acc_Concrete_UP",
+      "dropSound": "Prop_Acc_Concrete_Down",
+      "pickupFile": "/sounds/Prop_Acc_Concrete_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Concrete_Down.ogg",
+      "itemIds": [
+        408020017
+      ],
+      "itemNames": [
+        "Bag of Cement"
+      ]
+    },
+    {
+      "soundId": 6,
+      "pickupSound": "Item_Misc_Med_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Med_Metal_Crisp_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Metal_Crisp_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Metal_Crisp_Down.ogg",
+      "itemIds": [
+        408020019,
+        408040004,
+        498080018
+      ],
+      "itemNames": [
+        "Titanium Alloy Plate",
+        "Car Battery",
+        "\"Destiny\" Gold Clay Tablet"
+      ]
+    },
+    {
+      "soundId": 7,
+      "pickupSound": "Prop_Acc_Plastic_Large_UP_01",
+      "dropSound": "Prop_Acc_Plastic_Large_Down_02",
+      "pickupFile": "/sounds/Prop_Acc_Plastic_Large_UP_01.ogg",
+      "dropFile": "/sounds/Prop_Acc_Plastic_Large_Down_02.ogg",
+      "itemIds": [
+        408020021
+      ],
+      "itemNames": [
+        "Rubber Pad"
+      ]
+    },
+    {
+      "soundId": 8,
+      "pickupSound": "Item_Misc_Med_Wood_Up",
+      "dropSound": "Item_Misc_Med_Wood_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Wood_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Wood_Down.ogg",
+      "itemIds": [
+        408020022,
+        408020024,
+        408080019,
+        408080033
+      ],
+      "itemNames": [
+        "Acoustic Panel",
+        "Wood Board",
+        "Record Player",
+        "Vintage Typewriter"
+      ]
+    },
+    {
+      "soundId": 9,
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Comp_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Comp_Down.ogg",
+      "itemIds": [
+        408020025,
+        408050023,
+        408050028,
+        408060037,
+        408070001,
+        408070010,
+        408070011,
+        408120001,
+        408120008,
+        408120009,
+        408140015
+      ],
+      "itemNames": [
+        "Sound-Muffling Cotton",
+        "High Power Flashlight",
+        "Safety Hammer",
+        "Hearing Aid",
+        "Glucose Injection",
+        "Bios.",
+        "Disinfectant",
+        "Weapon Parts",
+        "Rangefinder Binoculars",
+        "Portable Transceiver",
+        "Lens"
+      ]
+    },
+    {
+      "soundId": 10,
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "pickupFile": "/sounds/Item_Misc_ElectronicDevice_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_ElectronicDevice_Down.ogg",
+      "itemIds": [
+        408020026,
+        408030014,
+        408030016,
+        408030023,
+        408030024,
+        408030025,
+        408030028,
+        408050022,
+        408060030,
+        408070003,
+        408070012,
+        408070013,
+        408100001,
+        408100002,
+        408100005,
+        408100007,
+        408100011,
+        408100012,
+        408100013,
+        408120011,
+        408120012,
+        408120013,
+        408120014,
+        408120017,
+        408120019,
+        408120020,
+        408140001,
+        408140005,
+        408140016,
+        408140019,
+        408140021,
+        408140022,
+        408140024
+      ],
+      "itemNames": [
+        "Palladium Wire",
+        "Chip Processor",
+        "RAM",
+        "Floppy Drive",
+        "VGA Display Cable",
+        "UPS Unit",
+        "Vector Processor",
+        "Flashlight",
+        "Game Cartridge",
+        "Thermometer",
+        "Automated External Defibrillator",
+        "Insulin Pump",
+        "Gas Analyzer",
+        "Air Tightness Tester",
+        "Wave Filter",
+        "Oscilloscope",
+        "Antenna",
+        "Gimbal",
+        "Light Meter",
+        "Receiver",
+        "Signal Jammer",
+        "TI Module",
+        "Radio",
+        "Leveler",
+        "Target Positioning Module",
+        "Laser Pointer Module",
+        "Game Console",
+        "DVD",
+        "Camera",
+        "Gold Phone",
+        "Data Cable",
+        "Video Camera",
+        "Laptop Computer"
+      ]
+    },
+    {
+      "soundId": 11,
+      "pickupSound": "Prop_Acc_Plastic_Small_UP",
+      "dropSound": "Prop_Acc_Plastic_Small_Down",
+      "pickupFile": "/sounds/Prop_Acc_Plastic_Small_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Plastic_Small_Down.ogg",
+      "itemIds": [
+        408030003
+      ],
+      "itemNames": [
+        "Power Cable"
+      ]
+    },
+    {
+      "soundId": 12,
+      "pickupSound": "Prop_Acc_Tech_Small_UP",
+      "dropSound": "Prop_Acc_Tech_Small_Down",
+      "pickupFile": "/sounds/Prop_Acc_Tech_Small_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Tech_Small_Down.ogg",
+      "itemIds": [
+        408030004,
+        408030009,
+        408030013
+      ],
+      "itemNames": [
+        "Graphics Card",
+        "PSU",
+        "SSD"
+      ]
+    },
+    {
+      "soundId": 13,
+      "pickupSound": "Prop_Acc_PC_UP",
+      "dropSound": "Prop_Acc_PC_Down",
+      "pickupFile": "/sounds/Prop_Acc_PC_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_PC_Down.ogg",
+      "itemIds": [
+        408030007,
+        408030008
+      ],
+      "itemNames": [
+        "Broken LCD",
+        "Working LCD"
+      ]
+    },
+    {
+      "soundId": 14,
+      "pickupSound": "Item_Misc_Big_Wood_Up",
+      "dropSound": "Item_Misc_Big_Wood_Down",
+      "pickupFile": "/sounds/Item_Misc_Big_Wood_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Big_Wood_Down.ogg",
+      "itemIds": [
+        408030026,
+        498080025
+      ],
+      "itemNames": [
+        "Studio Monitor",
+        "Double-Neck Lute"
+      ]
+    },
+    {
+      "soundId": 15,
+      "pickupSound": "Prop_Acc_Battery_Small_UP_01",
+      "dropSound": "Prop_Acc_Battery_Small_Down_01",
+      "pickupFile": "/sounds/Prop_Acc_Battery_Small_UP_01.ogg",
+      "dropFile": "/sounds/Prop_Acc_Battery_Small_Down_01.ogg",
+      "itemIds": [
+        408040001,
+        408040002
+      ],
+      "itemNames": [
+        "Battery",
+        "D-size Battery"
+      ]
+    },
+    {
+      "soundId": 16,
+      "pickupSound": "Item_Acc_Med_Comp_Up",
+      "dropSound": "Item_Acc_Med_Comp_Down",
+      "pickupFile": "/sounds/Item_Acc_Med_Comp_Up.ogg",
+      "dropFile": "/sounds/Item_Acc_Med_Comp_Down.ogg",
+      "itemIds": [
+        408040006
+      ],
+      "itemNames": [
+        "Solar Panel"
+      ]
+    },
+    {
+      "soundId": 17,
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Metal_Blunt_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Metal_Blunt_Down.ogg",
+      "itemIds": [
+        408040008,
+        408050029,
+        408050030,
+        408050031,
+        408050032,
+        408050033,
+        408060044,
+        408060046,
+        498020001
+      ],
+      "itemNames": [
+        "Battery-Powered Positive Electrode Module",
+        "Portable Jack",
+        "Pipe Cleaning Kit",
+        "Oil Bottle",
+        "Glue Gun",
+        "Hydraulic Expander",
+        "Handheld Fill Light",
+        "Camping Stove",
+        "Arched Corrugated Steel Plate"
+      ]
+    },
+    {
+      "soundId": 18,
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Metal_Blunt_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Metal_Blunt_Down.ogg",
+      "itemIds": [
+        408050001,
+        408050006,
+        408050009,
+        408050011,
+        408050019,
+        408050026,
+        408080011,
+        408080014,
+        408080022,
+        408080024,
+        408080047,
+        408080048,
+        408080049,
+        408120002,
+        498040001,
+        498040002,
+        498060003,
+        498070009,
+        498080008,
+        498080009,
+        498080010,
+        498080016,
+        498100003,
+        498100004,
+        498100005,
+        498100006,
+        498140001,
+        498140003,
+        498140005
+      ],
+      "itemNames": [
+        "Electric Drill",
+        "Toolkit",
+        "Hydraulic Rebar Cutter",
+        "Pipe Wrench",
+        "Blower",
+        "Hydraulic Wrench",
+        "Silver Badge",
+        "Porcelain",
+        "Spur",
+        "Gold Block",
+        "Skyhook Synchronized Array Mirror",
+        "Sergey 1 Satellite Model",
+        "Raw Diamond Ore",
+        "Cannon Shell",
+        "Solar Charger",
+        "Ni-Cd Battery Pack",
+        "Quantum 2000 Toy Robot",
+        "Infrared Therapy Lamp",
+        "Hefra Egg",
+        "Lyre",
+        "Heavenly Sphere",
+        "Amber Heart of Heaven",
+        "Three-Axis Gyro Controller Prototype",
+        "Handheld Receiver",
+        "Handheld Salinity Meter",
+        "Handheld Calculator",
+        "Prototype Calculation Module",
+        "Capsule TV",
+        "MRID Clamshell Laptop"
+      ]
+    },
+    {
+      "soundId": 19,
+      "pickupSound": "Item_Container_Small_Metal_Up",
+      "dropSound": "Item_Container_Small_Metal_Down",
+      "pickupFile": "/sounds/Item_Container_Small_Metal_Up.ogg",
+      "dropFile": "/sounds/Item_Container_Small_Metal_Down.ogg",
+      "itemIds": [
+        408050013
+      ],
+      "itemNames": [
+        "Toolbox"
+      ]
+    },
+    {
+      "soundId": 20,
+      "pickupSound": "Item_Misc_Big_Blunt_Up",
+      "dropSound": "Item_Misc_Big_Blunt_Down",
+      "pickupFile": "/sounds/Item_Misc_Big_Blunt_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Big_Blunt_Down.ogg",
+      "itemIds": [
+        408050039
+      ],
+      "itemNames": [
+        "Blowtorch"
+      ]
+    },
+    {
+      "soundId": 21,
+      "pickupSound": "Item_Misc_Small_Wood_Up",
+      "dropSound": "Item_Misc_Small_Wood_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Wood_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Wood_Down.ogg",
+      "itemIds": [
+        408060021
+      ],
+      "itemNames": [
+        "Photo Frame"
+      ]
+    },
+    {
+      "soundId": 22,
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Metal_Crisp_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Metal_Crisp_Down.ogg",
+      "itemIds": [
+        408060039,
+        408070009,
+        408070016,
+        408080004,
+        408080050,
+        408080054,
+        408090019,
+        498010003,
+        498040003,
+        498060001,
+        498060004,
+        498060006,
+        498070001,
+        498070002,
+        498070003,
+        498070004,
+        498080001,
+        498080002,
+        498080003,
+        498080005,
+        498080006,
+        498080011,
+        498090001,
+        498090002,
+        498100001,
+        498120001,
+        498120003,
+        498140004,
+        498140006
+      ],
+      "itemNames": [
+        "Watch",
+        "Medical Scissors",
+        "Metal Heart",
+        "Gold Watch",
+        "Jade Bracelet",
+        "Gold Pen",
+        "Gungnir Blueprint Fragments",
+        "Magnesium Flint",
+        "Capacitance Analyzer",
+        "Space Lab Toybox",
+        "Voice of Civilization Gold Record",
+        "Toland Access Card",
+        "Handheld Tester",
+        "EEG",
+        "Blood Glucose Meter Set",
+        "Electronic Stethoscope",
+        "Gilded Cage Music Box",
+        "Phaethon's Clock",
+        "\"Dawn\"",
+        "Real Matrix",
+        "Ancient Golden Mask Replica",
+        "Peacock Fan",
+        "Voss' Journal",
+        "Space Boy Comic",
+        "Aerospace Navigator",
+        "Military Tool Kit",
+        "T-147 Individual Communication Device",
+        "Personal Digital Assistant",
+        "GU-470 Portable Recorder"
+      ]
+    },
+    {
+      "soundId": 23,
+      "pickupSound": "Item_Misc_Small_Fabric_Up",
+      "dropSound": "Item_Misc_Small_Fabric_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Fabric_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Fabric_Down.ogg",
+      "itemIds": [
+        408060041
+      ],
+      "itemNames": [
+        "Bag of Fertilizer"
+      ]
+    },
+    {
+      "soundId": 24,
+      "pickupSound": "Item_Misc_Small_Glass_Up",
+      "dropSound": "Item_Misc_Small_Glass_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Glass_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Glass_Down.ogg",
+      "itemIds": [
+        408060052,
+        498070011,
+        498070012
+      ],
+      "itemNames": [
+        "Deluxe Tea Set",
+        "Pheromone Test Kit",
+        "Blocker Injector"
+      ]
+    },
+    {
+      "soundId": 25,
+      "pickupSound": "Item_Misc_Med_Wood_Clock_Up",
+      "dropSound": "Item_Misc_Med_Wood_Clock_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Wood_Clock_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Wood_Clock_Down.ogg",
+      "itemIds": [
+        408060054
+      ],
+      "itemNames": [
+        "Lute"
+      ]
+    },
+    {
+      "soundId": 26,
+      "pickupSound": "Item_Glass_Up",
+      "dropSound": "Item_Glass_Down",
+      "pickupFile": "/sounds/Item_Glass_Up.ogg",
+      "dropFile": "/sounds/Item_Glass_Down.ogg",
+      "itemIds": [
+        408070002,
+        408080015
+      ],
+      "itemNames": [
+        "Syringe",
+        "Gold-rimmed Glasses"
+      ]
+    },
+    {
+      "soundId": 27,
+      "pickupSound": "Item_Food_Bag_Up",
+      "dropSound": "Item_Food_Bag_Down",
+      "pickupFile": "/sounds/Item_Food_Bag_Up.ogg",
+      "dropFile": "/sounds/Item_Food_Bag_Down.ogg",
+      "itemIds": [
+        408070008
+      ],
+      "itemNames": [
+        "Medical Sponge"
+      ]
+    },
+    {
+      "soundId": 28,
+      "pickupSound": "Prop_Acc_Statue_UP",
+      "dropSound": "Prop_Acc_Statue_Down",
+      "pickupFile": "/sounds/Prop_Acc_Statue_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Statue_Down.ogg",
+      "itemIds": [
+        408080001,
+        408080008
+      ],
+      "itemNames": [
+        "Gold Cheetah Statue",
+        "Gold Lion Statue"
+      ]
+    },
+    {
+      "soundId": 29,
+      "pickupSound": "Item_Coin_Up",
+      "dropSound": "Item_Coin_Down",
+      "pickupFile": "/sounds/Item_Coin_Up.ogg",
+      "dropFile": "/sounds/Item_Coin_Down.ogg",
+      "itemIds": [
+        408080002,
+        408080013
+      ],
+      "itemNames": [
+        "Commemorative Coin",
+        "Gold Bracelet"
+      ]
+    },
+    {
+      "soundId": 30,
+      "pickupSound": "Item_Misc_Med_Glass_Up",
+      "dropSound": "Item_Misc_Med_Glass_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Glass_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Glass_Down.ogg",
+      "itemIds": [
+        408080003,
+        498060005,
+        498070010
+      ],
+      "itemNames": [
+        "Vase",
+        "Northern Stars Amber Drink",
+        "Mutant Heart Sample"
+      ]
+    },
+    {
+      "soundId": 31,
+      "pickupSound": "Prop_Acc_Clock_UP",
+      "dropSound": "Prop_Acc_Clock_Down",
+      "pickupFile": "/sounds/Prop_Acc_Clock_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Clock_Down.ogg",
+      "itemIds": [
+        408080009
+      ],
+      "itemNames": [
+        "Desk Clock"
+      ]
+    },
+    {
+      "soundId": 32,
+      "pickupSound": "Prop_Acc_Teapot_UP",
+      "dropSound": "Prop_Acc_Teapot_Down",
+      "pickupFile": "/sounds/Prop_Acc_Teapot_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Teapot_Down.ogg",
+      "itemIds": [
+        408080010
+      ],
+      "itemNames": [
+        "Antique Teapot"
+      ]
+    },
+    {
+      "soundId": 33,
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "pickupFile": "/sounds/Item_GoldChain_Up.ogg",
+      "dropFile": "/sounds/Item_GoldChain_Down.ogg",
+      "itemIds": [
+        408080012,
+        408080020,
+        408080025,
+        408080026,
+        408080029,
+        498080019
+      ],
+      "itemNames": [
+        "Silver Chain",
+        "Pocket Watch",
+        "Diamond Ring",
+        "Brooch",
+        "Gem Necklace",
+        "Star of Kamona Pendant"
+      ]
+    },
+    {
+      "soundId": 34,
+      "pickupSound": "Item_Misc_Med_Paper_Up",
+      "dropSound": "Item_Misc_Med_Paper_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Paper_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Paper_Down.ogg",
+      "itemIds": [
+        408080016
+      ],
+      "itemNames": [
+        "Stamp Album"
+      ]
+    },
+    {
+      "soundId": 35,
+      "pickupSound": "Item_Misc_Small_Paper_Up",
+      "dropSound": "Item_Misc_Small_Paper_Down",
+      "pickupFile": "/sounds/Item_Misc_Small_Paper_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Small_Paper_Down.ogg",
+      "itemIds": [
+        408080021,
+        408090001,
+        498090008,
+        498090010
+      ],
+      "itemNames": [
+        "Stamp",
+        "Document",
+        "Dried Flower Bookmark",
+        "Mutant Evolution Sketch"
+      ]
+    },
+    {
+      "soundId": 36,
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "pickupFile": "/sounds/Item_Misc_Med_Statue_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Med_Statue_Down.ogg",
+      "itemIds": [
+        408080028,
+        408080030,
+        408080038,
+        408080039,
+        408080041,
+        408120005,
+        498070013,
+        498080017,
+        498100002
+      ],
+      "itemNames": [
+        "Gold Cube",
+        "Gold Cup",
+        "Plaster Sculpture",
+        "Majestic Sculpture",
+        "Gold Snake",
+        "Military Canteen",
+        "Mutated Tissue Mass",
+        "Optoelectronic Hyperspace Model",
+        "K7-L Cipher Machine"
+      ]
+    },
+    {
+      "soundId": 37,
+      "pickupSound": "Item_Misc_Big_Paper_Up",
+      "dropSound": "Item_Misc_Big_Paper_Down",
+      "pickupFile": "/sounds/Item_Misc_Big_Paper_Up.ogg",
+      "dropFile": "/sounds/Item_Misc_Big_Paper_Down.ogg",
+      "itemIds": [
+        408090002,
+        408090004,
+        498090009
+      ],
+      "itemNames": [
+        "Hardcover",
+        "Folder",
+        "Bundle of Rice Paper"
+      ]
+    },
+    {
+      "soundId": 38,
+      "pickupSound": "Prop_Acc_Radio_UP",
+      "dropSound": "Prop_Acc_Radio_Down",
+      "pickupFile": "/sounds/Prop_Acc_Radio_UP.ogg",
+      "dropFile": "/sounds/Prop_Acc_Radio_Down.ogg",
+      "itemIds": [
+        408120010,
+        408140014
+      ],
+      "itemNames": [
+        "Military Radio",
+        "Classic Radio"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": 498080006,
+      "name": "Ancient Golden Mask Replica",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 1647474,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080006.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080003,
+      "name": "\"Dawn\"",
+      "rarity": 6,
+      "size": "3x2",
+      "category": "Collectibles",
+      "contactPrice": 1642800,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498140003,
+      "name": "Capsule TV",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Electronics",
+      "contactPrice": 1629947,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498140003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080001,
+      "name": "Gilded Cage Music Box",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 1620600,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498100001,
+      "name": "Aerospace Navigator",
+      "rarity": 6,
+      "size": "3x2",
+      "category": "Instruments",
+      "contactPrice": 1598400,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408080039,
+      "name": "Majestic Sculpture",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 1581750,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080039.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498060005,
+      "name": "Northern Stars Amber Drink",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 1548111,
+      "soundId": 30,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498060005.png",
+      "pickupSound": "Item_Misc_Med_Glass_Up",
+      "dropSound": "Item_Misc_Med_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        }
+      ]
+    },
+    {
+      "id": 498080025,
+      "name": "Double-Neck Lute",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 1544333,
+      "soundId": 14,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080025.png",
+      "pickupSound": "Item_Misc_Big_Wood_Up",
+      "dropSound": "Item_Misc_Big_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408080008,
+      "name": "Gold Lion Statue",
+      "rarity": 6,
+      "size": "3x2",
+      "category": "Collectibles",
+      "contactPrice": 1540125,
+      "soundId": 28,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080008.png",
+      "pickupSound": "Prop_Acc_Statue_UP",
+      "dropSound": "Prop_Acc_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408080047,
+      "name": "Skyhook Synchronized Array Mirror",
+      "rarity": 6,
+      "size": "1x2",
+      "category": "Collectibles",
+      "contactPrice": 1532375,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080047.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Collectibles",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498080002,
+      "name": "Phaethon's Clock",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1531800,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080002.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498070002,
+      "name": "EEG",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 1524789,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070002.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Medical Supplies",
+          "cargoPrice": 480000
+        }
+      ]
+    },
+    {
+      "id": 498140005,
+      "name": "MRID Clamshell Laptop",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Electronics",
+      "contactPrice": 1512222,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498140005.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        }
+      ]
+    },
+    {
+      "id": 498140001,
+      "name": "Prototype Calculation Module",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Electronics",
+      "contactPrice": 1509600,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498140001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080005,
+      "name": "Real Matrix",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1507263,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080005.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408120019,
+      "name": "Target Positioning Module",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 1498500,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120019.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Uncommon Military Items",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408080029,
+      "name": "Gem Necklace",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1456875,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080029.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080041,
+      "name": "Gold Snake",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1429080,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080041.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080010,
+      "name": "Antique Teapot",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1415250,
+      "soundId": 32,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080010.png",
+      "pickupSound": "Prop_Acc_Teapot_UP",
+      "dropSound": "Prop_Acc_Teapot_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498080018,
+      "name": "\"Destiny\" Gold Clay Tablet",
+      "rarity": 6,
+      "size": "3x2",
+      "category": "Collectibles",
+      "contactPrice": 1397806,
+      "soundId": 6,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080018.png",
+      "pickupSound": "Item_Misc_Med_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Med_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498100003,
+      "name": "Three-Axis Gyro Controller Prototype",
+      "rarity": 6,
+      "size": "3x2",
+      "category": "Instruments",
+      "contactPrice": 1397385,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080016,
+      "name": "Amber Heart of Heaven",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 1395613,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080016.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498060003,
+      "name": "Quantum 2000 Toy Robot",
+      "rarity": 6,
+      "size": "2x3",
+      "category": "Household Items",
+      "contactPrice": 1394769,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498060003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080019,
+      "name": "Star of Kamona Pendant",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1386839,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080019.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080003,
+      "name": "Vase",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1373625,
+      "soundId": 30,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080003.png",
+      "pickupSound": "Item_Misc_Med_Glass_Up",
+      "dropSound": "Item_Misc_Med_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498080017,
+      "name": "Optoelectronic Hyperspace Model",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1371484,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080017.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498080011,
+      "name": "Peacock Fan",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1371231,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080011.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498060004,
+      "name": "Voice of Civilization Gold Record",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 1369290,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498060004.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498080010,
+      "name": "Heavenly Sphere",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1368615,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080010.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498080009,
+      "name": "Lyre",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1366000,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080009.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498080008,
+      "name": "Hefra Egg",
+      "rarity": 6,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 1363385,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498080008.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408120013,
+      "name": "TI Module",
+      "rarity": 6,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 1332000,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120013.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 50000
+        }
+      ]
+    },
+    {
+      "id": 408080049,
+      "name": "Raw Diamond Ore",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Collectibles",
+      "contactPrice": 498375,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080049.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Collectibles",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408080048,
+      "name": "Sergey 1 Satellite Model",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Collectibles",
+      "contactPrice": 469248,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080048.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 200000
+        }
+      ]
+    },
+    {
+      "id": 408080054,
+      "name": "Gold Pen",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 458373,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080054.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080050,
+      "name": "Jade Bracelet",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 456619,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080050.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080033,
+      "name": "Vintage Typewriter",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 301920,
+      "soundId": 8,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080033.png",
+      "pickupSound": "Item_Misc_Med_Wood_Up",
+      "dropSound": "Item_Misc_Med_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080019,
+      "name": "Record Player",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 297480,
+      "soundId": 8,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080019.png",
+      "pickupSound": "Item_Misc_Med_Wood_Up",
+      "dropSound": "Item_Misc_Med_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080014,
+      "name": "Porcelain",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 293040,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080014.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080030,
+      "name": "Gold Cup",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Collectibles",
+      "contactPrice": 275280,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080030.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Collectibles",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408080024,
+      "name": "Gold Block",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Collectibles",
+      "contactPrice": 270840,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080024.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 200000
+        }
+      ]
+    },
+    {
+      "id": 408080028,
+      "name": "Gold Cube",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 266400,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080028.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 498070011,
+      "name": "Pheromone Test Kit",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 259296,
+      "soundId": 24,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070011.png",
+      "pickupSound": "Item_Misc_Small_Glass_Up",
+      "dropSound": "Item_Misc_Small_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498070010,
+      "name": "Mutant Heart Sample",
+      "rarity": 5,
+      "size": "2x3",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 257520,
+      "soundId": 30,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070010.png",
+      "pickupSound": "Item_Misc_Med_Glass_Up",
+      "dropSound": "Item_Misc_Med_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498090010,
+      "name": "Mutant Evolution Sketch",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Paper",
+      "contactPrice": 243312,
+      "soundId": 35,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498090010.png",
+      "pickupSound": "Item_Misc_Small_Paper_Up",
+      "dropSound": "Item_Misc_Small_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050033,
+      "name": "Hydraulic Expander",
+      "rarity": 5,
+      "size": "2x3",
+      "category": "Tools",
+      "contactPrice": 194472,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050033.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030028,
+      "name": "Vector Processor",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Computer Parts",
+      "contactPrice": 193652,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030028.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408010016,
+      "name": "Large-Caliber Artillery Gunpowder Pack",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Flammables",
+      "contactPrice": 192534,
+      "soundId": 3,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010016.png",
+      "pickupSound": "Item_Misc_Med_Fabric_Up",
+      "dropSound": "Item_Misc_Med_Fabric_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408040008,
+      "name": "Battery-Powered Positive Electrode Module",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Energy Items",
+      "contactPrice": 192115,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408040008.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030025,
+      "name": "UPS Unit",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Computer Parts",
+      "contactPrice": 191808,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030025.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498060001,
+      "name": "Space Lab Toybox",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Household Items",
+      "contactPrice": 191387,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498060001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408140024,
+      "name": "Laptop Computer",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Electronics",
+      "contactPrice": 189144,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140024.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408140022,
+      "name": "Video Camera",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Electronics",
+      "contactPrice": 186480,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140022.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498100002,
+      "name": "K7-L Cipher Machine",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Instruments",
+      "contactPrice": 185269,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100002.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408070016,
+      "name": "Metal Heart",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 185077,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070016.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Medical Supplies",
+          "cargoPrice": 480000
+        }
+      ]
+    },
+    {
+      "id": 408120020,
+      "name": "Laser Pointer Module",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 183816,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120020.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Uncommon Military Items",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408090019,
+      "name": "Gungnir Blueprint Fragments",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Paper",
+      "contactPrice": 183453,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408090019.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 498020001,
+      "name": "Arched Corrugated Steel Plate",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 182893,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498020001.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408070012,
+      "name": "Automated External Defibrillator",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 173160,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070012.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Medical Supplies",
+          "cargoPrice": 480000
+        }
+      ]
+    },
+    {
+      "id": 408020026,
+      "name": "Palladium Wire",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 170496,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020026.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Building Materials",
+          "cargoPrice": 30000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408120017,
+      "name": "Leveler",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 167832,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120017.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 50000
+        }
+      ]
+    },
+    {
+      "id": 498070009,
+      "name": "Infrared Therapy Lamp",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 122544,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070009.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408080016,
+      "name": "Stamp Album",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Collectibles",
+      "contactPrice": 92907,
+      "soundId": 34,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080016.png",
+      "pickupSound": "Item_Misc_Med_Paper_Up",
+      "dropSound": "Item_Misc_Med_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Rare Collectibles",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408080001,
+      "name": "Gold Cheetah Statue",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Collectibles",
+      "contactPrice": 87912,
+      "soundId": 28,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080001.png",
+      "pickupSound": "Prop_Acc_Statue_UP",
+      "dropSound": "Prop_Acc_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 200000
+        }
+      ]
+    },
+    {
+      "id": 408080026,
+      "name": "Brooch",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 83916,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080026.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080025,
+      "name": "Diamond Ring",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 82917,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080025.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080013,
+      "name": "Gold Bracelet",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 81918,
+      "soundId": 29,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080013.png",
+      "pickupSound": "Item_Coin_Up",
+      "dropSound": "Item_Coin_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080004,
+      "name": "Gold Watch",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 80919,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080004.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408040004,
+      "name": "Car Battery",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Energy Items",
+      "contactPrice": 77340,
+      "soundId": 6,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408040004.png",
+      "pickupSound": "Item_Misc_Med_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Med_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408020025,
+      "name": "Sound-Muffling Cotton",
+      "rarity": 5,
+      "size": "3x2",
+      "category": "Building Materials",
+      "contactPrice": 76741,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020025.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408020019,
+      "name": "Titanium Alloy Plate",
+      "rarity": 5,
+      "size": "2x3",
+      "category": "Building Materials",
+      "contactPrice": 76141,
+      "soundId": 6,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020019.png",
+      "pickupSound": "Item_Misc_Med_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Med_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030004,
+      "name": "Graphics Card",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 75548,
+      "soundId": 12,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030004.png",
+      "pickupSound": "Prop_Acc_Tech_Small_UP",
+      "dropSound": "Prop_Acc_Tech_Small_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408010009,
+      "name": "Fuel Tank",
+      "rarity": 5,
+      "size": "2x3",
+      "category": "Flammables",
+      "contactPrice": 75542,
+      "soundId": 2,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010009.png",
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050039,
+      "name": "Blowtorch",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Tools",
+      "contactPrice": 72460,
+      "soundId": 20,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050039.png",
+      "pickupSound": "Item_Misc_Big_Blunt_Up",
+      "dropSound": "Item_Misc_Big_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        }
+      ]
+    },
+    {
+      "id": 408060052,
+      "name": "Deluxe Tea Set",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 63124,
+      "soundId": 24,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060052.png",
+      "pickupSound": "Item_Misc_Small_Glass_Up",
+      "dropSound": "Item_Misc_Small_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408120010,
+      "name": "Military Radio",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 62943,
+      "soundId": 38,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120010.png",
+      "pickupSound": "Prop_Acc_Radio_UP",
+      "dropSound": "Prop_Acc_Radio_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Uncommon Military Items",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408100011,
+      "name": "Antenna",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Instruments",
+      "contactPrice": 62343,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100011.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408010014,
+      "name": "High Energy Fuel",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Flammables",
+      "contactPrice": 62210,
+      "soundId": 2,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010014.png",
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Flammables",
+          "cargoPrice": 20000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030026,
+      "name": "Studio Monitor",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Computer Parts",
+      "contactPrice": 61295,
+      "soundId": 14,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030026.png",
+      "pickupSound": "Item_Misc_Big_Wood_Up",
+      "dropSound": "Item_Misc_Big_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 408060043,
+      "name": "Film Stock",
+      "rarity": 5,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 61144,
+      "soundId": 1,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060043.png",
+      "pickupSound": "Item_Misc_Med_Comp_Up",
+      "dropSound": "Item_Misc_Med_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 350000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408140001,
+      "name": "Game Console",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Electronics",
+      "contactPrice": 53946,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140001.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        }
+      ]
+    },
+    {
+      "id": 498120003,
+      "name": "T-147 Individual Communication Device",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 53724,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498120003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 498090001,
+      "name": "Voss' Journal",
+      "rarity": 5,
+      "size": "1x2",
+      "category": "Paper",
+      "contactPrice": 53446,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498090001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Paper",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 470000
+        }
+      ]
+    },
+    {
+      "id": 408090004,
+      "name": "Folder",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Paper",
+      "contactPrice": 53346,
+      "soundId": 37,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408090004.png",
+      "pickupSound": "Item_Misc_Big_Paper_Up",
+      "dropSound": "Item_Misc_Big_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 498070003,
+      "name": "Blood Glucose Meter Set",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 53280,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408050026,
+      "name": "Hydraulic Wrench",
+      "rarity": 5,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 52147,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050026.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 450000
+        }
+      ]
+    },
+    {
+      "id": 408140019,
+      "name": "Gold Phone",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Electronics",
+      "contactPrice": 50949,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140019.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Electronics",
+          "cargoPrice": 28000
+        }
+      ]
+    },
+    {
+      "id": 408070013,
+      "name": "Insulin Pump",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 47952,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070013.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 498070013,
+      "name": "Mutated Tissue Mass",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 43377,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070013.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 498060006,
+      "name": "Toland Access Card",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Household Items",
+      "contactPrice": 42755,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498060006.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 498070012,
+      "name": "Blocker Injector",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 42133,
+      "soundId": 24,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070012.png",
+      "pickupSound": "Item_Misc_Small_Glass_Up",
+      "dropSound": "Item_Misc_Small_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 498010003,
+      "name": "Magnesium Flint",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Flammables",
+      "contactPrice": 41511,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498010003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 498090008,
+      "name": "Dried Flower Bookmark",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Paper",
+      "contactPrice": 40888,
+      "soundId": 35,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498090008.png",
+      "pickupSound": "Item_Misc_Small_Paper_Up",
+      "dropSound": "Item_Misc_Small_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 498040002,
+      "name": "Ni-Cd Battery Pack",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Energy Items",
+      "contactPrice": 40266,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498040002.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 27000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 498100005,
+      "name": "Handheld Salinity Meter",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Instruments",
+      "contactPrice": 39644,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100005.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Instruments",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 498040001,
+      "name": "Solar Charger",
+      "rarity": 5,
+      "size": "1x1",
+      "category": "Energy Items",
+      "contactPrice": 39022,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498040001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 27000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 408080038,
+      "name": "Plaster Sculpture",
+      "rarity": 4,
+      "size": "2x3",
+      "category": "Collectibles",
+      "contactPrice": 33034,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080038.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408080015,
+      "name": "Gold-rimmed Glasses",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Collectibles",
+      "contactPrice": 29570,
+      "soundId": 26,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080015.png",
+      "pickupSound": "Item_Glass_Up",
+      "dropSound": "Item_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 200000
+        }
+      ]
+    },
+    {
+      "id": 408080009,
+      "name": "Desk Clock",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Collectibles",
+      "contactPrice": 29304,
+      "soundId": 31,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080009.png",
+      "pickupSound": "Prop_Acc_Clock_UP",
+      "dropSound": "Prop_Acc_Clock_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Uncommon Collectibles",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408080020,
+      "name": "Pocket Watch",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 14652,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080020.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080012,
+      "name": "Silver Chain",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 14557,
+      "soundId": 33,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080012.png",
+      "pickupSound": "Item_GoldChain_Up",
+      "dropSound": "Item_GoldChain_Down",
+      "sources": [
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080002,
+      "name": "Commemorative Coin",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 14462,
+      "soundId": 29,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080002.png",
+      "pickupSound": "Item_Coin_Up",
+      "dropSound": "Item_Coin_Down",
+      "sources": [
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408050009,
+      "name": "Hydraulic Rebar Cutter",
+      "rarity": 4,
+      "size": "3x2",
+      "category": "Tools",
+      "contactPrice": 13106,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050009.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 270000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408060046,
+      "name": "Camping Stove",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 13000,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060046.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050019,
+      "name": "Blower",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Tools",
+      "contactPrice": 12893,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050019.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050006,
+      "name": "Toolkit",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Tools",
+      "contactPrice": 12787,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050006.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050001,
+      "name": "Electric Drill",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Tools",
+      "contactPrice": 12680,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030009,
+      "name": "PSU",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Computer Parts",
+      "contactPrice": 12574,
+      "soundId": 12,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030009.png",
+      "pickupSound": "Prop_Acc_Tech_Small_UP",
+      "dropSound": "Prop_Acc_Tech_Small_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 408020015,
+      "name": "Impact-resistant Hard Rubber",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 12467,
+      "soundId": 4,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020015.png",
+      "pickupSound": "Prop_Acc_Fuel_UP",
+      "dropSound": "Prop_Acc_Fuel_Down",
+      "sources": [
+        {
+          "cargoType": "Building Materials",
+          "cargoPrice": 30000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408010008,
+      "name": "Propane Tank",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Flammables",
+      "contactPrice": 12360,
+      "soundId": 2,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010008.png",
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Flammables",
+          "cargoPrice": 20000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408010012,
+      "name": "Kerosene Lamp",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Flammables",
+      "contactPrice": 12295,
+      "soundId": 1,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010012.png",
+      "pickupSound": "Item_Misc_Med_Comp_Up",
+      "dropSound": "Item_Misc_Med_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498120001,
+      "name": "Military Tool Kit",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 12227,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498120001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498090009,
+      "name": "Bundle of Rice Paper",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Paper",
+      "contactPrice": 12219,
+      "soundId": 37,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498090009.png",
+      "pickupSound": "Item_Misc_Big_Paper_Up",
+      "dropSound": "Item_Misc_Big_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498070001,
+      "name": "Handheld Tester",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 12165,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070001.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498040003,
+      "name": "Capacitance Analyzer",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Energy Items",
+      "contactPrice": 12161,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498040003.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408120014,
+      "name": "Radio",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 12148,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120014.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 50000
+        }
+      ]
+    },
+    {
+      "id": 498100006,
+      "name": "Handheld Calculator",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Instruments",
+      "contactPrice": 12104,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100006.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498140004,
+      "name": "Personal Digital Assistant",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Electronics",
+      "contactPrice": 12090,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498140004.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408120002,
+      "name": "Cannon Shell",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 12041,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120002.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 498100004,
+      "name": "Handheld Receiver",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Instruments",
+      "contactPrice": 12022,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498100004.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498070004,
+      "name": "Electronic Stethoscope",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 11954,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498070004.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408100007,
+      "name": "Oscilloscope",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Instruments",
+      "contactPrice": 11934,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100007.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498010001,
+      "name": "Portable Fuel Canister",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Flammables",
+      "contactPrice": 11885,
+      "soundId": 2,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498010001.png",
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408060044,
+      "name": "Handheld Fill Light",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Household Items",
+      "contactPrice": 11615,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060044.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408010015,
+      "name": "Nitrocellulose",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Flammables",
+      "contactPrice": 11541,
+      "soundId": 3,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010015.png",
+      "pickupSound": "Item_Misc_Med_Fabric_Up",
+      "dropSound": "Item_Misc_Med_Fabric_Down",
+      "sources": [
+        {
+          "cargoType": "Flammables",
+          "cargoPrice": 20000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408050029,
+      "name": "Portable Jack",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 11508,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050029.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408060054,
+      "name": "Lute",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 11464,
+      "soundId": 25,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060054.png",
+      "pickupSound": "Item_Misc_Med_Wood_Clock_Up",
+      "dropSound": "Item_Misc_Med_Wood_Clock_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408030008,
+      "name": "Working LCD",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 11402,
+      "soundId": 13,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030008.png",
+      "pickupSound": "Prop_Acc_PC_UP",
+      "dropSound": "Prop_Acc_PC_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408140016,
+      "name": "Camera",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Electronics",
+      "contactPrice": 11295,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140016.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        },
+        {
+          "cargoType": "Electronics",
+          "cargoPrice": 28000
+        }
+      ]
+    },
+    {
+      "id": 408100012,
+      "name": "Gimbal",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Instruments",
+      "contactPrice": 11188,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100012.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Instruments",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 408060037,
+      "name": "Hearing Aid",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Household Items",
+      "contactPrice": 11082,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060037.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 408040006,
+      "name": "Solar Panel",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Energy Items",
+      "contactPrice": 10975,
+      "soundId": 16,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408040006.png",
+      "pickupSound": "Item_Acc_Med_Comp_Up",
+      "dropSound": "Item_Acc_Med_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 27000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        }
+      ]
+    },
+    {
+      "id": 408030013,
+      "name": "SSD",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Computer Parts",
+      "contactPrice": 10762,
+      "soundId": 12,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030013.png",
+      "pickupSound": "Prop_Acc_Tech_Small_UP",
+      "dropSound": "Prop_Acc_Tech_Small_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        }
+      ]
+    },
+    {
+      "id": 408120003,
+      "name": "Paracord",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 6622,
+      "soundId": 3,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120003.png",
+      "pickupSound": "Item_Misc_Med_Fabric_Up",
+      "dropSound": "Item_Misc_Med_Fabric_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        },
+        {
+          "cargoType": "Uncommon Military Items",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408060041,
+      "name": "Bag of Fertilizer",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Household Items",
+      "contactPrice": 6584,
+      "soundId": 23,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060041.png",
+      "pickupSound": "Item_Misc_Small_Fabric_Up",
+      "dropSound": "Item_Misc_Small_Fabric_Down",
+      "sources": [
+        {
+          "cargoType": "Household Items",
+          "cargoPrice": 100000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408020017,
+      "name": "Bag of Cement",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 6546,
+      "soundId": 5,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020017.png",
+      "pickupSound": "Prop_Acc_Concrete_UP",
+      "dropSound": "Prop_Acc_Concrete_Down",
+      "sources": [
+        {
+          "cargoType": "Building Materials",
+          "cargoPrice": 30000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408010006,
+      "name": "Oil Drum",
+      "rarity": 4,
+      "size": "2x2",
+      "category": "Flammables",
+      "contactPrice": 6507,
+      "soundId": 2,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010006.png",
+      "pickupSound": "Item_Container_Big_Metal_Up",
+      "dropSound": "Item_Container_Big_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Flammables",
+          "cargoPrice": 20000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408140021,
+      "name": "Data Cable",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Electronics",
+      "contactPrice": 6355,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140021.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 498140006,
+      "name": "GU-470 Portable Recorder",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Electronics",
+      "contactPrice": 6327,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498140006.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408120009,
+      "name": "Portable Transceiver",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 6317,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120009.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 498090002,
+      "name": "Space Boy Comic",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Paper",
+      "contactPrice": 6307,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/498090002.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Paper",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408120008,
+      "name": "Rangefinder Binoculars",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 6279,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120008.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408100002,
+      "name": "Air Tightness Tester",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Instruments",
+      "contactPrice": 6241,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100002.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408100001,
+      "name": "Gas Analyzer",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Instruments",
+      "contactPrice": 6203,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100001.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408050031,
+      "name": "Oil Bottle",
+      "rarity": 4,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 6165,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050031.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408050030,
+      "name": "Pipe Cleaning Kit",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Tools",
+      "contactPrice": 6127,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050030.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408010005,
+      "name": "Oil",
+      "rarity": 4,
+      "size": "1x2",
+      "category": "Flammables",
+      "contactPrice": 6089,
+      "soundId": 1,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408010005.png",
+      "pickupSound": "Item_Misc_Med_Comp_Up",
+      "dropSound": "Item_Misc_Med_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 250000
+        }
+      ]
+    },
+    {
+      "id": 408140015,
+      "name": "Lens",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Electronics",
+      "contactPrice": 5936,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140015.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Electronics",
+          "cargoPrice": 28000
+        }
+      ]
+    },
+    {
+      "id": 408100013,
+      "name": "Light Meter",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Instruments",
+      "contactPrice": 5898,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100013.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Instruments",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 408070010,
+      "name": "Bios.",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 5746,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070010.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408070003,
+      "name": "Thermometer",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 5708,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070003.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408060039,
+      "name": "Watch",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Household Items",
+      "contactPrice": 5632,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060039.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 408060030,
+      "name": "Game Cartridge",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Household Items",
+      "contactPrice": 5556,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060030.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        }
+      ]
+    },
+    {
+      "id": 408030016,
+      "name": "RAM",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Computer Parts",
+      "contactPrice": 5442,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030016.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Uncommon Mystery Cargo",
+          "cargoPrice": 210000
+        }
+      ]
+    },
+    {
+      "id": 408030014,
+      "name": "Chip Processor",
+      "rarity": 4,
+      "size": "1x1",
+      "category": "Computer Parts",
+      "contactPrice": 5404,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030014.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        }
+      ]
+    },
+    {
+      "id": 408080021,
+      "name": "Stamp",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 7165,
+      "soundId": 35,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080021.png",
+      "pickupSound": "Item_Misc_Small_Paper_Up",
+      "dropSound": "Item_Misc_Small_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080011,
+      "name": "Silver Badge",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Collectibles",
+      "contactPrice": 7064,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080011.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408080022,
+      "name": "Spur",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Collectibles",
+      "contactPrice": 4764,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408080022.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Collectibles",
+          "cargoPrice": 200000
+        }
+      ]
+    },
+    {
+      "id": 408020022,
+      "name": "Acoustic Panel",
+      "rarity": 3,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 1977,
+      "soundId": 8,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020022.png",
+      "pickupSound": "Item_Misc_Med_Wood_Up",
+      "dropSound": "Item_Misc_Med_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Building Materials",
+          "cargoPrice": 30000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408020021,
+      "name": "Rubber Pad",
+      "rarity": 3,
+      "size": "2x2",
+      "category": "Building Materials",
+      "contactPrice": 1957,
+      "soundId": 7,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020021.png",
+      "pickupSound": "Prop_Acc_Plastic_Large_UP_01",
+      "dropSound": "Prop_Acc_Plastic_Large_Down_02",
+      "sources": [
+        {
+          "cargoType": "Building Materials",
+          "cargoPrice": 30000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Rare Mystery Cargo",
+          "cargoPrice": 550000
+        }
+      ]
+    },
+    {
+      "id": 408140005,
+      "name": "DVD",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Electronics",
+      "contactPrice": 1937,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140005.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408120012,
+      "name": "Signal Jammer",
+      "rarity": 3,
+      "size": "1x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 1917,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120012.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 408120011,
+      "name": "Receiver",
+      "rarity": 3,
+      "size": "1x2",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 1897,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120011.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 30000
+        }
+      ]
+    },
+    {
+      "id": 408120001,
+      "name": "Weapon Parts",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 1877,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120001.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 50000
+        }
+      ]
+    },
+    {
+      "id": 408090001,
+      "name": "Document",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Paper",
+      "contactPrice": 1836,
+      "soundId": 35,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408090001.png",
+      "pickupSound": "Item_Misc_Small_Paper_Up",
+      "dropSound": "Item_Misc_Small_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408060042,
+      "name": "Camping Tarp",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Household Items",
+      "contactPrice": 1776,
+      "soundId": 3,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060042.png",
+      "pickupSound": "Item_Misc_Med_Fabric_Up",
+      "dropSound": "Item_Misc_Med_Fabric_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408050023,
+      "name": "High Power Flashlight",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 1715,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050023.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408050013,
+      "name": "Toolbox",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 1695,
+      "soundId": 19,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050013.png",
+      "pickupSound": "Item_Container_Small_Metal_Up",
+      "dropSound": "Item_Container_Small_Metal_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408030023,
+      "name": "Floppy Drive",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 1675,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030023.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408030007,
+      "name": "Broken LCD",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 1655,
+      "soundId": 13,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030007.png",
+      "pickupSound": "Prop_Acc_PC_UP",
+      "dropSound": "Prop_Acc_PC_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408020024,
+      "name": "Wood Board",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Building Materials",
+      "contactPrice": 1634,
+      "soundId": 8,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408020024.png",
+      "pickupSound": "Item_Misc_Med_Wood_Up",
+      "dropSound": "Item_Misc_Med_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408100005,
+      "name": "Wave Filter",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Instruments",
+      "contactPrice": 1453,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408100005.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Instruments",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 408050028,
+      "name": "Safety Hammer",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Tools",
+      "contactPrice": 1372,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050028.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 40000
+        }
+      ]
+    },
+    {
+      "id": 408140014,
+      "name": "Classic Radio",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Electronics",
+      "contactPrice": 989,
+      "soundId": 38,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408140014.png",
+      "pickupSound": "Prop_Acc_Radio_UP",
+      "dropSound": "Prop_Acc_Radio_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408120005,
+      "name": "Military Canteen",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Miscellaneous Military Item",
+      "contactPrice": 980,
+      "soundId": 36,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408120005.png",
+      "pickupSound": "Item_Misc_Med_Statue_Up",
+      "dropSound": "Item_Misc_Med_Statue_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Military Items",
+          "cargoPrice": 50000
+        }
+      ]
+    },
+    {
+      "id": 408090002,
+      "name": "Hardcover",
+      "rarity": 3,
+      "size": "1x2",
+      "category": "Paper",
+      "contactPrice": 962,
+      "soundId": 37,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408090002.png",
+      "pickupSound": "Item_Misc_Big_Paper_Up",
+      "dropSound": "Item_Misc_Big_Paper_Down",
+      "sources": [
+        {
+          "cargoType": "Paper",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 408060021,
+      "name": "Photo Frame",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Household Items",
+      "contactPrice": 934,
+      "soundId": 21,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408060021.png",
+      "pickupSound": "Item_Misc_Small_Wood_Up",
+      "dropSound": "Item_Misc_Small_Wood_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408050032,
+      "name": "Glue Gun",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 906,
+      "soundId": 17,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050032.png",
+      "pickupSound": "Item_Misc_Med_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Med_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408050011,
+      "name": "Pipe Wrench",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 897,
+      "soundId": 18,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050011.png",
+      "pickupSound": "Item_Misc_Small_Metal_Blunt_Up",
+      "dropSound": "Item_Misc_Small_Metal_Blunt_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        },
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        }
+      ]
+    },
+    {
+      "id": 408030024,
+      "name": "VGA Display Cable",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 888,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030024.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408030003,
+      "name": "Power Cable",
+      "rarity": 3,
+      "size": "2x1",
+      "category": "Computer Parts",
+      "contactPrice": 878,
+      "soundId": 11,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408030003.png",
+      "pickupSound": "Prop_Acc_Plastic_Small_UP",
+      "dropSound": "Prop_Acc_Plastic_Small_Down",
+      "sources": [
+        {
+          "cargoType": "Mystery Cargo",
+          "cargoPrice": 70000
+        },
+        {
+          "cargoType": "Computer Parts",
+          "cargoPrice": 20000
+        }
+      ]
+    },
+    {
+      "id": 408070002,
+      "name": "Syringe",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 804,
+      "soundId": 26,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070002.png",
+      "pickupSound": "Item_Glass_Up",
+      "dropSound": "Item_Glass_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408070001,
+      "name": "Glucose Injection",
+      "rarity": 3,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 795,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070001.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408050022,
+      "name": "Flashlight",
+      "rarity": 1,
+      "size": "2x1",
+      "category": "Tools",
+      "contactPrice": 551,
+      "soundId": 10,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408050022.png",
+      "pickupSound": "Item_Misc_ElectronicDevice_Up",
+      "dropSound": "Item_Misc_ElectronicDevice_Down",
+      "sources": [
+        {
+          "cargoType": "Tools",
+          "cargoPrice": 15000
+        }
+      ]
+    },
+    {
+      "id": 408070011,
+      "name": "Disinfectant",
+      "rarity": 1,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 503,
+      "soundId": 9,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070011.png",
+      "pickupSound": "Item_Misc_Small_Comp_Up",
+      "dropSound": "Item_Misc_Small_Comp_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408070009,
+      "name": "Medical Scissors",
+      "rarity": 1,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 495,
+      "soundId": 22,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070009.png",
+      "pickupSound": "Item_Misc_Small_Metal_Crisp_Up",
+      "dropSound": "Item_Misc_Small_Metal_Crisp_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408040002,
+      "name": "D-size Battery",
+      "rarity": 1,
+      "size": "1x1",
+      "category": "Energy Items",
+      "contactPrice": 431,
+      "soundId": 15,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408040002.png",
+      "pickupSound": "Prop_Acc_Battery_Small_UP_01",
+      "dropSound": "Prop_Acc_Battery_Small_Down_01",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 27000
+        }
+      ]
+    },
+    {
+      "id": 408070008,
+      "name": "Medical Sponge",
+      "rarity": 1,
+      "size": "1x1",
+      "category": "Miscellaneous Medical Item",
+      "contactPrice": 289,
+      "soundId": 27,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408070008.png",
+      "pickupSound": "Item_Food_Bag_Up",
+      "dropSound": "Item_Food_Bag_Down",
+      "sources": [
+        {
+          "cargoType": "Medical Supplies",
+          "cargoPrice": 6000
+        }
+      ]
+    },
+    {
+      "id": 408040001,
+      "name": "Battery",
+      "rarity": 1,
+      "size": "1x1",
+      "category": "Energy Items",
+      "contactPrice": 253,
+      "soundId": 15,
+      "iconUrl": "https://hexaov91.github.io/abi-assets/image/Normal/408040001.png",
+      "pickupSound": "Prop_Acc_Battery_Small_UP_01",
+      "dropSound": "Prop_Acc_Battery_Small_Down_01",
+      "sources": [
+        {
+          "cargoType": "Energy Items",
+          "cargoPrice": 27000
+        }
+      ]
+    }
+  ],
+  "cargoTypes": [
+    "Building Materials",
+    "Collectibles",
+    "Computer Parts",
+    "Electronics",
+    "Energy Items",
+    "Flammables",
+    "Household Items",
+    "Instruments",
+    "Medical Supplies",
+    "Military Items",
+    "Mystery Cargo",
+    "Paper",
+    "Rare Collectibles",
+    "Rare Medical Supplies",
+    "Rare Mystery Cargo",
+    "Tools",
+    "Uncommon Collectibles",
+    "Uncommon Military Items",
+    "Uncommon Mystery Cargo"
+  ],
+  "cargoPrices": [
+    6000,
+    15000,
+    20000,
+    27000,
+    28000,
+    30000,
+    40000,
+    50000,
+    70000,
+    100000,
+    200000,
+    210000,
+    250000,
+    270000,
+    350000,
+    450000,
+    470000,
+    480000,
+    550000
+  ],
+  "sizes": [
+    "1x1",
+    "1x2",
+    "2x1",
+    "2x2",
+    "2x3",
+    "3x2"
+  ]
+}

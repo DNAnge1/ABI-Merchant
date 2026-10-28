@@ -257,8 +257,8 @@ export class AudioMatcher {
     if (!audioTracks.length) {
       this.stream.getTracks().forEach((t) => t.stop());
       this.stream = null;
-      this.setStatus('error', 'No audio track — share a tab/window with audio enabled');
-      throw new Error('No audio track in display media');
+      this.setStatus('error', 'No Audio Track Detected');
+      throw new Error('No Audio Track Detected');
     }
 
     this.ctx = new AudioContext();

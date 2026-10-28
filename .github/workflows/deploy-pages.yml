@@ -23,8 +23,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # Build ONLY from committed static assets (src/data/*.json + public/sounds/*.ogg).
-      # Do NOT run npm run extract / Playwright / ffmpeg on CI — players need zero local tooling.
+      # Cloud-only Pages: build from committed static assets only
+      # (src/data/*.json + public/sounds/*.ogg). Never run extract/Playwright/ffmpeg.
       - run: npm ci
       - name: Verify committed merchant assets
         run: |

@@ -1,47 +1,48 @@
 # ABI Field Merchant Scanner
 
-100% client-side static web app for *Arena Breakout: Infinite* (Season 7). Identify Mystery Cargo by matching in-game pickup/drop audio against the 38 Sound IDs from [abibuilder.com/merchant](https://abibuilder.com/merchant), filtered by cargo size and price.
+100% client-side static web app for *Arena Breakout: Infinite* (Season 7). Identify Mystery Cargo by matching in-game pickup/drop audio against the 38 Sound IDs from [abibuilder.com/merchant](https://abibuilder.com/merchant).
 
-**Players need zero install.** Open the hosted site (GitHub Pages / custom domain) in Chrome or Edge. No `npm`, Playwright, or ffmpeg.
+**Players need zero install.** Open the hosted site (GitHub Pages / custom domain) in **Chrome** or **Edge**. No `npm`, Playwright, or ffmpeg.
 
 **Privacy:** audio never leaves the device. No backend.
 
-## Player flow (hosted)
+## Player flow
 
-1. Put the game on a windowed / second monitor; open this site in Chrome/Edge.
-2. Set cargo **size**, **type**, and **price** to match the box you see.
-3. Click **Start Listening — Capture Game Audio** and share the **game window/tab with audio**.
-4. Grab or drag the Mystery Cargo in-game.
-5. The app detects the audio spike, matches a Sound ID, then shows:
-   - **Red / Mythic chance (%)** among candidates for that sound under your filters
-   - **Exact candidate list** (Reds first) with **Koen** contact values
+### Automatic Mode (default)
+1. Game on a windowed / second monitor; open this site in Chrome/Edge.
+2. **Verify / Test Audio Access** — confirms `getDisplayMedia` audio (fixes for Chromium/Windows system audio, Brave Shields; Firefox/Safari → Manual Mode).
+3. **Start Listening** — share game window/tab **with audio**.
+4. Grab/drag Mystery Cargo — onset detect matches **all 38 Sound IDs** (no size/price pre-filter).
+5. **Size-grouped results**: cards for 1x1 / 1x2 / 2x1 / 2x2 / 2x3 / 3x2 (rotations labeled) with per-size **Red chance %**, candidates (Reds first: name, rarity, Koen, cargo price tiers).
 
-Reference data (`src/data/merchantData.json`, `src/data/fingerprints.json`) and all 76 pickup/drop `.ogg` files under `public/sounds/` are **committed** — GitHub Pages builds only those static assets (no scrape at deploy time).
+### Manual Mode
+- Size / cargo type / cargo price **filter pills**
+- Sound board: Pick up / Drop for all 38 IDs
+- Click a Sound ID → same size-grouped results view
+
+## Committed static assets (Pages OOTB)
+
+- `src/data/merchantData.json`
+- `src/data/fingerprints.json`
+- `public/sounds/*.ogg` (76 = 38 pickup + 38 drop)
+
+GitHub Pages builds **only** these assets — no scrape/extract in CI.
 
 ## Dev / maintainers
 
 ```bash
 npm install
-npm run dev       # http://localhost:5173
-npm run build     # production bundle (includes committed sounds)
+npm run dev
+npm run build
 ```
 
-Refresh scraped data (maintainers only — not required for players or Pages):
+Refresh data (maintainers only):
 
 ```bash
-npx playwright install chromium   # once
-# ffmpeg on PATH
-npm run extract
+npx playwright install chromium
+npm run extract   # needs ffmpeg; not used by Pages
 ```
-
-`npm run extract` may fall back to a Wayback snapshot if live abibuilder HTML is Cloudflare-blocked. Audio CDN URLs are usually fetchable directly.
 
 ## Pages build path
 
-`.github/workflows/deploy-pages.yml` on `main`:
-
-1. `npm ci`
-2. Verify committed `merchantData.json`, `fingerprints.json`, and 76 OGGs
-3. `GITHUB_PAGES=1 npm run build` → upload `dist/`
-
-No extract / Playwright / ffmpeg in CI.
+`.github/workflows/deploy-pages.yml` on `main`: verify committed JSON + 76 OGGs → `GITHUB_PAGES=1 npm run build` → deploy `dist/`.

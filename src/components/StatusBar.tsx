@@ -1,7 +1,9 @@
 import type { MatcherStatus } from '../utils/audioMatcher';
 
+export type AppMode = 'automatic' | 'manual';
+
 const STEPS = [
-  { id: 1, label: 'Select Cargo' },
+  { id: 1, label: 'Select / Ready' },
   { id: 2, label: 'Listening' },
   { id: 3, label: 'Drag Cargo' },
   { id: 4, label: 'Match Ready' },
@@ -9,42 +11,57 @@ const STEPS = [
 
 function stepFromStatus(
   status: MatcherStatus,
-  hasCargo: boolean,
+  mode: AppMode,
+  hasResult: boolean,
   detail?: string,
 ): { step: number; detail: string } {
-  if (!hasCargo) return { step: 1, detail: 'Select size & price for the Mystery Cargo box' };
+  if (hasResult || status === 'done') {
+    return { step: 4, detail: detail || 'Match ready' };
+  }
   switch (status) {
-    case 'idle':
-      return { step: 1, detail: 'Click Start Listening, then share the game window with audio' };
     case 'listening':
-      return { step: 2, detail: detail || 'Listening… grab or drag the cargo in-game' };
+      return {
+        step: 2,
+        detail: detail || 'Listening… grab or drag cargo (matches all 38 Sound IDs)',
+      };
     case 'capturing':
-      return { step: 3, detail: detail || 'Checking Sound…' };
     case 'matching':
-      return { step: 3, detail: detail || 'Matching Sound ID…' };
-    case 'done':
-      return { step: 4, detail: detail || 'Done' };
+      return { step: 3, detail: detail || 'Checking sound…' };
     case 'error':
       return { step: 1, detail: detail || 'Error' };
     default:
-      return { step: 1, detail: '' };
+      return {
+        step: 1,
+        detail:
+          mode === 'automatic'
+            ? detail || 'Verify audio, then Start Listening — no size/price filter needed'
+            : detail || 'Pick filters or a Sound ID, or Start Listening',
+      };
   }
 }
 
 export function StatusBar(props: {
   status: MatcherStatus;
-  hasCargo: boolean;
+  mode: AppMode;
   detail?: string;
   capturing: boolean;
+  hasResult: boolean;
   redPct?: number | null;
+  onModeChange: (mode: AppMode) => void;
   onStart: () => void;
   onStop: () => void;
+  onVerify: () => void;
 }) {
-  const { step, detail } = stepFromStatus(props.status, props.hasCargo, props.detail);
+  const { step, detail } = stepFromStatus(
+    props.status,
+    props.mode,
+    props.hasResult,
+    props.detail,
+  );
 
   return (
-    <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/90 backdrop-blur-sm px-3 py-2">
-      <div className="flex flex-wrap items-center gap-3 justify-between">
+    <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur-sm px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <h1 className="text-sm font-semibold tracking-wide text-[var(--accent)] m-0">
@@ -53,7 +70,7 @@ export function StatusBar(props: {
             <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
               Audio & Grid Scanner
             </span>
-            {props.redPct != null && props.status === 'done' && (
+            {props.redPct != null && props.hasResult && (
               <span
                 className={[
                   'rounded px-2 py-0.5 text-[11px] font-bold tabular-nums',
@@ -69,20 +86,55 @@ export function StatusBar(props: {
           <p className="m-0 mt-0.5 text-xs text-[var(--muted)] truncate">{detail}</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded border border-[var(--border)] overflow-hidden text-[11px]">
+            <button
+              type="button"
+              onClick={() => props.onModeChange('automatic')}
+              className={[
+                'px-2.5 py-1.5 font-medium',
+                props.mode === 'automatic'
+                  ? 'bg-[var(--accent-dim)] text-[var(--text)]'
+                  : 'bg-transparent text-[var(--muted)] hover:text-[var(--text)]',
+              ].join(' ')}
+            >
+              Automatic
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onModeChange('manual')}
+              className={[
+                'px-2.5 py-1.5 font-medium border-l border-[var(--border)]',
+                props.mode === 'manual'
+                  ? 'bg-[var(--accent-dim)] text-[var(--text)]'
+                  : 'bg-transparent text-[var(--muted)] hover:text-[var(--text)]',
+              ].join(' ')}
+            >
+              Manual
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={props.onVerify}
+            className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+          >
+            Verify / Test Audio Access
+          </button>
+
           {!props.capturing ? (
             <button
               type="button"
               onClick={props.onStart}
-              className="rounded px-3 py-2 text-xs font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110 shadow-[0_0_20px_rgba(61,214,198,0.25)]"
+              className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
             >
-              Start Listening — Capture Game Audio
+              Start Listening
             </button>
           ) : (
             <button
               type="button"
               onClick={props.onStop}
-              className="rounded px-3 py-2 text-xs font-medium bg-[#3a1f24] text-[#ffb4bc] border border-[#5c2a33] hover:bg-[#4a2830]"
+              className="rounded px-3 py-1.5 text-[11px] font-medium bg-[#3a1f24] text-[#ffb4bc] border border-[#5c2a33]"
             >
               Stop Listening
             </button>

@@ -53,6 +53,16 @@ export interface MatchResult {
   kind: SoundKind;
   items: MerchantItem[];
   spectralCentroid: number;
+  /** Captured spectrum bands for calibration / miss logging */
+  spectrumVector?: number[];
+  capturedCentroid?: number;
+}
+
+export interface MatchPayload {
+  matches: MatchResult[];
+  peakMs: number;
+  spectrumVector: number[];
+  capturedCentroid: number;
 }
 
 export interface MatcherOptions {
@@ -60,10 +70,15 @@ export interface MatcherOptions {
   noiseFloor?: number;
   /** Capture window after onset in ms. Default 300 */
   sliceMs?: number;
-  /** Cooldown between detections in ms. Default 800 */
+  /** Cooldown between detections in ms. Default 800; continuous ~600 */
   cooldownMs?: number;
   /** Prefer pickup, drop, or auto (try both, take best). Default auto */
   kind?: SoundKind | 'auto';
+  /**
+   * After the browser window regains focus, ignore onsets for this many ms
+   * (single-monitor Alt+Tab grace). 0 = off.
+   */
+  focusGraceMs?: number;
 }
 
 export type MatcherStatus =
@@ -199,10 +214,14 @@ export class AudioMatcher {
   private sliceMs: number;
   private cooldownMs: number;
   private kind: SoundKind | 'auto';
+  private focusGraceMs: number;
+  private focusBlockUntil = 0;
+  private listeningPaused = false;
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
-  private onMatch?: (matches: MatchResult[], peakMs: number) => void;
+  private onMatch?: (payload: MatchPayload) => void;
   private fingerprints: FingerprintsFile;
   private candidateSoundIds: number[] = [];
+  private onFocusBound = () => this.armFocusGrace();
 
   constructor(
     fingerprints: FingerprintsFile,
@@ -213,11 +232,12 @@ export class AudioMatcher {
     this.sliceMs = opts.sliceMs ?? 300;
     this.cooldownMs = opts.cooldownMs ?? 800;
     this.kind = opts.kind ?? 'auto';
+    this.focusGraceMs = opts.focusGraceMs ?? 0;
   }
 
   setCallbacks(cbs: {
     onStatus?: (s: MatcherStatus, detail?: string) => void;
-    onMatch?: (matches: MatchResult[], peakMs: number) => void;
+    onMatch?: (payload: MatchPayload) => void;
   }) {
     this.onStatus = cbs.onStatus;
     this.onMatch = cbs.onMatch;
@@ -231,8 +251,34 @@ export class AudioMatcher {
     this.noiseFloor = v;
   }
 
+  setCooldownMs(v: number) {
+    this.cooldownMs = v;
+  }
+
+  setFocusGraceMs(v: number) {
+    this.focusGraceMs = v;
+  }
+
+  /** Pause onset detection (single-item lock) without tearing down the stream. */
+  setListeningPaused(paused: boolean) {
+    this.listeningPaused = paused;
+    if (!paused && this.analyser && this.status !== 'listening' && this.status !== 'capturing') {
+      this.setStatus('listening', 'Listening… grab or drag Mystery Cargo in-game');
+    }
+  }
+
+  isListeningPaused() {
+    return this.listeningPaused;
+  }
+
   getStatus() {
     return this.status;
+  }
+
+  private armFocusGrace() {
+    if (this.focusGraceMs > 0) {
+      this.focusBlockUntil = performance.now() + this.focusGraceMs;
+    }
   }
 
   private setStatus(s: MatcherStatus, detail?: string) {
@@ -273,6 +319,11 @@ export class AudioMatcher {
       t.addEventListener('ended', () => void this.stop());
     });
 
+    window.addEventListener('focus', this.onFocusBound);
+    document.addEventListener('visibilitychange', this.onFocusBound);
+    this.listeningPaused = false;
+    this.armFocusGrace();
+
     this.setStatus('listening', 'Listening… grab or drag Mystery Cargo in-game');
     this.loop();
   }
@@ -280,11 +331,14 @@ export class AudioMatcher {
   async stop(): Promise<void> {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    window.removeEventListener('focus', this.onFocusBound);
+    document.removeEventListener('visibilitychange', this.onFocusBound);
     this.source?.disconnect();
     this.source = null;
     this.analyser = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
+    this.listeningPaused = false;
     if (this.ctx) {
       await this.ctx.close().catch(() => undefined);
       this.ctx = null;
@@ -309,7 +363,10 @@ export class AudioMatcher {
     }
     const rms = Math.sqrt(sum / buf.length);
     const now = performance.now();
+    const focusBlocked = now < this.focusBlockUntil;
     if (
+      !this.listeningPaused &&
+      !focusBlocked &&
       this.status === 'listening' &&
       rms >= this.noiseFloor &&
       now - this.lastTrigger > this.cooldownMs
@@ -348,7 +405,6 @@ export class AudioMatcher {
 
     this.setStatus('matching', 'Matching…');
 
-    // Average frames
     const bands = frames[0]?.length || 32;
     const avg = new Array(bands).fill(0);
     for (const f of frames) {
@@ -370,22 +426,26 @@ export class AudioMatcher {
       candidates,
       this.kind,
       centroid,
-    );
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     this.setStatus(
       'done',
       matches[0]
-        ? `Done: Sound ${matches[0].soundId} · audio ${matches[0].confidence}%`
+        ? `Done: Group ${matches[0].soundId} · audio ${matches[0].confidence}%`
         : 'Done: no match',
     );
-    this.onMatch?.(matches, peakMs);
+    this.onMatch?.({ matches, peakMs, spectrumVector, capturedCentroid: centroid });
 
-    // Return to listening after brief pause
+    // Continuous mode resumes listening; single-item mode keeps paused via setListeningPaused
     setTimeout(() => {
-      if (this.analyser && this.status === 'done') {
+      if (this.analyser && this.status === 'done' && !this.listeningPaused) {
         this.setStatus('listening', 'Listening…');
       }
-    }, 1500);
+    }, 400);
 
     return matches;
   }

@@ -150,22 +150,29 @@ export async function captureMicWithAudio(
   return { stream, ctx, diagnostics, browser, sourceKind: 'microphone' };
 }
 
+/**
+ * Exclusive-mode fix — use these steps verbatim in Verify / error tips.
+ * Site microphone Allow is not the same as disabling exclusive control.
+ */
+export const EXCLUSIVE_MODE_STEPS: string[] = [
+  'Win+R → mmsys.cpl → Enter',
+  'Playback → right-click default device → Properties → Advanced',
+  'Uncheck “Allow applications to take exclusive control of this device” → Apply → OK',
+  'Repeat under Recording for default recording device',
+];
+
 /** Short docs shown in the mic/loopback fallback UI. */
 export const LOOPBACK_SETUP_STEPS: { title: string; body: string }[] = [
   {
-    title: 'VB-Audio Cable (recommended)',
-    body: 'Install VB-Cable (or VoiceMeeter). Set Cable Input as Windows default playback (or route ABI/game there). In Chrome pick “CABLE Output” as the input below.',
+    title: 'VB-Audio Cable (recommended for ABI)',
+    body: 'Install VB-Cable (or VoiceMeeter). Set Cable Input as Windows default playback (or route ABI there). In Chrome pick “CABLE Output” as the input below. Chrome Tab share cannot hear desktop ABI game audio.',
   },
   {
     title: 'Stereo Mix',
-    body: 'Classic Sound Control Panel (mmsys.cpl) → Recording → right-click empty area → Show Disabled Devices → enable Stereo Mix → set as Default. Pick Stereo Mix below.',
+    body: 'mmsys.cpl → Recording → right-click empty area → Show Disabled Devices → enable Stereo Mix → set as Default. Pick Stereo Mix below.',
   },
   {
     title: 'Listen to this device',
     body: 'Recording device Properties → Listen → check “Listen to this device” and choose your speakers. Then pick that recording device here (or use Cable as above).',
-  },
-  {
-    title: 'Logitech G560 / exclusive mode',
-    body: 'Site Allow ≠ exclusive mode. Open classic Sound (mmsys.cpl) → Playback → G560 → Properties → Advanced → uncheck both “Allow applications to take exclusive control of this device”. Apply, then retry screen share or use Cable/Stereo Mix.',
   },
 ];

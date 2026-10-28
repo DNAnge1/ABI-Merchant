@@ -114,7 +114,7 @@ export function formatCaptureError(err: unknown, diagnostics: CaptureDiagnostics
 
   if (/could not start audio source/i.test(msg) || name === 'NotReadableError') {
     lines.push(
-      'Hint: Chromium failed to open system-audio loopback (common with G560 exclusive mode). Use “Microphone / loopback” fallback (VB-Cable / Stereo Mix), or Chrome Tab + Share tab audio.',
+      'Hint: Next step — Mic / loopback (VB-Cable / Stereo Mix). Chrome Tab won’t capture ABI desktop game audio. Exclusive mode: Win+R → mmsys.cpl → Playback/Recording → Properties → Advanced → uncheck exclusive control.',
     );
   }
 

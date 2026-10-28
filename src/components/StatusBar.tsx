@@ -129,7 +129,7 @@ export function StatusBar(props: {
               type="button"
               onClick={props.onMicFallback}
               className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--accent)]/50 text-[var(--accent)] hover:bg-[var(--accent-dim)]/30"
-              title="Use VB-Cable / Stereo Mix / mic when screen system-audio fails"
+              title="Recommended for desktop ABI — VB-Cable / Stereo Mix (Chrome Tab won’t hear game audio)"
             >
               Mic / loopback
             </button>

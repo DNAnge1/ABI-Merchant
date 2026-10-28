@@ -23,8 +23,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Build ONLY from committed static assets (src/data/*.json + public/sounds/*.ogg).
+      # Do NOT run npm run extract / Playwright / ffmpeg on CI — players need zero local tooling.
       - run: npm ci
+      - name: Verify committed merchant assets
+        run: |
+          test -f src/data/merchantData.json
+          test -f src/data/fingerprints.json
+          count=$(find public/sounds -name '*.ogg' | wc -l)
+          echo "ogg count=$count"
+          test "$count" -eq 76
       - run: GITHUB_PAGES=1 npm run build
+      - name: Verify dist includes reference audio
+        run: |
+          count=$(find dist/sounds -name '*.ogg' | wc -l)
+          echo "dist ogg count=$count"
+          test "$count" -eq 76
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

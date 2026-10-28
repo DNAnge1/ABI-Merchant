@@ -273,7 +273,7 @@ export class AudioMatcher {
       t.addEventListener('ended', () => void this.stop());
     });
 
-    this.setStatus('listening', 'Listening…');
+    this.setStatus('listening', 'Listening… grab or drag Mystery Cargo in-game');
     this.loop();
   }
 
@@ -375,7 +375,7 @@ export class AudioMatcher {
     this.setStatus(
       'done',
       matches[0]
-        ? `Done: Sound ${matches[0].soundId} ${matches[0].confidence}%`
+        ? `Done: Sound ${matches[0].soundId} · audio ${matches[0].confidence}%`
         : 'Done: no match',
     );
     this.onMatch?.(matches, peakMs);

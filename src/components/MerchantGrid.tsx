@@ -21,6 +21,8 @@ export function MerchantGrid(props: {
   highlightedSoundId?: number | null;
   confidences?: Record<number, number>;
   onSelectItem?: (item: MerchantItem) => void;
+  /** Label contact price as Koen (player currency). */
+  showKoen?: boolean;
 }) {
   if (!props.items.length) {
     return (
@@ -98,8 +100,8 @@ export function MerchantGrid(props: {
                   Sound {item.soundId}
                 </p>
                 <p className="m-0 mt-1 text-[11px]">
-                  Contact{' '}
-                  <span className="text-[var(--accent)] font-medium">
+                  {props.showKoen ? 'Koen' : 'Contact'}{' '}
+                  <span className="text-[var(--accent)] font-medium tabular-nums">
                     {item.contactPrice.toLocaleString()}
                   </span>
                   {conf != null && (

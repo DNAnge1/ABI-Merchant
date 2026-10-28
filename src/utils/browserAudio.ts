@@ -49,6 +49,8 @@ export interface VerifyState {
   rms: number;
   peakRms: number;
   hasAudioTrack: boolean;
+  /** Multi-line / detailed diagnostics for the Verify panel */
+  detail?: string;
 }
 
 /** Play a short ~440Hz beep through speakers (for "can you hear the game?" checks). */
@@ -88,16 +90,17 @@ export function browserFixSteps(info: BrowserInfo): string[] {
     case 'edge':
     case 'chromium':
       return [
-        'Click Start Listening / Verify and choose the game window, or Entire Screen on Windows.',
-        'On Windows with Entire Screen: enable “Also share system audio”.',
-        'If sharing a Chrome tab: enable “Share tab audio”.',
-        'Keep ABI unmuted and make a sound in-game (hover/move items) while the meter runs.',
+        'Preferred: share a Chrome/Edge tab that has game audio (or Discord/OBS monitoring) with “Share tab audio” checked — most reliable.',
+        'Entire Screen + “Also share system audio” (Windows) often throws Chromium NotReadableError “Could not start audio source” when WASAPI loopback fails.',
+        'Windows: Settings → System → Sound → Input — set a working microphone/Stereo Mix as default; disable Exclusive Mode on playback devices.',
+        'Close apps that grab exclusive audio (Discord “Exclusive Mode”, some DAWs, steelseries/sonic drivers), then retry.',
+        'Keep ABI unmuted and move over Field Merchant items while the meter runs.',
       ];
     case 'brave':
       return [
-        'Brave can block capture — open Shields for this site and set them to Down / allowlisted.',
-        'Then share the game window or Entire Screen with system audio (Windows).',
-        'Retry Verify / Test Audio Access after adjusting Shields.',
+        'Brave Shields can block capture — set Shields Down for this site.',
+        'Then prefer sharing a Brave/Chrome tab with “Share tab audio”, or Entire Screen + system audio.',
+        'If you see “Could not start audio source”, fix Windows default recording device / exclusive-mode apps (same as Chrome).',
       ];
     case 'firefox':
     case 'safari':

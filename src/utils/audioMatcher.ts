@@ -4,6 +4,8 @@
  * and cosine similarity against precomputed fingerprints filtered by cargo size+price.
  */
 
+import { captureDisplayWithAudio } from './displayCapture';
+
 export type SoundKind = 'pickup' | 'drop';
 
 export interface FingerprintSide {
@@ -288,26 +290,26 @@ export class AudioMatcher {
 
   /** Capture game window via getDisplayMedia (must include audio). */
   async startCapture(): Promise<void> {
-    await this.stop();
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      this.setStatus('error', 'getDisplayMedia not supported in this browser');
-      throw new Error('getDisplayMedia not supported');
+    // CRITICAL: create AudioContext synchronously under the click gesture,
+    // before any await (stop / getDisplayMedia) clears user activation.
+    const gestureCtx = new AudioContext();
+    void gestureCtx.resume();
+
+    // Tear down prior session without touching gestureCtx
+    await this.stop({ skipStatus: true });
+
+    let boot;
+    try {
+      boot = await captureDisplayWithAudio(gestureCtx);
+    } catch (err) {
+      await gestureCtx.close().catch(() => undefined);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatus('error', msg);
+      throw err instanceof Error ? err : new Error(msg);
     }
 
-    this.stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true,
-    });
-
-    const audioTracks = this.stream.getAudioTracks();
-    if (!audioTracks.length) {
-      this.stream.getTracks().forEach((t) => t.stop());
-      this.stream = null;
-      this.setStatus('error', 'No Audio Track Detected');
-      throw new Error('No Audio Track Detected');
-    }
-
-    this.ctx = new AudioContext();
+    this.stream = boot.stream;
+    this.ctx = boot.ctx;
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.2;
@@ -317,6 +319,12 @@ export class AudioMatcher {
 
     this.stream.getVideoTracks().forEach((t) => {
       t.addEventListener('ended', () => void this.stop());
+    });
+    this.stream.getAudioTracks().forEach((t) => {
+      t.addEventListener('ended', () => {
+        this.setStatus('error', 'Audio track ended — re-share with system/tab audio');
+        void this.stop();
+      });
     });
 
     window.addEventListener('focus', this.onFocusBound);
@@ -328,7 +336,7 @@ export class AudioMatcher {
     this.loop();
   }
 
-  async stop(): Promise<void> {
+  async stop(opts?: { skipStatus?: boolean }): Promise<void> {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
     window.removeEventListener('focus', this.onFocusBound);
@@ -343,7 +351,7 @@ export class AudioMatcher {
       await this.ctx.close().catch(() => undefined);
       this.ctx = null;
     }
-    if (this.status !== 'idle') this.setStatus('idle');
+    if (!opts?.skipStatus && this.status !== 'idle') this.setStatus('idle');
   }
 
   /** Manually trigger a 300ms capture (for testing without onset). */

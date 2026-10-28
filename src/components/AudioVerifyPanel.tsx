@@ -59,8 +59,27 @@ export function AudioVerifyPanel(props: {
 
       {props.state.phase === 'error' && (
         <div className="mt-3 rounded border border-[var(--mythic)]/40 bg-[#2a1014] px-3 py-2 text-xs text-[#ffb4bc]">
-          {props.state.message || 'Audio verification failed.'}
+          <strong className="block mb-1">Capture failed</strong>
+          <p className="m-0 whitespace-pre-wrap break-words">{props.state.message || 'Audio verification failed.'}</p>
+          {/Could not start audio source/i.test(props.state.message || '') && (
+            <p className="m-0 mt-2 text-[11px] text-[var(--mythic-gold)]">
+              This is a Chromium/OS error (usually Windows WASAPI loopback), not a missing checkbox.
+              Prefer sharing a <strong>Chrome/Edge tab</strong> with “Share tab audio”, or fix the
+              default recording device / exclusive-mode apps, then Retry.
+            </p>
+          )}
+          {props.state.detail && (
+            <pre className="m-0 mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 text-[10px] text-[var(--muted)] whitespace-pre-wrap">
+              {props.state.detail}
+            </pre>
+          )}
         </div>
+      )}
+
+      {props.state.phase === 'no-audio' && props.state.detail && (
+        <pre className="m-0 mt-2 max-h-32 overflow-auto rounded bg-black/40 p-2 text-[10px] text-[var(--muted)] whitespace-pre-wrap">
+          {props.state.detail}
+        </pre>
       )}
 
       {(props.state.phase === 'prompting' || props.state.phase === 'idle') && (

@@ -265,7 +265,10 @@ export class AudioMatcher {
   setListeningPaused(paused: boolean) {
     this.listeningPaused = paused;
     if (!paused && this.analyser && this.status !== 'listening' && this.status !== 'capturing') {
-      this.setStatus('listening', 'Listening… grab or drag Mystery Cargo in-game');
+      this.setStatus(
+        'listening',
+        'Listening… waiting for next cargo sound. Stop when done.',
+      );
     }
   }
 
@@ -332,7 +335,10 @@ export class AudioMatcher {
     this.listeningPaused = false;
     this.armFocusGrace();
 
-    this.setStatus('listening', 'Listening… grab or drag Mystery Cargo in-game');
+    this.setStatus(
+      'listening',
+      'Listening… waiting for Field Merchant sounds (OK if not in raid yet). Stop when done.',
+    );
     this.loop();
   }
 

@@ -431,25 +431,50 @@ export default function App() {
     source.connect(analyser);
     let peak = 0;
     let raf = 0;
-    const started = performance.now();
+
+    // Immediate success: audio track exists. Silence is NOT a failure — wait indefinitely.
+    setVerifyState({
+      phase: 'waiting',
+      message: 'Audio track connected — waiting for merchant sounds (OK if not in raid yet)',
+      rms: 0,
+      peakRms: 0,
+      hasAudioTrack: true,
+      detail: JSON.stringify(boot.diagnostics, null, 2),
+    });
+
     const tick = () => {
       const rms = rmsFromAnalyser(analyser);
       peak = Math.max(peak, rms);
-      const elapsed = performance.now() - started;
-      setVerifyState({
-        phase: elapsed < 3000 ? 'metering' : 'ok',
+      setVerifyState((prev) => ({
+        ...prev,
+        phase: 'waiting',
         message:
-          elapsed < 3000
-            ? 'Sampling… move over ABI items or make game sound'
-            : `Audio track OK · ctx=${ctx.state} · tracks=${stream.getAudioTracks().length}`,
+          peak < 0.02
+            ? 'Listening… no signal yet (fine in lobby). Reach Field Merchant and drag cargo when ready.'
+            : `Listening… signal seen · ctx=${ctx.state} · audioTracks=${stream.getAudioTracks().length}`,
         rms,
         peakRms: peak,
         hasAudioTrack: true,
-        detail: JSON.stringify(boot.diagnostics, null, 2),
-      });
+      }));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
+
+    const failTrackEnded = () => {
+      cancelAnimationFrame(raf);
+      setVerifyState({
+        phase: 'error',
+        message: 'Audio track ended — re-share with tab/system audio enabled.',
+        rms: 0,
+        peakRms: peak,
+        hasAudioTrack: false,
+      });
+      source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => undefined);
+      verifyCleanupRef.current = null;
+    };
+
     const cleanup = () => {
       cancelAnimationFrame(raf);
       source.disconnect();
@@ -458,6 +483,7 @@ export default function App() {
     };
     verifyCleanupRef.current = cleanup;
     stream.getVideoTracks().forEach((t) => t.addEventListener('ended', cleanup));
+    stream.getAudioTracks().forEach((t) => t.addEventListener('ended', failTrackEnded));
   }
 
   async function startCapture() {
@@ -597,6 +623,11 @@ export default function App() {
         onRetry={() => void runVerify()}
         onSwitchManual={switchToManual}
         onPlayTone={() => void playTestTone()}
+        onStartListening={() => {
+          stopVerifySession();
+          setVerifyOpen(false);
+          void startCapture();
+        }}
       />
 
       <main

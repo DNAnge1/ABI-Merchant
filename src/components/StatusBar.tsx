@@ -20,7 +20,10 @@ function stepFromStatus(
   }
   switch (status) {
     case 'listening':
-      return { step: 2, detail: detail || 'Listening…' };
+      return {
+        step: 2,
+        detail: detail || 'Listening… waiting for merchant sounds (silence is OK)',
+      };
     case 'capturing':
     case 'matching':
       return { step: 3, detail: detail || 'Checking sound…' };

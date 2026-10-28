@@ -28,11 +28,14 @@ export function SingleItemLoop(props: {
           Style A · Single Item
         </p>
         <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
-          {props.capturing ? 'Ready — listening for cargo audio' : 'Start Listening to enter Ready'}
+          {props.capturing
+            ? 'Listening… waiting for merchant sounds'
+            : 'Start Listening to enter Ready'}
         </h2>
         <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
-          Grab one Mystery Cargo. On detection we lock the Group #, pause listening, and wait for 👍
-          / 👎 / ⏭️ (Space or Esc to skip).
+          {props.capturing
+            ? 'Stay here as long as you need — lobby / travel is fine. When you drag Mystery Cargo at the Field Merchant, we lock Group # and pause for 👍 / 👎 / ⏭️ (Space or Esc skips).'
+            : 'Share game audio, then wait indefinitely until the first cargo spike. Silence is not a failure.'}
         </p>
       </div>
     );

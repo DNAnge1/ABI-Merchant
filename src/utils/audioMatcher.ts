@@ -10,6 +10,11 @@ import {
   type CaptureSourceKind,
 } from './displayCapture';
 import { captureMicWithAudio } from './micCapture';
+import {
+  presetFor,
+  type SensitivityLevel,
+  type SensitivityPreset,
+} from './sensitivity';
 
 export type SoundKind = 'pickup' | 'drop';
 
@@ -73,7 +78,7 @@ export interface MatchPayload {
 }
 
 export interface MatcherOptions {
-  /** RMS energy threshold for onset (0–1 scale of analyser). Default 0.18 */
+  /** RMS energy threshold for onset (0–1 scale of analyser). Default from sensitivity. */
   noiseFloor?: number;
   /** Capture window after onset in ms. Default 300 */
   sliceMs?: number;
@@ -86,6 +91,8 @@ export interface MatcherOptions {
    * (single-monitor Alt+Tab grace). 0 = off.
    */
   focusGraceMs?: number;
+  /** Low / Med / High onset+match strictness. Default med (mic runs stricter). */
+  sensitivity?: SensitivityLevel;
 }
 
 export type MatcherStatus =
@@ -223,8 +230,16 @@ export class AudioMatcher {
   private kind: SoundKind | 'auto';
   private focusGraceMs: number;
   private focusBlockUntil = 0;
+  private startGraceUntil = 0;
   private listeningPaused = false;
   private captureSource: CaptureSourceKind | null = null;
+  private sensitivityLevel: SensitivityLevel;
+  private fluxThreshold: number;
+  private minConfidence: number;
+  private startGraceMs: number;
+  private peakWindowMs: [number, number];
+  /** Rolling quiet-baseline RMS for transient (flux) detection. */
+  private rmsBaseline = 0;
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
   private fingerprints: FingerprintsFile;
@@ -236,7 +251,13 @@ export class AudioMatcher {
     opts: MatcherOptions = {},
   ) {
     this.fingerprints = fingerprints;
-    this.noiseFloor = opts.noiseFloor ?? 0.18;
+    this.sensitivityLevel = opts.sensitivity ?? 'med';
+    const preset = presetFor(this.sensitivityLevel, null);
+    this.noiseFloor = opts.noiseFloor ?? preset.noiseFloor;
+    this.fluxThreshold = preset.fluxThreshold;
+    this.minConfidence = preset.minConfidence;
+    this.startGraceMs = preset.startGraceMs;
+    this.peakWindowMs = preset.peakWindowMs;
     this.sliceMs = opts.sliceMs ?? 300;
     this.cooldownMs = opts.cooldownMs ?? 800;
     this.kind = opts.kind ?? 'auto';
@@ -265,6 +286,28 @@ export class AudioMatcher {
 
   setFocusGraceMs(v: number) {
     this.focusGraceMs = v;
+  }
+
+  /** Apply Low/Med/High; mic/loopback uses one notch stricter effective preset. */
+  setSensitivity(level: SensitivityLevel) {
+    this.sensitivityLevel = level;
+    this.applyPreset(presetFor(level, this.captureSource));
+  }
+
+  getSensitivity() {
+    return this.sensitivityLevel;
+  }
+
+  getMinConfidence() {
+    return this.minConfidence;
+  }
+
+  private applyPreset(preset: SensitivityPreset) {
+    this.noiseFloor = preset.noiseFloor;
+    this.fluxThreshold = preset.fluxThreshold;
+    this.minConfidence = preset.minConfidence;
+    this.startGraceMs = preset.startGraceMs;
+    this.peakWindowMs = preset.peakWindowMs;
   }
 
   /** Pause onset detection (single-item lock) without tearing down the stream. */
@@ -301,14 +344,22 @@ export class AudioMatcher {
     this.onStatus?.(s, detail);
   }
 
+  private resumeListening(detail: string) {
+    if (!this.analyser || this.listeningPaused) return;
+    this.setStatus('listening', detail);
+  }
+
   /** Attach any MediaStream with audio (display share or mic/loopback) into the matcher pipeline. */
   private attachBoot(boot: BootstrappedCapture): void {
     this.stream = boot.stream;
     this.ctx = boot.ctx;
     this.captureSource = boot.sourceKind;
+    // Mic is noisier — apply stricter effective preset for this source.
+    this.applyPreset(presetFor(this.sensitivityLevel, boot.sourceKind));
+    this.rmsBaseline = 0;
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.2;
+    this.analyser.smoothingTimeConstant = 0.15;
     this.source = this.ctx.createMediaStreamSource(this.stream);
     this.source.connect(this.analyser);
     // Do not connect to destination — keep capture silent.
@@ -332,12 +383,16 @@ export class AudioMatcher {
     document.addEventListener('visibilitychange', this.onFocusBound);
     this.listeningPaused = false;
     this.armFocusGrace();
+    this.startGraceUntil = performance.now() + this.startGraceMs;
+    this.lastTrigger = 0;
 
     const via =
       boot.sourceKind === 'microphone' ? 'via mic/loopback' : 'via screen share';
+    const strictNote =
+      boot.sourceKind === 'microphone' ? '; mic uses stricter onset' : '';
     this.setStatus(
       'listening',
-      `Listening… waiting for Field Merchant sounds (${via}; OK if not in raid yet). Stop when done.`,
+      `Listening… waiting for Field Merchant sounds (${via}${strictNote}; OK if not in raid yet). Stop when done.`,
     );
     this.loop();
   }
@@ -406,46 +461,83 @@ export class AudioMatcher {
   /** Manually trigger a 300ms capture (for testing without onset). */
   async captureOnce(): Promise<MatchResult[]> {
     if (!this.analyser || !this.ctx) return [];
-    return this.captureAndMatch();
+    return this.captureAndMatch(this.noiseFloor);
+  }
+
+  private timeDomainRms(buf: Uint8Array): number {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / buf.length);
   }
 
   private loop = () => {
     if (!this.analyser || !this.ctx) return;
     const buf = new Uint8Array(this.analyser.fftSize);
     this.analyser.getByteTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const v = (buf[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / buf.length);
+    const rms = this.timeDomainRms(buf);
     const now = performance.now();
     const focusBlocked = now < this.focusBlockUntil;
+    const startBlocked = now < this.startGraceUntil;
+
+    // Adapt baseline only on quiet frames so flux stays sharp for real onsets.
+    if (this.status === 'listening' && !this.listeningPaused) {
+      if (this.rmsBaseline === 0) {
+        this.rmsBaseline = rms;
+      } else if (rms < this.noiseFloor * 1.15) {
+        this.rmsBaseline = this.rmsBaseline * 0.94 + rms * 0.06;
+      }
+    }
+
+    const flux = rms - this.rmsBaseline;
+    const sharpTransient = flux >= this.fluxThreshold && rms >= this.noiseFloor;
+
     if (
       !this.listeningPaused &&
       !focusBlocked &&
+      !startBlocked &&
       this.status === 'listening' &&
-      rms >= this.noiseFloor &&
+      sharpTransient &&
       now - this.lastTrigger > this.cooldownMs
     ) {
       this.lastTrigger = now;
-      void this.captureAndMatch(rms);
+      void this.captureAndMatch(rms, flux);
     }
     this.raf = requestAnimationFrame(this.loop);
   };
 
-  private async captureAndMatch(peakRms?: number): Promise<MatchResult[]> {
+  private async captureAndMatch(
+    onsetRms?: number,
+    onsetFlux?: number,
+  ): Promise<MatchResult[]> {
     if (!this.analyser || !this.ctx) return [];
-    const peakMs = Math.round((peakRms ?? 0) * 1000);
-    this.setStatus('capturing', `Checking Sound: Peak ${peakMs} ms`);
+    const peakMs = Math.round((onsetRms ?? 0) * 1000);
+    this.setStatus(
+      'capturing',
+      `Checking sound… peak~${peakMs} · flux=${(onsetFlux ?? 0).toFixed(3)}`,
+    );
 
     const frames: number[][] = [];
     const centroids: number[] = [];
+    const envelope: number[] = [];
     const start = performance.now();
     const freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
+    const timeBuf = new Uint8Array(this.analyser.fftSize);
+    let peakRms = 0;
+    let peakAtMs = 0;
 
     while (performance.now() - start < this.sliceMs) {
       this.analyser.getByteFrequencyData(freqBuf);
+      this.analyser.getByteTimeDomainData(timeBuf);
+      const frameRms = this.timeDomainRms(timeBuf);
+      const elapsed = performance.now() - start;
+      envelope.push(frameRms);
+      if (frameRms > peakRms) {
+        peakRms = frameRms;
+        peakAtMs = elapsed;
+      }
       frames.push(
         magnitudeToBands(
           freqBuf,
@@ -458,6 +550,39 @@ export class AudioMatcher {
         spectralCentroidHz(freqBuf, this.ctx.sampleRate, this.analyser.fftSize),
       );
       await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+
+    const [peakMin, peakMax] = this.peakWindowMs;
+    // Merchant pickup/drop: short attack then decay. Reject late-rising ambient.
+    if (peakAtMs < peakMin || peakAtMs > peakMax) {
+      this.resumeListening(
+        `Listening… ignored late peak (${Math.round(peakAtMs)}ms; want ≤${peakMax}ms)`,
+      );
+      return [];
+    }
+
+    // Crest: peak should exceed mean envelope (spike vs continuous footsteps).
+    const meanEnv =
+      envelope.reduce((a, b) => a + b, 0) / Math.max(envelope.length, 1);
+    const crest = peakRms / Math.max(meanEnv, 1e-6);
+    if (crest < 1.3) {
+      this.resumeListening(
+        `Listening… ignored sustained noise (crest ${crest.toFixed(2)} < 1.3)`,
+      );
+      return [];
+    }
+
+    // Early energy should dominate the tail (decay after attack).
+    const cut = Math.max(1, Math.floor(envelope.length * 0.45));
+    const earlyMax = Math.max(...envelope.slice(0, cut), 0);
+    const tail =
+      envelope.slice(cut).reduce((a, b) => a + b, 0) /
+      Math.max(envelope.length - cut, 1);
+    if (earlyMax < tail * 1.15) {
+      this.resumeListening(
+        'Listening… ignored rising/sustained ambient (no attack–decay shape)',
+      );
+      return [];
     }
 
     this.setStatus('matching', 'Matching…');
@@ -477,7 +602,7 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    const matches = matchSpectrumAgainstFingerprints(
+    const allMatches = matchSpectrumAgainstFingerprints(
       spectrumVector,
       this.fingerprints,
       candidates,
@@ -489,18 +614,29 @@ export class AudioMatcher {
       capturedCentroid: centroid,
     }));
 
+    const matches = allMatches.filter((m) => m.confidence >= this.minConfidence);
+    const top = matches[0];
+    const weak = allMatches[0];
+
+    if (!top) {
+      this.resumeListening(
+        weak
+          ? `Listening… weak match ignored (Group ${weak.soundId} ${weak.confidence}% < ${this.minConfidence}% floor)`
+          : 'Listening… no fingerprint match — still waiting for cargo',
+      );
+      return [];
+    }
+
     this.setStatus(
       'done',
-      matches[0]
-        ? `Done: Group ${matches[0].soundId} · audio ${matches[0].confidence}%`
-        : 'Done: no match',
+      `Done: Group ${top.soundId} · audio ${top.confidence}%`,
     );
     this.onMatch?.({ matches, peakMs, spectrumVector, capturedCentroid: centroid });
 
     // Continuous mode resumes listening; single-item mode keeps paused via setListeningPaused
     setTimeout(() => {
       if (this.analyser && this.status === 'done' && !this.listeningPaused) {
-        this.setStatus('listening', 'Listening…');
+        this.setStatus('listening', 'Listening… waiting for next cargo sound.');
       }
     }, 400);
 

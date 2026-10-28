@@ -20,10 +20,7 @@ function stepFromStatus(
   }
   switch (status) {
     case 'listening':
-      return {
-        step: 2,
-        detail: detail || 'Listening… grab or drag cargo (matches all 38 Sound IDs)',
-      };
+      return { step: 2, detail: detail || 'Listening…' };
     case 'capturing':
     case 'matching':
       return { step: 3, detail: detail || 'Checking sound…' };
@@ -34,8 +31,8 @@ function stepFromStatus(
         step: 1,
         detail:
           mode === 'automatic'
-            ? detail || 'Verify audio, then Start Listening — no size/price filter needed'
-            : detail || 'Pick filters or a Sound ID, or Start Listening',
+            ? detail || 'Set monitor/scan style, verify audio, then Start Listening'
+            : detail || 'Manual Mode — filters + sound board',
       };
   }
 }

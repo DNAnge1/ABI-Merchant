@@ -9,16 +9,15 @@
 ## Player flow
 
 ### Automatic Mode (default)
-1. Game on a windowed / second monitor; open this site in Chrome/Edge.
-2. **Verify / Test Audio Access** — confirms `getDisplayMedia` audio (fixes for Chromium/Windows system audio, Brave Shields; Firefox/Safari → Manual Mode).
-3. **Start Listening** — share game window/tab **with audio**.
-4. Grab/drag Mystery Cargo — onset detect matches **all 38 Sound IDs** (no size/price pre-filter).
-5. **Size-grouped results**: cards for 1x1 / 1x2 / 2x1 / 2x2 / 2x3 / 3x2 (rotations labeled) with per-size **Red chance %**, candidates (Reds first: name, rarity, Koen, cargo price tiers).
+1. **Top setup:** Monitor (Single | Dual) + Scan Style (Single Item | Multiple Items Continuous). Single locks Continuous (Alt+Tab grace 1.5s) and unlocks Sound Alerts / Mini-Overlay.
+2. **Verify / Test Audio Access** — `getDisplayMedia` tracks, RMS meter, Chromium/Brave/FF-Safari guides, Manual fallback.
+3. **Start Listening** — share game audio.
+4. **Style A (Single Item):** Ready → lock Group # + confidence → size-grouped Red % → 👍 / 👎 / ⏭️ (Space/Esc). 👎 logs miss + spectral snapshot.
+5. **Style B (Dual Continuous):** ~600ms debounce, live merchant slots with Group #, Red glow, per-slot 👍👎✕, Clear All / New Merchant Refresh.
 
-### Manual Mode
-- Size / cargo type / cargo price **filter pills**
-- Sound board: Pick up / Drop for all 38 IDs
-- Click a Sound ID → same size-grouped results view
+### Manual Mode + Accuracy
+- Filter pills + 38-ID sound board → size-grouped results
+- **Accuracy Stats** (Total Scans, 👍 Accuracy %, Reds Found) + **Export Calibration Log (JSON)** (`localStorage` schema v1, DB-ready)
 
 ## Committed static assets (Pages OOTB)
 

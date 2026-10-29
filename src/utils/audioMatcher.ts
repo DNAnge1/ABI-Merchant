@@ -565,15 +565,48 @@ export function resolveCentroidDisagreement(
   return [best, ...matches.filter((m) => m.soundId !== best.soundId)];
 }
 
-/** Match → pitch prior → directed sinks (shared by burst spikes + Self-Test). */
+/**
+ * Exact-sound near-tie: if runner is within maxGapPts and live pitch is clearly
+ * closer to the runner FP than the top FP, promote the runner.
+ * Field #6: #31 @93.7 vs #6 @92.6 with brighter live → lock #6.
+ */
+export function promotePitchCloserRunner(
+  matches: MatchResult[],
+  capturedCentroid?: number,
+  maxGapPts = 2.5,
+): MatchResult[] {
+  if (capturedCentroid == null || matches.length < 2) return matches;
+  const top = matches[0];
+  const runner = matches[1];
+  if (!(top.spectralCentroid > 0) || !(runner.spectralCentroid > 0)) return matches;
+  const gap = top.confidence - runner.confidence;
+  if (gap < 0 || gap > maxGapPts) return matches;
+  const dTop = Math.abs(capturedCentroid - top.spectralCentroid);
+  const dRun = Math.abs(capturedCentroid - runner.spectralCentroid);
+  if (!(dRun + 80 < dTop)) return matches;
+  return [runner, top, ...matches.slice(2)];
+}
+
+/** Match → pitch prior → directed sinks → near-tie pitch runner (burst + Self-Test). */
 export function rankMatchesWithPriors(
   matches: MatchResult[],
   capturedCentroid?: number,
 ): MatchResult[] {
-  return resolveDirectedSinks(
-    resolveCentroidDisagreement(matches, capturedCentroid),
+  return promotePitchCloserRunner(
+    resolveDirectedSinks(
+      resolveCentroidDisagreement(matches, capturedCentroid),
+      capturedCentroid,
+    ),
     capturedCentroid,
   );
+}
+
+/** Hard refuse dull statue sink locks that aren't real self-locks (~96%+). */
+export function hardRejectDullSink(top: MatchResult): string | null {
+  if (top.soundId === 28 && top.confidence < 80) {
+    return `Stop & Match: Group #28 @ ${top.confidence}% is too weak to lock (true #28 self-locks ~96%). Quiet/bright cargo often sinks here — move louder/closer and retry.`;
+  }
+  return null;
 }
 
 /**
@@ -768,6 +801,8 @@ export class AudioMatcher {
   private burstStartedAt = 0;
   /** Continuous mono PCM while Start Moving Item → Stop & Match. */
   private burstPcmChunks: Float32Array[] = [];
+  /** Backup PCM from AnalyserNode time-domain hops when ScriptProcessor tee is empty. */
+  private burstAnalyserPcmChunks: Float32Array[] = [];
   private burstProcessor: ScriptProcessorNode | null = null;
   /** Zero-gain → destination keeps ScriptProcessor alive without audible output. */
   private burstMute: GainNode | null = null;
@@ -1052,6 +1087,7 @@ export class AudioMatcher {
     samples: Float32Array;
     sampleRate: number;
     blob: Blob | null;
+    pcmSource: 'script-processor' | 'analyser-hop' | 'empty';
   } {
     const sampleRate = this.ctx?.sampleRate ?? 48000;
     try {
@@ -1067,10 +1103,29 @@ export class AudioMatcher {
     // Keep MediaStreamSource → Analyser; only tear the PCM tee.
     this.burstProcessor = null;
     this.burstMute = null;
-    const samples = concatFloat32(this.burstPcmChunks);
+    let samples = concatFloat32(this.burstPcmChunks);
     this.burstPcmChunks = [];
+    let pcmSource: 'script-processor' | 'analyser-hop' | 'empty' = 'empty';
+    let peak = 0;
+    for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+    // ScriptProcessor often stays silent while Analyser still sees audio — use hop PCM.
+    if (samples.length < sampleRate * 0.08 || peak < 0.004) {
+      const backup = concatFloat32(this.burstAnalyserPcmChunks);
+      let backupPeak = 0;
+      for (let i = 0; i < backup.length; i++) {
+        backupPeak = Math.max(backupPeak, Math.abs(backup[i]));
+      }
+      if (backup.length >= sampleRate * 0.08 && backupPeak >= 0.004) {
+        samples = backup;
+        peak = backupPeak;
+        pcmSource = 'analyser-hop';
+      }
+    } else {
+      pcmSource = 'script-processor';
+    }
+    this.burstAnalyserPcmChunks = [];
     const blob = samples.length > 0 ? encodeWavMono(samples, sampleRate) : null;
-    return { samples, sampleRate, blob };
+    return { samples, sampleRate, blob, pcmSource };
   }
 
   private burstDiag(opts: {
@@ -1102,6 +1157,7 @@ export class AudioMatcher {
     this.listeningPaused = true;
     this.burstRecording = true;
     this.burstFrames = [];
+    this.burstAnalyserPcmChunks = [];
     this.burstStartedAt = performance.now();
     this.startBurstPcmCapture();
     this.shopPhase = 'recording';
@@ -1370,7 +1426,8 @@ export class AudioMatcher {
         const a = Math.abs(pcm.samples[i]);
         if (a > pcmPeak) pcmPeak = a;
       }
-      if (pcmPeak >= 0.008) {
+      // Low bar — quiet cargo (#19) still needs pcm300; spike fallback was the skew.
+      if (pcmPeak >= 0.002) {
         const pcmWin = analyzePcmLive300Window(
           pcm.samples,
           pcm.sampleRate,
@@ -1399,17 +1456,24 @@ export class AudioMatcher {
 
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
-    const top = matches[0];
-    const runner = matches[1] ?? allMatches[1];
+    let top = matches[0];
+    let runner = matches[1] ?? allMatches[1];
     const weak = allMatches[0];
     const stats = diagFor(peakRms, chosen.length);
-    const sourceNote = matchSource === 'pcm-live300' ? ' · pcm300' : ' · spikes';
+    // Lead with match source so deploy/path is obvious (Brent: still seeing vote/spikes).
+    const sourceNote =
+      matchSource === 'pcm-live300'
+        ? `pcm300/${pcm.pcmSource}`
+        : 'spikes-only';
     const voteNote =
-      (majorityOk && majorityId != null
-        ? ` · vote ${majorityN}/${spikeVotes.length}→#${majorityId}`
-        : spikeVotes.length
-          ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
-          : '') + sourceNote;
+      matchSource === 'pcm-live300'
+        ? ` · ${sourceNote}`
+        : ` · ${sourceNote}` +
+          (majorityOk && majorityId != null
+            ? ` · vote ${majorityN}/${spikeVotes.length}→#${majorityId}`
+            : spikeVotes.length
+              ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
+              : '');
 
     if (!top) {
       const quietNote = quiet
@@ -1429,8 +1493,9 @@ export class AudioMatcher {
       });
     }
 
-    const sinkReject = directedSinkRejectReason(top, centroid);
-    if (sinkReject) {
+    // Hard #28 reject before any ambiguous messaging — never a lock candidate below 80%.
+    const dullReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
+    if (dullReject) {
       this.lastBurstTopId = null;
       return this.failBurst({
         matches: allMatches.slice(0, 3),
@@ -1440,17 +1505,18 @@ export class AudioMatcher {
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: `${sinkReject} (${stats}${voteNote})`,
+        reason: `${dullReject} (${stats}${voteNote})`,
       });
     }
 
-    const margin = runner ? top.confidence - runner.confidence : 99;
+    let margin = runner ? top.confidence - runner.confidence : 99;
     const runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
     const nearTwinMajority =
       majorityOk &&
       runnerIsNearTwin &&
-      majorityId === top.soundId;
+      majorityId === top.soundId &&
+      matchSource !== 'pcm-live300';
     const needGap = this.lockMarginRequired(top.confidence, {
       nearTwinMajority,
       runnerIsNearTwin,
@@ -1458,7 +1524,38 @@ export class AudioMatcher {
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
       this.lastBurstTopId === top.soundId && margin >= 3 && top.confidence >= 90;
-    if (margin < needGap && !streakOk) {
+    // Near-tie + live pitch closer to runner FP → lock runner (#31@93.7 vs #6@92.6).
+    let pitchLock = false;
+    if (margin < needGap && !streakOk && runner && centroid != null) {
+      const pitched = promotePitchCloserRunner(allMatches, centroid, 2.5);
+      if (pitched[0] && pitched[0].soundId !== top.soundId) {
+        allMatches = pitched.map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
+        top = allMatches[0];
+        runner = allMatches[1];
+        pitchLock = true;
+        margin = runner ? Math.abs(top.confidence - runner.confidence) : 99;
+      }
+    }
+    if (margin < needGap && !streakOk && !pitchLock) {
+      // Re-check dull sink — never emit "ambiguous #28" below 80%.
+      const againReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
+      if (againReject) {
+        this.lastBurstTopId = null;
+        return this.failBurst({
+          matches: allMatches.slice(0, 3),
+          frameCount: frames.length,
+          spikeCount: chosen.length,
+          peakRms,
+          baseline: effectiveBaseline,
+          threshold,
+          ...captureBase,
+          reason: `${againReject} (${stats}${voteNote})`,
+        });
+      }
       this.lastBurstTopId = top.soundId;
       const tip =
         chosen.length < 2
@@ -1479,10 +1576,10 @@ export class AudioMatcher {
     this.lastBurstTopId = null;
     this.shopPhase = 'locked';
     this.listeningPaused = true;
-    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes (${stats}${voteNote})`;
+    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
-      matches,
+      matches: allMatches.filter((m) => m.confidence >= floor),
       peakMs,
       spectrumVector,
       capturedCentroid: centroid,
@@ -1491,7 +1588,7 @@ export class AudioMatcher {
     return {
       ok: true,
       reason,
-      matches,
+      matches: allMatches.filter((m) => m.confidence >= floor),
       frameCount: frames.length,
       spikeCount: chosen.length,
       peakRms,
@@ -1667,6 +1764,11 @@ export class AudioMatcher {
       this.burstFrames.push({ t: now - this.burstStartedAt, rms, spectrum, centroid });
       // Cap ~20s of recording
       if (this.burstFrames.length > 1200) this.burstFrames.shift();
+      // Non-overlapping hop of new samples for PCM-live300 backup (~1/raf advance).
+      const hop = Math.max(1, Math.floor(this.ctx.sampleRate / 70));
+      const offset = Math.max(0, timeFloat.length - hop);
+      this.burstAnalyserPcmChunks.push(timeFloat.slice(offset));
+      if (this.burstAnalyserPcmChunks.length > 2000) this.burstAnalyserPcmChunks.shift();
       this.raf = requestAnimationFrame(this.loop);
       return;
     }

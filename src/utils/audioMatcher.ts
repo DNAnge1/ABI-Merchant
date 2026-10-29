@@ -2254,17 +2254,28 @@ export class AudioMatcher {
     // Do not connect to destination — keep capture silent.
 
     this.stream.getVideoTracks().forEach((t) => {
-      t.addEventListener('ended', () => void this.stop());
+      t.addEventListener('ended', () => {
+        void (async () => {
+          await this.stop({ skipStatus: true });
+          this.setStatus(
+            'error',
+            'Capture window closed — Retest / Start Listening again when ready.',
+          );
+        })();
+      });
     });
     this.stream.getAudioTracks().forEach((t) => {
       t.addEventListener('ended', () => {
-        this.setStatus(
-          'error',
-          boot.sourceKind === 'microphone'
-            ? 'Mic / loopback track ended — re-select the input device.'
-            : 'Audio track ended — re-share with system/tab audio, or use mic/loopback.',
-        );
-        void this.stop();
+        // stop(skipStatus) first so we don't wipe the error with idle.
+        void (async () => {
+          await this.stop({ skipStatus: true });
+          this.setStatus(
+            'error',
+            boot.sourceKind === 'microphone'
+              ? 'Mic / loopback track ended — Retest or re-select the input (device may have changed).'
+              : 'Audio track ended — often after switching headphones ↔ speakers (G560). Clear the error and Retest, or use Mic / loopback.',
+          );
+        })();
       });
     });
 

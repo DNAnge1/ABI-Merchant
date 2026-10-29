@@ -89,6 +89,11 @@ export interface MatchResult {
   /** Captured spectrum bands for calibration / miss logging */
   spectrumVector?: number[];
   capturedCentroid?: number;
+  /**
+   * Set when {@link resolveQuiet19Residual} promoted/floored #19.
+   * Lock path uses a softer (or zero) margin so ~78% vs ~77–78% can lock.
+   */
+  quiet19Residual?: boolean;
 }
 
 export interface MatchPayload {
@@ -632,7 +637,21 @@ export function resolveQuiet19Residual(
 ): MatchResult[] {
   if (matches.length === 0) return matches;
   const top = matches[0];
-  if (top.soundId === 19) return matches;
+  if (top.soundId === 19) {
+    // Already #19 on top (often floored soft residual): mark for soft lock margin.
+    // Field: #19@78 vs #2/#14@~77–78 would otherwise demand ≥5pt and stay ambiguous.
+    if (top.confidence <= 80 || top.quiet19Residual) {
+      return [
+        {
+          ...top,
+          confidence: Math.max(top.confidence, 78),
+          quiet19Residual: true,
+        },
+        ...matches.slice(1),
+      ];
+    }
+    return matches;
+  }
   // Never override a hard self-lock (pristine #28/#2/#6/#20 stay put).
   if (top.confidence >= 92) return matches;
 
@@ -675,6 +694,7 @@ export function resolveQuiet19Residual(
   const promoted: MatchResult = {
     ...m19,
     confidence: Math.max(m19.confidence, 78),
+    quiet19Residual: true,
   };
   return [promoted, ...matches.filter((m) => m.soundId !== 19)];
 }
@@ -855,8 +875,15 @@ export class AudioMatcher {
    */
   private lockMarginRequired(
     topConfidence: number,
-    opts?: { nearTwinMajority?: boolean; runnerIsNearTwin?: boolean },
+    opts?: {
+      nearTwinMajority?: boolean;
+      runnerIsNearTwin?: boolean;
+      /** Quiet #19 residual — skip margin so floored ~78% can lock vs ~77–78% runners. */
+      quiet19Residual?: boolean;
+    },
   ): number {
+    // Residual #19 tops at ~78 with #2/#14 within a point — default ≥5pt always ambiguous.
+    if (opts?.quiet19Residual) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -1575,16 +1602,17 @@ export class AudioMatcher {
     }
 
     let margin = runner ? top.confidence - runner.confidence : 99;
-    const runnerIsNearTwin =
+    let runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
     const nearTwinMajority =
       majorityOk &&
       runnerIsNearTwin &&
       majorityId === top.soundId &&
       matchSource !== 'pcm-live300';
-    const needGap = this.lockMarginRequired(top.confidence, {
+    let needGap = this.lockMarginRequired(top.confidence, {
       nearTwinMajority,
       runnerIsNearTwin,
+      quiet19Residual: top.quiet19Residual === true,
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -1619,6 +1647,13 @@ export class AudioMatcher {
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
         margin = runner ? Math.abs(top.confidence - runner.confidence) : 99;
+        runnerIsNearTwin =
+          runner != null && isKnownNearTwin(top.soundId, runner.soundId);
+        needGap = this.lockMarginRequired(top.confidence, {
+          nearTwinMajority: false,
+          runnerIsNearTwin,
+          quiet19Residual: top.quiet19Residual === true,
+        });
       }
     }
 
@@ -2053,7 +2088,10 @@ export class AudioMatcher {
     const margin = runner ? top.confidence - runner.confidence : 99;
     const runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
-    const needGap = this.lockMarginRequired(top.confidence, { runnerIsNearTwin });
+    const needGap = this.lockMarginRequired(top.confidence, {
+      runnerIsNearTwin,
+      quiet19Residual: top.quiet19Residual === true,
+    });
     if (margin < needGap) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,

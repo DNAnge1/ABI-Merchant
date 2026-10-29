@@ -630,6 +630,20 @@ const QUIET19_WOOD_CLUSTER = new Set([2, 8, 14, 17, 20, 30]);
  * - mid wood-cluster (&lt;85%) with live centroid in quiet-container band (~2.3–3.8 kHz)
  *   and modest highBand (field: #14@80 vs #2@79).
  */
+/**
+ * Residual #19 display/lock confidence: at least 78, and ≥1pt above the best
+ * non-19 runner so a floored 78 cannot sit behind #2/#14 @ 78.2+.
+ */
+export function quiet19ResidualConfidence(
+  m19Confidence: number,
+  bestOtherConfidence: number | undefined,
+): number {
+  const floor = 78;
+  const aboveRunner =
+    bestOtherConfidence != null ? bestOtherConfidence + 1 : floor;
+  return Math.max(m19Confidence, floor, aboveRunner);
+}
+
 export function resolveQuiet19Residual(
   matches: MatchResult[],
   capturedCentroid?: number,
@@ -638,16 +652,21 @@ export function resolveQuiet19Residual(
   if (matches.length === 0) return matches;
   const top = matches[0];
   if (top.soundId === 19) {
-    // Already #19 on top (often floored soft residual): mark for soft lock margin.
-    // Field: #19@78 vs #2/#14@~77–78 would otherwise demand ≥5pt and stay ambiguous.
+    // Already #19 on top (often floored soft residual): mark + beat runner.
+    // Field: #19@78 vs #2/#14@78.2+ previously stayed ambiguous even with 0pt margin.
     if (top.confidence <= 80 || top.quiet19Residual) {
+      const rest = matches.slice(1);
+      const bestOther =
+        rest.length > 0
+          ? rest.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+          : undefined;
       return [
         {
           ...top,
-          confidence: Math.max(top.confidence, 78),
+          confidence: quiet19ResidualConfidence(top.confidence, bestOther),
           quiet19Residual: true,
         },
-        ...matches.slice(1),
+        ...rest,
       ];
     }
     return matches;
@@ -690,13 +709,18 @@ export function resolveQuiet19Residual(
 
   const m19 = matches.find((m) => m.soundId === 19);
   if (!m19) return matches;
-  // Floor residual confidence so lock margin / UI don't look like a 62% guess.
+  const others = matches.filter((m) => m.soundId !== 19);
+  const bestRunnerConf =
+    others.length > 0
+      ? others.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+      : undefined;
+  // Floor + beat runner so lock margin / UI show a clear #19 lead.
   const promoted: MatchResult = {
     ...m19,
-    confidence: Math.max(m19.confidence, 78),
+    confidence: quiet19ResidualConfidence(m19.confidence, bestRunnerConf),
     quiet19Residual: true,
   };
-  return [promoted, ...matches.filter((m) => m.soundId !== 19)];
+  return [promoted, ...others];
 }
 
 /**
@@ -882,7 +906,7 @@ export class AudioMatcher {
       quiet19Residual?: boolean;
     },
   ): number {
-    // Residual #19 tops at ~78 with #2/#14 within a point — default ≥5pt always ambiguous.
+    // Residual #19: margin skipped (force-lock path); 0 also covers post-boost ties.
     if (opts?.quiet19Residual) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
@@ -1673,7 +1697,9 @@ export class AudioMatcher {
       });
     }
 
-    if (margin < needGap && !streakOk && !pitchLock) {
+    // Quiet #19 residual always locks once ranked top (conf already boosted above runner).
+    const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
+    if (margin < needGap && !streakOk && !pitchLock && !residual19Lock) {
       this.lastBurstTopId = top.soundId;
       const tip =
         chosen.length < 2
@@ -1694,7 +1720,8 @@ export class AudioMatcher {
     this.lastBurstTopId = null;
     this.shopPhase = 'locked';
     this.listeningPaused = true;
-    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote} (${stats}${voteNote})`;
+    const residualNote = residual19Lock ? ' · quiet19-residual' : '';
+    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
       matches: allMatches.filter((m) => m.confidence >= floor),
@@ -2088,11 +2115,12 @@ export class AudioMatcher {
     const margin = runner ? top.confidence - runner.confidence : 99;
     const runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
+    const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
-      quiet19Residual: top.quiet19Residual === true,
+      quiet19Residual: residual19Lock,
     });
-    if (margin < needGap) {
+    if (margin < needGap && !residual19Lock) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
       );
@@ -2102,7 +2130,7 @@ export class AudioMatcher {
     this.shopPhase = 'locked';
     this.setStatus(
       'done',
-      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto)`,
+      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : ''})`,
     );
     this.onMatch?.({
       matches,

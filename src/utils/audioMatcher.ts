@@ -395,6 +395,56 @@ export function isKnownNearTwin(a: number, b: number): boolean {
   return KNOWN_NEAR_TWIN_PAIRS.some(([x, y]) => x === lo && y === hi);
 }
 
+/**
+ * One-way (directed) confusion: dull sink IDs that steal brighter cargo when
+ * the true promoteId is close in rank. Append rows as field confirms pairs —
+ * do not seed hypotheticals.
+ */
+export interface DirectedSinkOverride {
+  sinkId: number;
+  promoteId: number;
+  /** Max confidence gap (sink − promote) still eligible for promotion. */
+  maxGapPts: number;
+  /** Optional: only fire when live centroid is above this (Hz). */
+  minCentroidHz?: number;
+}
+
+/** Confirmed: #19 (bright) often lands under #28 (dull statue sink). */
+export const DIRECTED_SINK_OVERRIDES: ReadonlyArray<DirectedSinkOverride> = [
+  { sinkId: 28, promoteId: 19, maxGapPts: 6, minCentroidHz: 2900 },
+];
+
+/**
+ * If the top match is a known dull sink and `promoteId` is in the top 3 within
+ * `maxGapPts` (and optional centroid gate), move promote to rank 0.
+ * Pure re-order — does not invent scores or replace majority voting.
+ */
+export function resolveDirectedSinks(
+  matches: MatchResult[],
+  capturedCentroid?: number,
+  overrides: ReadonlyArray<DirectedSinkOverride> = DIRECTED_SINK_OVERRIDES,
+): MatchResult[] {
+  if (matches.length < 2 || overrides.length === 0) return matches;
+  const top = matches[0];
+  const top3 = matches.slice(0, 3);
+
+  for (const rule of overrides) {
+    if (top.soundId !== rule.sinkId) continue;
+    if (
+      rule.minCentroidHz != null &&
+      (capturedCentroid == null || !(capturedCentroid > rule.minCentroidHz))
+    ) {
+      continue;
+    }
+    const promote = top3.find((m) => m.soundId === rule.promoteId);
+    if (!promote) continue;
+    const gap = top.confidence - promote.confidence;
+    if (gap > rule.maxGapPts) continue;
+    return [promote, ...matches.filter((m) => m.soundId !== rule.promoteId)];
+  }
+  return matches;
+}
+
 export function matchSpectrumAgainstFingerprints(
   spectrumVector: number[],
   fingerprints: FingerprintsFile,
@@ -1012,11 +1062,14 @@ export class AudioMatcher {
 
       const localMax = Math.max(...local, 1e-9);
       const spikeSpectrum = local.map((v) => v / localMax);
-      const spikeRank = matchSpectrumAgainstFingerprints(
-        spikeSpectrum,
-        this.fingerprints,
-        candidates,
-        this.kind,
+      const spikeRank = resolveDirectedSinks(
+        matchSpectrumAgainstFingerprints(
+          spikeSpectrum,
+          this.fingerprints,
+          candidates,
+          this.kind,
+          spikeCentroid,
+        ),
         spikeCentroid,
       );
       if (spikeRank[0]) {
@@ -1059,11 +1112,14 @@ export class AudioMatcher {
     }
     const majorityOk = majorityId != null && majorityN >= 2 && majorityN > spikeVotes.length / 2;
 
-    let allMatches = matchSpectrumAgainstFingerprints(
-      spectrumVector,
-      this.fingerprints,
-      candidates,
-      this.kind,
+    let allMatches = resolveDirectedSinks(
+      matchSpectrumAgainstFingerprints(
+        spectrumVector,
+        this.fingerprints,
+        candidates,
+        this.kind,
+        centroid,
+      ),
       centroid,
     ).map((m) => ({
       ...m,
@@ -1080,11 +1136,14 @@ export class AudioMatcher {
       if (bestSpike) {
         spectrumVector = bestSpike.spectrum;
         centroid = bestSpike.centroid;
-        allMatches = matchSpectrumAgainstFingerprints(
-          spectrumVector,
-          this.fingerprints,
-          candidates,
-          this.kind,
+        allMatches = resolveDirectedSinks(
+          matchSpectrumAgainstFingerprints(
+            spectrumVector,
+            this.fingerprints,
+            candidates,
+            this.kind,
+            centroid,
+          ),
           centroid,
         ).map((m) => ({
           ...m,

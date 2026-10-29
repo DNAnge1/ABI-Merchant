@@ -1284,6 +1284,12 @@ export default function App() {
           }
         }}
       />
+
+      <footer className="mt-auto border-t border-[var(--border)] px-3 py-2 text-center">
+        <span className="text-[11px] tabular-nums text-[var(--muted)]">
+          v{__APP_VERSION__}
+        </span>
+      </footer>
     </div>
   );
 }

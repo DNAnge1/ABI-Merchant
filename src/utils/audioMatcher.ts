@@ -373,6 +373,28 @@ export function filterItemsByCargo(
   });
 }
 
+/**
+ * Field-confirmed near-twins in cosine space. When spike majority agrees on one
+ * side of the pair, allow a tighter lock gap (2pt) so #8 vs #2 / #9 vs #5 / etc.
+ * do not force endless re-moves.
+ */
+export const KNOWN_NEAR_TWIN_PAIRS: ReadonlyArray<readonly [number, number]> = [
+  [2, 8],
+  [3, 23],
+  [5, 9],
+  [8, 14],
+  [8, 20],
+  [14, 20],
+  [27, 35],
+  [30, 31],
+];
+
+export function isKnownNearTwin(a: number, b: number): boolean {
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  return KNOWN_NEAR_TWIN_PAIRS.some(([x, y]) => x === lo && y === hi);
+}
+
 export function matchSpectrumAgainstFingerprints(
   spectrumVector: number[],
   fingerprints: FingerprintsFile,
@@ -469,8 +491,15 @@ export class AudioMatcher {
   /** Last burst top ID — second consecutive same top with ≥3pt gap can lock. */
   private lastBurstTopId: number | null = null;
 
-  /** Adaptive gap: high confidence → smaller required margin. */
-  private lockMarginRequired(topConfidence: number): number {
+  /**
+   * Adaptive gap: high confidence → smaller required margin.
+   * Near-twin + spike majority → 2pt (field: #8/#2 at 95.2/95.1 with 2 clicks).
+   */
+  private lockMarginRequired(
+    topConfidence: number,
+    opts?: { nearTwinMajority?: boolean },
+  ): number {
+    if (opts?.nearTwinMajority) return 2;
     if (topConfidence >= 94) return 3;
     if (topConfidence >= 88) return 4;
     return this.autoMarginPts;
@@ -918,11 +947,14 @@ export class AudioMatcher {
       }
     }
     peaks.sort((a, b) => b.rms - a.rms);
+    // Cap at 3 loudest well-separated spikes — field: 2–3 clicks stabilize;
+    // 4–6+ add decay/release tails that swing % and flip near-twins (#20, #35).
+    const MAX_SPIKES = 3;
     const chosen: BurstFrame[] = [];
     for (const p of peaks) {
       if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
       chosen.push(p);
-      if (chosen.length >= 6) break;
+      if (chosen.length >= MAX_SPIKES) break;
     }
     if (!chosen.length) {
       const loud = [...frames].sort((a, b) => b.rms - a.rms);
@@ -930,12 +962,12 @@ export class AudioMatcher {
         if (f.rms < threshold) break;
         if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
         chosen.push(f);
-        if (chosen.length >= 4) break;
+        if (chosen.length >= MAX_SPIKES) break;
       }
     }
     // Always attempt match: take absolute loudest frames even under threshold.
     if (!chosen.length) {
-      const loud = [...frames].sort((a, b) => b.rms - a.rms).slice(0, 4);
+      const loud = [...frames].sort((a, b) => b.rms - a.rms).slice(0, MAX_SPIKES);
       chosen.push(...loud);
     }
 
@@ -950,6 +982,15 @@ export class AudioMatcher {
     const avg = new Array(bands).fill(0);
     let centroidSum = 0;
     let windowsUsed = 0;
+
+    const candidates =
+      this.candidateSoundIds.length > 0
+        ? this.candidateSoundIds
+        : Object.keys(this.fingerprints.fingerprints).map(Number);
+
+    type SpikeVote = { soundId: number; confidence: number; spectrum: number[]; centroid: number };
+    const spikeVotes: SpikeVote[] = [];
+
     for (const c of chosen) {
       const win = frames.filter(
         (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
@@ -965,22 +1006,60 @@ export class AudioMatcher {
         local[i] /= slice.length;
         avg[i] += local[i];
       }
-      centroidSum += localCentroid / slice.length;
+      const spikeCentroid = localCentroid / slice.length;
+      centroidSum += spikeCentroid;
       windowsUsed += 1;
+
+      const localMax = Math.max(...local, 1e-9);
+      const spikeSpectrum = local.map((v) => v / localMax);
+      const spikeRank = matchSpectrumAgainstFingerprints(
+        spikeSpectrum,
+        this.fingerprints,
+        candidates,
+        this.kind,
+        spikeCentroid,
+      );
+      if (spikeRank[0]) {
+        spikeVotes.push({
+          soundId: spikeRank[0].soundId,
+          confidence: spikeRank[0].confidence,
+          spectrum: spikeSpectrum,
+          centroid: spikeCentroid,
+        });
+      }
     }
     const denom = Math.max(windowsUsed, 1);
     for (let i = 0; i < bands; i++) avg[i] /= denom;
     const max = Math.max(...avg, 1e-9);
-    const spectrumVector = avg.map((v) => v / max);
-    const centroid = centroidSum / denom;
+    let spectrumVector = avg.map((v) => v / max);
+    let centroid = centroidSum / denom;
     const peakMs = Math.round(peakRms * 1000);
 
-    const candidates =
-      this.candidateSoundIds.length > 0
-        ? this.candidateSoundIds
-        : Object.keys(this.fingerprints.fingerprints).map(Number);
+    // Majority vote across spikes — resists one dull/decay window flipping the average.
+    const voteCount = new Map<number, { n: number; confSum: number }>();
+    for (const v of spikeVotes) {
+      const prev = voteCount.get(v.soundId) ?? { n: 0, confSum: 0 };
+      prev.n += 1;
+      prev.confSum += v.confidence;
+      voteCount.set(v.soundId, prev);
+    }
+    let majorityId: number | null = null;
+    let majorityN = 0;
+    let majorityConf = 0;
+    for (const [id, info] of voteCount) {
+      const avgConf = info.confSum / info.n;
+      if (
+        info.n > majorityN ||
+        (info.n === majorityN && avgConf > majorityConf)
+      ) {
+        majorityId = id;
+        majorityN = info.n;
+        majorityConf = avgConf;
+      }
+    }
+    const majorityOk = majorityId != null && majorityN >= 2 && majorityN > spikeVotes.length / 2;
 
-    const allMatches = matchSpectrumAgainstFingerprints(
+    let allMatches = matchSpectrumAgainstFingerprints(
       spectrumVector,
       this.fingerprints,
       candidates,
@@ -992,12 +1071,41 @@ export class AudioMatcher {
       capturedCentroid: centroid,
     }));
 
+    // If spike majority disagrees with averaged top, promote the majority ID
+    // (use that spike's spectrum so reported confidence matches the winner).
+    if (majorityOk && majorityId != null && allMatches[0]?.soundId !== majorityId) {
+      const bestSpike = spikeVotes
+        .filter((v) => v.soundId === majorityId)
+        .sort((a, b) => b.confidence - a.confidence)[0];
+      if (bestSpike) {
+        spectrumVector = bestSpike.spectrum;
+        centroid = bestSpike.centroid;
+        allMatches = matchSpectrumAgainstFingerprints(
+          spectrumVector,
+          this.fingerprints,
+          candidates,
+          this.kind,
+          centroid,
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
+      }
+    }
+
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
     const top = matches[0];
     const runner = matches[1] ?? allMatches[1];
     const weak = allMatches[0];
     const stats = diagFor(peakRms, chosen.length);
+    const voteNote =
+      majorityOk && majorityId != null
+        ? ` · vote ${majorityN}/${spikeVotes.length}→#${majorityId}`
+        : spikeVotes.length
+          ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
+          : '';
 
     if (!top) {
       const quietNote = quiet
@@ -1012,18 +1120,27 @@ export class AudioMatcher {
         threshold,
         ...captureBase,
         reason: weak
-          ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats})`
-          : `Stop & Match: no fingerprint match.${quietNote} (${stats})`,
+          ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats}${voteNote})`
+          : `Stop & Match: no fingerprint match.${quietNote} (${stats}${voteNote})`,
       });
     }
 
     const margin = runner ? top.confidence - runner.confidence : 99;
-    const needGap = this.lockMarginRequired(top.confidence);
+    const nearTwinMajority =
+      majorityOk &&
+      runner != null &&
+      isKnownNearTwin(top.soundId, runner.soundId) &&
+      majorityId === top.soundId;
+    const needGap = this.lockMarginRequired(top.confidence, { nearTwinMajority });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
       this.lastBurstTopId === top.soundId && margin >= 3 && top.confidence >= 90;
     if (margin < needGap && !streakOk) {
       this.lastBurstTopId = top.soundId;
+      const tip =
+        chosen.length < 2
+          ? ' Move the cargo 2–3 times before Stop & Match.'
+          : ' Move the same cargo again (2–3 clean clicks).';
       return this.failBurst({
         matches: allMatches.slice(0, 3),
         frameCount: frames.length,
@@ -1032,14 +1149,14 @@ export class AudioMatcher {
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Move the same cargo again.`,
+        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap).${tip}`,
       });
     }
 
     this.lastBurstTopId = null;
     this.shopPhase = 'locked';
     this.listeningPaused = true;
-    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes (${stats})`;
+    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
       matches,

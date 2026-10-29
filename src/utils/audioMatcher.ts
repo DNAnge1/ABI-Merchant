@@ -385,6 +385,8 @@ export const KNOWN_NEAR_TWIN_PAIRS: ReadonlyArray<readonly [number, number]> = [
   [8, 14],
   [8, 20],
   [14, 20],
+  [21, 35],
+  [21, 36],
   [27, 35],
   [30, 31],
 ];
@@ -396,9 +398,9 @@ export function isKnownNearTwin(a: number, b: number): boolean {
 }
 
 /**
- * One-way (directed) confusion: dull sink IDs that steal brighter cargo when
- * the true promoteId is close in rank. Append rows as field confirms pairs —
- * do not seed hypotheticals.
+ * One-way (directed) confusion: dull/neighbor sink IDs that steal the true
+ * promoteId when it is close in rank. Append rows as field confirms pairs —
+ * do not seed hypotheticals (#24→#15 etc.).
  */
 export interface DirectedSinkOverride {
   sinkId: number;
@@ -407,16 +409,37 @@ export interface DirectedSinkOverride {
   maxGapPts: number;
   /** Optional: only fire when live centroid is above this (Hz). */
   minCentroidHz?: number;
+  /** How deep to search for promoteId (default 3). */
+  topN?: number;
+  /**
+   * If promote never appears and sink still tops below this confidence on a
+   * bright capture (minCentroidHz), refuse to lock the sink — ask for a louder retry.
+   */
+  rejectLockBelow?: number;
 }
 
-/** Confirmed: #19 (bright) often lands under #28 (dull statue sink). */
+/**
+ * Field-confirmed directed sinks:
+ * - #28 steals quiet/bright #19 (statue sink ~2 kHz vs #19 ~4.4 kHz)
+ * - #31 steals #6 at ~1pt (Oct 29 abibuilder; centroid #6 2466 vs #31 2118)
+ * - #5 steals #9 when capture stays bright (#9 ~3800 vs #5 ~3284)
+ */
 export const DIRECTED_SINK_OVERRIDES: ReadonlyArray<DirectedSinkOverride> = [
-  { sinkId: 28, promoteId: 19, maxGapPts: 6, minCentroidHz: 2900 },
+  {
+    sinkId: 28,
+    promoteId: 19,
+    maxGapPts: 12,
+    minCentroidHz: 2900,
+    topN: 10,
+    rejectLockBelow: 80,
+  },
+  { sinkId: 31, promoteId: 6, maxGapPts: 3, minCentroidHz: 2280, topN: 5 },
+  { sinkId: 5, promoteId: 9, maxGapPts: 4, minCentroidHz: 3550, topN: 5 },
 ];
 
 /**
- * If the top match is a known dull sink and `promoteId` is in the top 3 within
- * `maxGapPts` (and optional centroid gate), move promote to rank 0.
+ * If the top match is a known sink and `promoteId` is within topN / maxGapPts
+ * (and optional centroid gate), move promote to rank 0.
  * Pure re-order — does not invent scores or replace majority voting.
  */
 export function resolveDirectedSinks(
@@ -426,7 +449,6 @@ export function resolveDirectedSinks(
 ): MatchResult[] {
   if (matches.length < 2 || overrides.length === 0) return matches;
   const top = matches[0];
-  const top3 = matches.slice(0, 3);
 
   for (const rule of overrides) {
     if (top.soundId !== rule.sinkId) continue;
@@ -436,13 +458,106 @@ export function resolveDirectedSinks(
     ) {
       continue;
     }
-    const promote = top3.find((m) => m.soundId === rule.promoteId);
+    const depth = Math.max(1, rule.topN ?? 3);
+    const promote = matches.slice(0, depth).find((m) => m.soundId === rule.promoteId);
     if (!promote) continue;
     const gap = top.confidence - promote.confidence;
     if (gap > rule.maxGapPts) continue;
     return [promote, ...matches.filter((m) => m.soundId !== rule.promoteId)];
   }
   return matches;
+}
+
+/**
+ * Refuse locking a dull sink on a bright/quiet capture when promote never ranked
+ * (field #19 → #28 @ 71–76% with runner #2, not #19).
+ */
+export function directedSinkRejectReason(
+  top: MatchResult,
+  capturedCentroid?: number,
+  overrides: ReadonlyArray<DirectedSinkOverride> = DIRECTED_SINK_OVERRIDES,
+): string | null {
+  for (const rule of overrides) {
+    if (rule.rejectLockBelow == null) continue;
+    if (top.soundId !== rule.sinkId) continue;
+    if (top.confidence >= rule.rejectLockBelow) continue;
+    if (
+      rule.minCentroidHz != null &&
+      (capturedCentroid == null || !(capturedCentroid > rule.minCentroidHz))
+    ) {
+      continue;
+    }
+    return `Stop & Match: Group #${rule.sinkId} @ ${top.confidence}% looks like a dull sink on a bright/quiet capture (want #${rule.promoteId}?). Move louder/closer and retry.`;
+  }
+  return null;
+}
+
+/**
+ * PCM live300 window — same onset+~300ms bin-average as fingerprint extract /
+ * offline selftest, using {@link fftLinearMagnitudes} at the given sample rate.
+ * Prefer this for browser Self-Test (AnalyserNode seek/ring-buffer averages diverge).
+ */
+export function analyzePcmLive300Window(
+  samples: Float32Array,
+  sampleRate: number,
+  fftSize: number,
+  bands = 32,
+): { spectrumVector: number[]; centroid: number; onsetMs: number; frames: number } {
+  const hopEnv = Math.max(1, Math.floor(sampleRate * 0.01));
+  const envelope: number[] = [];
+  for (let i = 0; i + hopEnv <= samples.length; i += hopEnv) {
+    let sum = 0;
+    for (let k = 0; k < hopEnv; k++) {
+      const v = samples[i + k];
+      sum += v * v;
+    }
+    envelope.push(Math.sqrt(sum / hopEnv));
+  }
+  let maxRms = 0;
+  for (const r of envelope) maxRms = Math.max(maxRms, r);
+  const floor = Math.max(0.02, maxRms * 0.25);
+  let onset = 0;
+  for (let i = 0; i < envelope.length; i++) {
+    if (envelope[i] >= floor) {
+      onset = i * hopEnv;
+      break;
+    }
+  }
+
+  const sliceSamples = Math.floor((300 / 1000) * sampleRate);
+  const end = Math.min(samples.length, onset + sliceSamples);
+  const hop = Math.max(1, Math.floor(fftSize / 4));
+  const bandAccum = new Array(bands).fill(0);
+  const centroids: number[] = [];
+  let frames = 0;
+  const scratch = new Float32Array(fftSize);
+
+  for (let start = onset; start + fftSize <= end; start += hop) {
+    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+    const linMag = fftLinearMagnitudes(scratch);
+    const frameBands = magnitudeToBands(linMag, sampleRate, fftSize, bands);
+    for (let i = 0; i < bands; i++) bandAccum[i] += frameBands[i];
+    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
+    frames += 1;
+  }
+  if (frames === 0) {
+    const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
+    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+    const linMag = fftLinearMagnitudes(scratch);
+    const frameBands = magnitudeToBands(linMag, sampleRate, fftSize, bands);
+    for (let i = 0; i < bands; i++) bandAccum[i] = frameBands[i];
+    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
+    frames = 1;
+  }
+
+  for (let i = 0; i < bands; i++) bandAccum[i] /= frames;
+  const max = Math.max(...bandAccum, 1e-9);
+  return {
+    spectrumVector: bandAccum.map((v) => v / max),
+    centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
+    onsetMs: (onset / sampleRate) * 1000,
+    frames,
+  };
 }
 
 export function matchSpectrumAgainstFingerprints(
@@ -552,6 +667,8 @@ export class AudioMatcher {
     if (opts?.nearTwinMajority) return 2;
     if (topConfidence >= 94) return 3;
     if (topConfidence >= 88) return 4;
+    // Mid-confidence quiet cargo (#21/#35) often leads by 5–7pt but failed the flat 8pt bar.
+    if (topConfidence >= 82) return 5;
     return this.autoMarginPts;
   }
   private shopPhase: ShopPhase = 'in-raid';
@@ -1181,6 +1298,21 @@ export class AudioMatcher {
         reason: weak
           ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats}${voteNote})`
           : `Stop & Match: no fingerprint match.${quietNote} (${stats}${voteNote})`,
+      });
+    }
+
+    const sinkReject = directedSinkRejectReason(top, centroid);
+    if (sinkReject) {
+      this.lastBurstTopId = null;
+      return this.failBurst({
+        matches: allMatches.slice(0, 3),
+        frameCount: frames.length,
+        spikeCount: chosen.length,
+        peakRms,
+        baseline: effectiveBaseline,
+        threshold,
+        ...captureBase,
+        reason: `${sinkReject} (${stats}${voteNote})`,
       });
     }
 

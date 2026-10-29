@@ -130,10 +130,10 @@ export function StatusBar(props: {
             <button
               type="button"
               onClick={props.onSelftest}
-              className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)]"
-              title="Score all 38 pickup OGGs through live AnalyserNode"
+              className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)] tabular-nums"
+              title={`Score all 38 pickup OGGs through live AnalyserNode · app v${__APP_VERSION__}`}
             >
-              Self-test
+              Self-test · v{__APP_VERSION__}
             </button>
           )}
 

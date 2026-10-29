@@ -461,10 +461,18 @@ export class AudioMatcher {
   /** Explicit opt-in; heal/ambient must not lock while merely “At Shop”. */
   private autoDetectArmed = false;
   /**
-   * Top confidence must beat runner-up by this many points before lock
-   * (auto + burst). Was 4 — too easy for near-ties (#36↔#7, #22↔#21).
+   * Base lock margin for weak tops. Strong tops use a lower bar via
+   * {@link lockMarginRequired} so #1 @ 96% vs #5 @ 92% can lock (4.5pt gap)
+   * while dull-sink near-ties at ~80% still need a wider gap.
    */
   private autoMarginPts = 8;
+
+  /** Adaptive gap: high confidence → smaller required margin. */
+  private lockMarginRequired(topConfidence: number): number {
+    if (topConfidence >= 95) return 3;
+    if (topConfidence >= 90) return 5;
+    return this.autoMarginPts;
+  }
   private shopPhase: ShopPhase = 'in-raid';
   private shopCalibrating = false;
   private burstRecording = false;
@@ -595,7 +603,7 @@ export class AudioMatcher {
       this.listeningPaused = false;
       this.shopPhase = 'at-shop';
       this.resumeListening(
-        `At Shop · auto-detect ARMED (margin ≥${this.autoMarginPts}pts) — or use Move Item`,
+        `At Shop · auto-detect ARMED (gap scales with confidence) — or use Move Item`,
       );
     } else if (this.atShopGate) {
       this.listeningPaused = true;
@@ -1007,7 +1015,8 @@ export class AudioMatcher {
     }
 
     const margin = runner ? top.confidence - runner.confidence : 99;
-    if (margin < this.autoMarginPts) {
+    const needGap = this.lockMarginRequired(top.confidence);
+    if (margin < needGap) {
       return this.failBurst({
         matches: allMatches.slice(0, 3),
         frameCount: frames.length,
@@ -1016,7 +1025,7 @@ export class AudioMatcher {
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${this.autoMarginPts}pt gap). Move the same cargo again.`,
+        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Move the same cargo again.`,
       });
     }
 
@@ -1390,9 +1399,10 @@ export class AudioMatcher {
     }
 
     const margin = runner ? top.confidence - runner.confidence : 99;
-    if (margin < this.autoMarginPts) {
+    const needGap = this.lockMarginRequired(top.confidence);
+    if (margin < needGap) {
       this.surfaceListening(
-        `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${this.autoMarginPts}pt gap). Use Move Item burst instead.`,
+        `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
       );
       return [];
     }

@@ -447,8 +447,13 @@ export class AudioMatcher {
   /** Pause onset detection (single-item lock) without tearing down the stream. */
   setListeningPaused(paused: boolean) {
     this.listeningPaused = paused;
-    if (!paused && this.analyser && this.status !== 'listening' && this.status !== 'capturing') {
-      if (this.shopPhase === 'locked') this.shopPhase = this.atShopGate ? 'at-shop' : 'in-raid';
+    if (paused) return;
+    // Continuous / after-lock polish: always unlock shopPhase even when status is
+    // still `done` (or already `listening` with a sticky locked phase).
+    if (this.shopPhase === 'locked') {
+      this.shopPhase = this.atShopGate ? 'at-shop' : 'in-raid';
+    }
+    if (this.analyser && this.status !== 'capturing' && this.status !== 'matching') {
       this.resumeListening();
     }
   }
@@ -754,21 +759,29 @@ export class AudioMatcher {
     this.listeningPaused = true;
 
     const sortedRms = frames.map((f) => f.rms).sort((a, b) => a - b);
+    const p20 =
+      sortedRms.length > 0
+        ? sortedRms[Math.min(sortedRms.length - 1, Math.floor(sortedRms.length * 0.2))]
+        : 0;
     const p90 =
       sortedRms.length > 0
         ? sortedRms[Math.min(sortedRms.length - 1, Math.floor(sortedRms.length * 0.9))]
         : 0;
+    // Quiet floor from the recording itself: if calibrate ran while the user was
+    // already moving (Start Moving without At Shop), rmsBaseline can be inflated.
+    // Prefer the quieter of calibrated vs ~p20 of this burst (+10% headroom).
+    const effectiveBaseline = Math.min(this.rmsBaseline, p20 * 1.1);
     // Soft spike bar — prefer detecting quiet cargo moves over empty “no-op”.
     const threshold = Math.max(
-      this.rmsBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
-      this.rmsBaseline * 1.12 + 0.003,
-      Math.min(p90 * 0.65, this.rmsBaseline + 0.04),
+      effectiveBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
+      effectiveBaseline * 1.12 + 0.003,
+      Math.min(p90 * 0.65, effectiveBaseline + 0.04),
     );
 
     const diagFor = (peakRms: number, spikeCount: number, frameCount = frames.length) =>
       this.burstDiag({
         peakRms,
-        baseline: this.rmsBaseline,
+        baseline: effectiveBaseline,
         threshold,
         frameCount,
         spikeCount,
@@ -815,19 +828,39 @@ export class AudioMatcher {
     }
 
     const peakRms = Math.max(...chosen.map((c) => c.rms), ...frames.map((f) => f.rms), 0);
-    const quiet = peakRms < this.rmsBaseline + 0.003;
+    const quiet = peakRms < effectiveBaseline + 0.003;
 
+    // Align with live300 fingerprints: average frames from ~peak−16ms … peak+280ms
+    // (≈300ms post-onset window), not the single peak spectrum alone.
+    const LIVE300_PRE_MS = 16;
+    const LIVE300_POST_MS = 280;
     const bands = chosen[0].spectrum.length;
     const avg = new Array(bands).fill(0);
     let centroidSum = 0;
+    let windowsUsed = 0;
     for (const c of chosen) {
-      for (let i = 0; i < bands; i++) avg[i] += c.spectrum[i] || 0;
-      centroidSum += c.centroid;
+      const win = frames.filter(
+        (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+      );
+      const slice = win.length > 0 ? win : [c];
+      const local = new Array(bands).fill(0);
+      let localCentroid = 0;
+      for (const f of slice) {
+        for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
+        localCentroid += f.centroid;
+      }
+      for (let i = 0; i < bands; i++) {
+        local[i] /= slice.length;
+        avg[i] += local[i];
+      }
+      centroidSum += localCentroid / slice.length;
+      windowsUsed += 1;
     }
-    for (let i = 0; i < bands; i++) avg[i] /= chosen.length;
+    const denom = Math.max(windowsUsed, 1);
+    for (let i = 0; i < bands; i++) avg[i] /= denom;
     const max = Math.max(...avg, 1e-9);
     const spectrumVector = avg.map((v) => v / max);
-    const centroid = centroidSum / chosen.length;
+    const centroid = centroidSum / denom;
     const peakMs = Math.round(peakRms * 1000);
 
     const candidates =
@@ -862,7 +895,7 @@ export class AudioMatcher {
         frameCount: frames.length,
         spikeCount: chosen.length,
         peakRms,
-        baseline: this.rmsBaseline,
+        baseline: effectiveBaseline,
         threshold,
         ...captureBase,
         reason: weak
@@ -889,7 +922,7 @@ export class AudioMatcher {
       frameCount: frames.length,
       spikeCount: chosen.length,
       peakRms,
-      baseline: this.rmsBaseline,
+      baseline: effectiveBaseline,
       threshold,
       ...captureBase,
     };

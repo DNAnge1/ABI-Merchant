@@ -103,6 +103,21 @@ export type MatcherStatus =
   | 'done'
   | 'error';
 
+/** Shop workflow phase for UI status copy. */
+export type ShopPhase =
+  | 'in-raid'
+  | 'calibrating'
+  | 'at-shop'
+  | 'recording'
+  | 'locked';
+
+interface BurstFrame {
+  t: number;
+  rms: number;
+  spectrum: number[];
+  centroid: number;
+}
+
 function cosineSimilarity(a: number[], b: number[]): number {
   const n = Math.min(a.length, b.length);
   let dot = 0;
@@ -240,6 +255,16 @@ export class AudioMatcher {
   private peakWindowMs: [number, number];
   /** Rolling quiet-baseline RMS for transient (flux) detection. */
   private rmsBaseline = 0;
+  /**
+   * When false (default after Start Listening), auto-onset is muted — raid noise ignored.
+   * Opened by setAtShop(true) after ~500ms shop-idle calibration.
+   */
+  private atShopGate = false;
+  private shopPhase: ShopPhase = 'in-raid';
+  private shopCalibrating = false;
+  private burstRecording = false;
+  private burstFrames: BurstFrame[] = [];
+  private burstStartedAt = 0;
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
   private fingerprints: FingerprintsFile;
@@ -314,10 +339,8 @@ export class AudioMatcher {
   setListeningPaused(paused: boolean) {
     this.listeningPaused = paused;
     if (!paused && this.analyser && this.status !== 'listening' && this.status !== 'capturing') {
-      this.setStatus(
-        'listening',
-        'Listening… waiting for next cargo sound. Stop when done.',
-      );
+      if (this.shopPhase === 'locked') this.shopPhase = this.atShopGate ? 'at-shop' : 'in-raid';
+      this.resumeListening();
     }
   }
 
@@ -333,6 +356,18 @@ export class AudioMatcher {
     return this.captureSource;
   }
 
+  isAtShopGate() {
+    return this.atShopGate;
+  }
+
+  isBurstRecording() {
+    return this.burstRecording;
+  }
+
+  getShopPhase() {
+    return this.shopPhase;
+  }
+
   private armFocusGrace() {
     if (this.focusGraceMs > 0) {
       this.focusBlockUntil = performance.now() + this.focusGraceMs;
@@ -344,9 +379,217 @@ export class AudioMatcher {
     this.onStatus?.(s, detail);
   }
 
-  private resumeListening(detail: string) {
+  private shopStatusDetail(): string {
+    switch (this.shopPhase) {
+      case 'calibrating':
+        return 'At Shop (calibrating)… sampling idle ~500ms';
+      case 'at-shop':
+        return this.atShopGate
+          ? `At Shop (open) · baseline ${this.rmsBaseline.toFixed(3)} · floor ${this.noiseFloor.toFixed(3)} — auto-onset armed or use Move Item`
+          : 'At Shop';
+      case 'recording':
+        return 'Recording moves… drag the same Mystery Cargo a few times, then Stop & Match';
+      case 'locked':
+        return 'Locked — give 👍 / 👎 or skip';
+      case 'in-raid':
+      default:
+        return 'In Raid (gate closed) — raid noise ignored until you click At Shop';
+    }
+  }
+
+  private resumeListening(detail?: string) {
     if (!this.analyser || this.listeningPaused) return;
-    this.setStatus('listening', detail);
+    if (this.shopPhase === 'recording') return;
+    if (this.atShopGate && this.shopPhase !== 'locked') this.shopPhase = 'at-shop';
+    if (!this.atShopGate) this.shopPhase = 'in-raid';
+    this.setStatus('listening', detail ?? this.shopStatusDetail());
+  }
+
+  /**
+   * At Shop toggle. Off → gate closed (ignore raid). On → sample ~500ms shop idle,
+   * lock rmsBaseline + adaptive noiseFloor/fluxThreshold, open gate for optional auto-onset.
+   */
+  async setAtShop(on: boolean): Promise<void> {
+    if (!this.analyser || !this.ctx) {
+      throw new Error('Start Listening first, then click At Shop at the Field Merchant.');
+    }
+    if (!on) {
+      this.atShopGate = false;
+      this.shopCalibrating = false;
+      this.burstRecording = false;
+      this.burstFrames = [];
+      this.shopPhase = 'in-raid';
+      this.resumeListening();
+      return;
+    }
+    await this.calibrateShopIdle();
+  }
+
+  /** Sample ~500ms of shop idle; lock baseline + adaptive thresholds; open gate. */
+  async calibrateShopIdle(sampleMs = 500): Promise<{ baseline: number; noiseFloor: number; flux: number }> {
+    if (!this.analyser || !this.ctx) {
+      throw new Error('No audio capture — Start Listening first.');
+    }
+    this.burstRecording = false;
+    this.burstFrames = [];
+    this.shopCalibrating = true;
+    this.shopPhase = 'calibrating';
+    this.atShopGate = false;
+    this.setStatus('listening', this.shopStatusDetail());
+
+    const samples: number[] = [];
+    const start = performance.now();
+    const buf = new Uint8Array(this.analyser.fftSize);
+    while (performance.now() - start < sampleMs) {
+      this.analyser.getByteTimeDomainData(buf);
+      samples.push(this.timeDomainRms(buf));
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+
+    const mean = samples.reduce((a, b) => a + b, 0) / Math.max(samples.length, 1);
+    const variance =
+      samples.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(samples.length, 1);
+    const std = Math.sqrt(variance);
+    const preset = presetFor(this.sensitivityLevel, this.captureSource);
+
+    this.rmsBaseline = mean;
+    // Adaptive floors sit above shop idle so quiet merchant UI doesn't false-trigger,
+    // but sharp cargo moves (flux) still clear the bar.
+    this.noiseFloor = Math.max(preset.noiseFloor * 0.85, mean + std * 2.2, mean * 1.8 + 0.02);
+    this.fluxThreshold = Math.max(preset.fluxThreshold * 0.9, std * 2.5, 0.035);
+    this.atShopGate = true;
+    this.shopCalibrating = false;
+    this.shopPhase = 'at-shop';
+    this.startGraceUntil = performance.now() + 200;
+    this.resumeListening();
+    return {
+      baseline: this.rmsBaseline,
+      noiseFloor: this.noiseFloor,
+      flux: this.fluxThreshold,
+    };
+  }
+
+  /** Primary shop workflow: start buffering while user moves one cargo a few times. */
+  async startItemMoveBurst(): Promise<void> {
+    if (!this.analyser || !this.ctx) {
+      throw new Error('Start Listening first.');
+    }
+    if (!this.atShopGate) {
+      await this.calibrateShopIdle();
+    }
+    this.listeningPaused = true; // mute auto-onset during manual burst
+    this.burstRecording = true;
+    this.burstFrames = [];
+    this.burstStartedAt = performance.now();
+    this.shopPhase = 'recording';
+    this.setStatus('capturing', this.shopStatusDetail());
+  }
+
+  /** Stop burst buffer, isolate loudest transients above shop baseline, average & match. */
+  async stopItemMoveBurst(): Promise<MatchResult[]> {
+    if (!this.analyser || !this.ctx) return [];
+    this.burstRecording = false;
+    const frames = this.burstFrames.slice();
+    this.burstFrames = [];
+    this.listeningPaused = false;
+
+    if (frames.length < 8) {
+      this.shopPhase = 'at-shop';
+      this.resumeListening('Recording too short — move the item a few times, then Stop & Match.');
+      return [];
+    }
+
+    this.setStatus('matching', 'Matching move burst…');
+    const threshold = this.rmsBaseline + Math.max(this.fluxThreshold, 0.04);
+    const peaks: BurstFrame[] = [];
+    for (let i = 1; i < frames.length - 1; i++) {
+      const f = frames[i];
+      if (
+        f.rms >= threshold &&
+        f.rms >= frames[i - 1].rms &&
+        f.rms >= frames[i + 1].rms
+      ) {
+        peaks.push(f);
+      }
+    }
+
+    // Keep loudest distinct peaks (debounce ~80ms)
+    peaks.sort((a, b) => b.rms - a.rms);
+    const chosen: BurstFrame[] = [];
+    for (const p of peaks) {
+      if (chosen.some((c) => Math.abs(c.t - p.t) < 80)) continue;
+      chosen.push(p);
+      if (chosen.length >= 5) break;
+    }
+
+    if (!chosen.length) {
+      // Fallback: top-N loudest frames above baseline
+      const loud = [...frames].filter((f) => f.rms > threshold).sort((a, b) => b.rms - a.rms);
+      for (const f of loud) {
+        if (chosen.some((c) => Math.abs(c.t - f.t) < 80)) continue;
+        chosen.push(f);
+        if (chosen.length >= 3) break;
+      }
+    }
+
+    if (!chosen.length) {
+      this.shopPhase = 'at-shop';
+      this.resumeListening(
+        `No cargo spikes above shop baseline (${this.rmsBaseline.toFixed(3)}) — try louder moves.`,
+      );
+      return [];
+    }
+
+    const bands = chosen[0].spectrum.length;
+    const avg = new Array(bands).fill(0);
+    let centroidSum = 0;
+    for (const c of chosen) {
+      for (let i = 0; i < bands; i++) avg[i] += c.spectrum[i] || 0;
+      centroidSum += c.centroid;
+    }
+    for (let i = 0; i < bands; i++) avg[i] /= chosen.length;
+    const max = Math.max(...avg, 1e-9);
+    const spectrumVector = avg.map((v) => v / max);
+    const centroid = centroidSum / chosen.length;
+    const peakMs = Math.round(Math.max(...chosen.map((c) => c.rms)) * 1000);
+
+    const candidates =
+      this.candidateSoundIds.length > 0
+        ? this.candidateSoundIds
+        : Object.keys(this.fingerprints.fingerprints).map(Number);
+
+    const allMatches = matchSpectrumAgainstFingerprints(
+      spectrumVector,
+      this.fingerprints,
+      candidates,
+      this.kind,
+      centroid,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
+
+    // Burst is user-intent — slightly softer floor than auto-onset.
+    const floor = Math.max(50, this.minConfidence - 5);
+    const matches = allMatches.filter((m) => m.confidence >= floor);
+    const top = matches[0];
+    const weak = allMatches[0];
+
+    if (!top) {
+      this.shopPhase = 'at-shop';
+      this.resumeListening(
+        weak
+          ? `Burst weak match ignored (Group ${weak.soundId} ${weak.confidence}% < ${floor}%)`
+          : 'Burst: no fingerprint match — try moving the same cargo again',
+      );
+      return [];
+    }
+
+    this.shopPhase = 'locked';
+    this.setStatus('done', `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes`);
+    this.onMatch?.({ matches, peakMs, spectrumVector, capturedCentroid: centroid });
+    return matches;
   }
 
   /** Attach any MediaStream with audio (display share or mic/loopback) into the matcher pipeline. */
@@ -357,6 +600,11 @@ export class AudioMatcher {
     // Mic is noisier — apply stricter effective preset for this source.
     this.applyPreset(presetFor(this.sensitivityLevel, boot.sourceKind));
     this.rmsBaseline = 0;
+    this.atShopGate = false;
+    this.shopCalibrating = false;
+    this.burstRecording = false;
+    this.burstFrames = [];
+    this.shopPhase = 'in-raid';
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.15;
@@ -388,11 +636,9 @@ export class AudioMatcher {
 
     const via =
       boot.sourceKind === 'microphone' ? 'via mic/loopback' : 'via screen share';
-    const strictNote =
-      boot.sourceKind === 'microphone' ? '; mic uses stricter onset' : '';
     this.setStatus(
       'listening',
-      `Listening… waiting for Field Merchant sounds (${via}${strictNote}; OK if not in raid yet). Stop when done.`,
+      `In Raid (gate closed) · ${via} — raid noise ignored until At Shop / Move Item`,
     );
     this.loop();
   }
@@ -451,6 +697,12 @@ export class AudioMatcher {
     this.stream = null;
     this.captureSource = null;
     this.listeningPaused = false;
+    this.atShopGate = false;
+    this.shopCalibrating = false;
+    this.burstRecording = false;
+    this.burstFrames = [];
+    this.shopPhase = 'in-raid';
+    this.rmsBaseline = 0;
     if (this.ctx) {
       await this.ctx.close().catch(() => undefined);
       this.ctx = null;
@@ -482,22 +734,52 @@ export class AudioMatcher {
     const focusBlocked = now < this.focusBlockUntil;
     const startBlocked = now < this.startGraceUntil;
 
-    // Adapt baseline only on quiet frames so flux stays sharp for real onsets.
-    if (this.status === 'listening' && !this.listeningPaused) {
+    // Manual move burst: buffer spectra continuously until Stop & Match.
+    if (this.burstRecording && !this.shopCalibrating) {
+      const freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
+      this.analyser.getByteFrequencyData(freqBuf);
+      const spectrum = magnitudeToBands(
+        freqBuf,
+        this.ctx.sampleRate,
+        this.analyser.fftSize,
+        this.fingerprints.vectorBands || 32,
+      );
+      const centroid = spectralCentroidHz(
+        freqBuf,
+        this.ctx.sampleRate,
+        this.analyser.fftSize,
+      );
+      this.burstFrames.push({ t: now - this.burstStartedAt, rms, spectrum, centroid });
+      // Cap ~20s of recording
+      if (this.burstFrames.length > 1200) this.burstFrames.shift();
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
+
+    // Adapt baseline only on quiet frames when gate is open (shop calibrated).
+    if (
+      this.atShopGate &&
+      this.status === 'listening' &&
+      !this.listeningPaused &&
+      !this.shopCalibrating
+    ) {
       if (this.rmsBaseline === 0) {
         this.rmsBaseline = rms;
       } else if (rms < this.noiseFloor * 1.15) {
-        this.rmsBaseline = this.rmsBaseline * 0.94 + rms * 0.06;
+        this.rmsBaseline = this.rmsBaseline * 0.97 + rms * 0.03;
       }
     }
 
     const flux = rms - this.rmsBaseline;
     const sharpTransient = flux >= this.fluxThreshold && rms >= this.noiseFloor;
 
+    // Gate closed → raid noise never auto-triggers.
     if (
+      this.atShopGate &&
       !this.listeningPaused &&
       !focusBlocked &&
       !startBlocked &&
+      !this.shopCalibrating &&
       this.status === 'listening' &&
       sharpTransient &&
       now - this.lastTrigger > this.cooldownMs
@@ -627,16 +909,18 @@ export class AudioMatcher {
       return [];
     }
 
+    this.shopPhase = 'locked';
     this.setStatus(
       'done',
-      `Done: Group ${top.soundId} · audio ${top.confidence}%`,
+      `Locked Group #${top.soundId} · audio ${top.confidence}%`,
     );
     this.onMatch?.({ matches, peakMs, spectrumVector, capturedCentroid: centroid });
 
     // Continuous mode resumes listening; single-item mode keeps paused via setListeningPaused
     setTimeout(() => {
       if (this.analyser && this.status === 'done' && !this.listeningPaused) {
-        this.setStatus('listening', 'Listening… waiting for next cargo sound.');
+        this.shopPhase = 'at-shop';
+        this.setStatus('listening', this.shopStatusDetail());
       }
     }, 400);
 

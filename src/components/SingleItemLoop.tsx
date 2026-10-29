@@ -29,13 +29,13 @@ export function SingleItemLoop(props: {
         </p>
         <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
           {props.capturing
-            ? 'Listening… waiting for merchant sounds'
+            ? 'In Raid until At Shop — then Move Item'
             : 'Start Listening to enter Ready'}
         </h2>
         <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
           {props.capturing
-            ? 'Stay here as long as you need — lobby / travel is fine. When you drag Mystery Cargo at the Field Merchant, we lock Group # and pause for 👍 / 👎 / ⏭️ (Space or Esc skips).'
-            : 'Share game audio, then wait indefinitely until the first cargo spike. Silence is not a failure.'}
+            ? 'Raid noise is gated off. At the Field Merchant click At Shop (or Start Moving Item), move cargo a few times, then Stop & Match. Optional auto-onset only after At Shop.'
+            : 'Share game audio anytime. Silence / travel is fine — click At Shop only when you reach the merchant.'}
         </p>
       </div>
     );

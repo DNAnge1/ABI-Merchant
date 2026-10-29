@@ -7,6 +7,7 @@ import { ManualFilters } from './components/ManualFilters';
 import { SoundBoard, type SoundProfile } from './components/SoundBoard';
 import { SizeGroupedResults } from './components/SizeGroupedResults';
 import { SetupSelector } from './components/SetupSelector';
+import { ShopCaptureBar } from './components/ShopCaptureBar';
 import { SingleItemLoop, type SingleLoopPhase } from './components/SingleItemLoop';
 import { ContinuousGrid, buildSlotFromMatch, type SessionSlot } from './components/ContinuousGrid';
 import { MissFeedbackModal } from './components/MissFeedbackModal';
@@ -88,6 +89,9 @@ export default function App() {
   const [status, setStatus] = useState<MatcherStatus>('idle');
   const [statusDetail, setStatusDetail] = useState<string>();
   const [capturing, setCapturing] = useState(false);
+  const [atShop, setAtShop] = useState(false);
+  const [recordingMove, setRecordingMove] = useState(false);
+  const [shopCalibrating, setShopCalibrating] = useState(false);
   const [manualSoundId, setManualSoundId] = useState<number | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
@@ -264,10 +268,37 @@ export default function App() {
     };
   }, [stopVerifySession]);
 
-  // Optional UI demos: ?demo=lock | ?demo=grid | ?demo=stats
+  // Optional UI demos: ?demo=lock | ?demo=grid | ?demo=stats | ?demo=shop | ?demo=shop-record
   useEffect(() => {
     const demo = new URLSearchParams(window.location.search).get('demo');
     if (!demo) return;
+    if (demo === 'shop' || demo === 'shop-record') {
+      setMode('automatic');
+      setMonitorSetup('dual');
+      setScanStyle('single');
+      setCapturing(true);
+      setAtShop(demo === 'shop-record' || demo === 'shop');
+      setRecordingMove(demo === 'shop-record');
+      setStatus('listening');
+      setStatusDetail(
+        demo === 'shop-record'
+          ? 'Recording moves… drag the same Mystery Cargo a few times, then Stop & Match'
+          : demo === 'shop'
+            ? 'At Shop (open) · baseline locked — use Manual Move Scan'
+            : 'In Raid (gate closed)',
+      );
+      // shop with atShop false for gate-closed: use ?demo=raid
+      return;
+    }
+    if (demo === 'raid') {
+      setMode('automatic');
+      setCapturing(true);
+      setAtShop(false);
+      setRecordingMove(false);
+      setStatus('listening');
+      setStatusDetail('In Raid (gate closed) — raid noise ignored until At Shop / Move Item');
+      return;
+    }
     if (demo === 'lock' || demo === 'grid') {
       setMode('automatic');
       setMonitorSetup(demo === 'grid' ? 'dual' : 'single');
@@ -570,6 +601,9 @@ export default function App() {
     setLocked(null);
     setSinglePhase('ready');
     setManualSoundId(null);
+    setAtShop(false);
+    setRecordingMove(false);
+    setShopCalibrating(false);
     matcherRef.current?.setSensitivity(sensitivity);
     matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
@@ -672,7 +706,61 @@ export default function App() {
     await matcherRef.current?.stop();
     setCapturing(false);
     setCaptureSource(null);
+    setAtShop(false);
+    setRecordingMove(false);
+    setShopCalibrating(false);
     setSinglePhase('ready');
+  }
+
+  async function handleToggleAtShop() {
+    if (!matcherRef.current || !capturing) return;
+    try {
+      if (atShop) {
+        await matcherRef.current.setAtShop(false);
+        setAtShop(false);
+        return;
+      }
+      setShopCalibrating(true);
+      await matcherRef.current.setAtShop(true);
+      setAtShop(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus('error');
+      setStatusDetail(msg);
+    } finally {
+      setShopCalibrating(false);
+    }
+  }
+
+  async function handleStartMoveBurst() {
+    if (!matcherRef.current || !capturing) return;
+    try {
+      setShopCalibrating(!atShop);
+      await matcherRef.current.startItemMoveBurst();
+      setAtShop(true);
+      setRecordingMove(true);
+      setLocked(null);
+      setSinglePhase('ready');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus('error');
+      setStatusDetail(msg);
+    } finally {
+      setShopCalibrating(false);
+    }
+  }
+
+  async function handleStopMoveBurst() {
+    if (!matcherRef.current) return;
+    setRecordingMove(false);
+    try {
+      await matcherRef.current.stopItemMoveBurst();
+      // onMatch handler locks UI when confidence clears the floor
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus('error');
+      setStatusDetail(msg);
+    }
   }
 
   function switchToManual() {
@@ -848,6 +936,16 @@ export default function App() {
                 onSensitivity={setSensitivity}
                 onPopOut={() => void popOutOverlay()}
               />
+              {capturing && (
+                <ShopCaptureBar
+                  atShop={atShop}
+                  recordingMove={recordingMove}
+                  calibrating={shopCalibrating}
+                  onToggleAtShop={() => void handleToggleAtShop()}
+                  onStartMove={() => void handleStartMoveBurst()}
+                  onStopMatch={() => void handleStopMoveBurst()}
+                />
+              )}
               <AccuracyPanel
                 stats={stats}
                 onExport={() => downloadCalibrationJson(sessionId)}

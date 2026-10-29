@@ -104,6 +104,11 @@ export interface MatchResult {
    * after mic-dulled pitch stole the lock.
    */
   glass30Residual?: boolean;
+  /**
+   * Set when {@link resolveMetal6VsLion28} restored metal crisp / Car Battery (#6)
+   * over Gold Lion (#28) after mic-dulled pitch stole the lock.
+   */
+  metal6Residual?: boolean;
 }
 
 export interface MatchPayload {
@@ -699,6 +704,9 @@ export function promotePitchCloserRunner(
   // True #4 self-locks ~98%+ and does not need this demotion. Pitch may still promote
   // #4 → #30 when live pitch is brighter (historical #30 help path).
   if (top.soundId === 30 && runner.soundId === 4) return matches;
+  // Never pitch-demote metal crisp / Car Battery (#6) → Lion (#28). Field Battery is
+  // often mic-dulled onto statue pitch (~1.8–2.0k) while shape still prefers #6.
+  if (top.soundId === 6 && runner.soundId === 28) return matches;
   const gap = top.confidence - runner.confidence;
   if (gap < 0 || gap > maxGapPts) return matches;
   const dTop = Math.abs(capturedCentroid - top.spectralCentroid);
@@ -768,6 +776,73 @@ export function resolveGlass30VsFuel4(
     ...m30,
     confidence: Math.max(m30.confidence, (bestOther ?? 0) + 1),
     glass30Residual: true,
+  };
+  return [promoted, ...others];
+}
+
+/**
+ * Soft/force-lock: metal crisp / Car Battery (#6) over Gold Lion (#28).
+ * Field dulled Battery often locks #28 @ ~87–92 while raw shape still prefers #6
+ * (+0.05–0.08 cos). True #28 self-locks ~96%+ with shape preferring statue.
+ */
+export function isMetal6VsLionSoftLock(
+  topSoundId: number,
+  runnerSoundId: number | undefined,
+  topConfidence: number,
+): boolean {
+  return topSoundId === 6 && runnerSoundId === 28 && topConfidence >= 88;
+}
+
+/**
+ * Restore #6 (Car Battery / metal crisp) when #28 stole via mic-dulled pitch.
+ * Shape owns this pair — live centroid alone is unreliable (Battery raid ~1.8 kHz).
+ * True Lion @ ≥96% is left alone; shape must prefer #6 by ≥0.045 raw cosine.
+ */
+export function resolveMetal6VsLion28(
+  matches: MatchResult[],
+  spectrumVector: number[],
+  fingerprints: FingerprintsFile,
+): MatchResult[] {
+  if (!spectrumVector || matches.length < 2) return matches;
+  const top = matches[0];
+  const m6 = matches.find((m) => m.soundId === 6);
+  const m28 = matches.find((m) => m.soundId === 28);
+  if (!m6 || !m28) return matches;
+
+  const fp6 = fingerprints.fingerprints['6']?.pickup;
+  const fp28 = fingerprints.fingerprints['28']?.pickup;
+  if (!fp6?.spectrumVector || !fp28?.spectrumVector) return matches;
+
+  const s6 = cosineSimilarity(spectrumVector, fp6.spectrumVector);
+  const s28 = cosineSimilarity(spectrumVector, fp28.spectrumVector);
+  const c6 = centeredCosine(spectrumVector, fp6.spectrumVector);
+  const c28 = centeredCosine(spectrumVector, fp28.spectrumVector);
+  // lion-battery / battery-claimed: +0.057–0.085; pristine Lion: −0.065; clean #6: +0.038–0.045.
+  const shapePrefers6 = s6 >= s28 + 0.045 && c6 >= c28 - 0.02;
+
+  if (top.soundId === 6 && matches[1]?.soundId === 28) {
+    if (top.metal6Residual) return matches;
+    if (shapePrefers6 || top.confidence >= 94) {
+      return [{ ...top, metal6Residual: true }, ...matches.slice(1)];
+    }
+    return matches;
+  }
+
+  if (top.soundId !== 28) return matches;
+  // Hard Lion self-lock — do not steal true #28.
+  if (m28.confidence >= 96) return matches;
+  if (!shapePrefers6) return matches;
+  if (!matches.slice(0, 8).some((m) => m.soundId === 6)) return matches;
+
+  const others = matches.filter((m) => m.soundId !== 6);
+  const bestOther =
+    others.length > 0
+      ? others.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+      : undefined;
+  const promoted: MatchResult = {
+    ...m6,
+    confidence: Math.max(m6.confidence, (bestOther ?? 0) + 1),
+    metal6Residual: true,
   };
   return [promoted, ...others];
 }
@@ -1358,11 +1433,13 @@ export class AudioMatcher {
       goldChainVsCoin?: boolean;
       /** Deep glass #30 vs fuel #4 — skip margin after shape restore / soft gate. */
       glass30VsFuel4?: boolean;
+      /** Metal crisp #6 vs Lion #28 — skip margin after shape restore. */
+      metal6VsLion?: boolean;
     },
   ): number {
-    // Residual #19 / field #10 / GoldChain / Glass#30→Fuel#4: margin skipped (force-lock).
+    // Residual #19 / field #10 / GoldChain / Glass#30→Fuel#4 / Metal#6→Lion#28: force-lock.
     if (opts?.quiet19Residual || opts?.field10Residual) return 0;
-    if (opts?.goldChainVsCoin || opts?.glass30VsFuel4) return 0;
+    if (opts?.goldChainVsCoin || opts?.glass30VsFuel4 || opts?.metal6VsLion) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -2322,6 +2399,16 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    // Car Battery / metal crisp (#6) vs Lion (#28) — shape owns dull-mic steals.
+    allMatches = resolveMetal6VsLion28(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
     // Soft size prior — demote IDs with no items in checked sizes when conf soft.
     allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
       ...m,
@@ -2390,6 +2477,9 @@ export class AudioMatcher {
       glass30VsFuel4:
         top.glass30Residual === true ||
         isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence),
+      metal6VsLion:
+        top.metal6Residual === true ||
+        isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence),
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -2439,6 +2529,15 @@ export class AudioMatcher {
           spectrumVector,
           capturedCentroid: centroid,
         }));
+        allMatches = resolveMetal6VsLion28(
+          allMatches,
+          spectrumVector,
+          this.fingerprints,
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
         top = allMatches[0];
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
@@ -2458,6 +2557,13 @@ export class AudioMatcher {
           glass30VsFuel4:
             top.glass30Residual === true ||
             isGlass30VsFuel4SoftLock(
+              top.soundId,
+              runner?.soundId,
+              top.confidence,
+            ),
+          metal6VsLion:
+            top.metal6Residual === true ||
+            isMetal6VsLionSoftLock(
               top.soundId,
               runner?.soundId,
               top.confidence,
@@ -2493,6 +2599,9 @@ export class AudioMatcher {
     const glass30Lock =
       top.glass30Residual === true ||
       isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence);
+    const metal6Lock =
+      top.metal6Residual === true ||
+      isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence);
     if (
       margin < needGap &&
       !streakOk &&
@@ -2500,7 +2609,8 @@ export class AudioMatcher {
       !residual19Lock &&
       !residual10Lock &&
       !goldChainLock &&
-      !glass30Lock
+      !glass30Lock &&
+      !metal6Lock
     ) {
       this.lastBurstTopId = top.soundId;
       const tip =
@@ -2530,7 +2640,9 @@ export class AudioMatcher {
           ? ' · goldchain-soft'
           : glass30Lock
             ? ' · glass30-soft'
-            : '';
+            : metal6Lock
+              ? ' · metal6-soft'
+              : '';
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
@@ -2967,6 +3079,15 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    allMatches = resolveMetal6VsLion28(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
     allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
       ...m,
       spectrumVector,
@@ -3008,19 +3129,24 @@ export class AudioMatcher {
     const glass30Lock =
       top.glass30Residual === true ||
       isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence);
+    const metal6Lock =
+      top.metal6Residual === true ||
+      isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence);
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
       field10Residual: residual10Lock,
       goldChainVsCoin: goldChainLock,
       glass30VsFuel4: glass30Lock,
+      metal6VsLion: metal6Lock,
     });
     if (
       margin < needGap &&
       !residual19Lock &&
       !residual10Lock &&
       !goldChainLock &&
-      !glass30Lock
+      !glass30Lock &&
+      !metal6Lock
     ) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
@@ -3037,7 +3163,9 @@ export class AudioMatcher {
           ? ' · goldchain-soft'
           : glass30Lock
             ? ' · glass30-soft'
-            : '';
+            : metal6Lock
+              ? ' · metal6-soft'
+              : '';
     this.setStatus(
       'done',
       `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${autoResidual})`,

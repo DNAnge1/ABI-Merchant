@@ -29,52 +29,109 @@ function rarityLabel(r: number): string {
   return 'Common';
 }
 
-/** Human-readable headline for a locked group (names + value, not just Group #). */
+function ItemThumb(props: { item: MerchantItem; size?: 'sm' | 'md' | 'lg' }) {
+  const dim =
+    props.size === 'lg' ? 'h-14 w-14' : props.size === 'md' ? 'h-11 w-11' : 'h-9 w-9';
+  if (props.item.iconUrl) {
+    return (
+      <img
+        src={props.item.iconUrl}
+        alt=""
+        className={`${dim} object-contain rounded bg-black/30 shrink-0`}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+  return <div className={`${dim} rounded bg-black/30 shrink-0`} />;
+}
+
+/** Human-readable headline for a locked group (images + names + value). */
 function SlotValueSummary(props: { slot: SessionSlot; featured?: boolean }) {
   const sorted = sortRedsFirst(props.slot.items);
   const headline = sorted[0];
   const reds = sorted.filter((i) => i.rarity >= 6);
-  const nameLine = sorted
-    .slice(0, props.featured ? 6 : 3)
-    .map((i) => i.name)
-    .join(' · ');
-  const more = sorted.length > (props.featured ? 6 : 3) ? ` +${sorted.length - (props.featured ? 6 : 3)} more` : '';
+  const show = sorted.slice(0, props.featured ? 8 : 4);
+  const more = sorted.length - show.length;
 
   return (
-    <div className={props.featured ? 'space-y-1.5' : 'space-y-0.5'}>
-      <div
-        className={[
-          'font-bold text-[var(--accent)]',
-          props.featured ? 'text-2xl' : 'text-sm',
-        ].join(' ')}
-      >
-        {headline ? headline.name : `Group #${props.slot.soundId}`}
-      </div>
-      {headline && (
-        <div
-          className={[
-            'text-[var(--muted)]',
-            props.featured ? 'text-sm' : 'text-[10px]',
-          ].join(' ')}
-        >
-          Group #{props.slot.soundId} · {props.slot.confidence}% · {headline.size}
-          {headline.contactPrice > 0 ? ` · ~${formatPrice(headline.contactPrice)}` : ''}
-          {reds.length > 0
-            ? ` · ${reds.length} Red`
-            : ` · ${rarityLabel(headline.rarity)}`}
+    <div className={props.featured ? 'space-y-2 min-w-0 flex-1' : 'space-y-1 min-w-0 flex-1'}>
+      <div className="flex gap-3 items-start min-w-0">
+        {headline && <ItemThumb item={headline} size={props.featured ? 'lg' : 'md'} />}
+        <div className="min-w-0">
+          <div
+            className={[
+              'font-bold text-[var(--accent)]',
+              props.featured ? 'text-2xl' : 'text-sm',
+            ].join(' ')}
+          >
+            {headline ? headline.name : `Group #${props.slot.soundId}`}
+          </div>
+          {headline && (
+            <div
+              className={[
+                'text-[var(--muted)]',
+                props.featured ? 'text-sm' : 'text-[10px]',
+              ].join(' ')}
+            >
+              Group #{props.slot.soundId} · {props.slot.confidence}% · {headline.size}
+              {headline.contactPrice > 0 ? ` · ${headline.contactPrice.toLocaleString()} Koen` : ''}
+              {reds.length > 0
+                ? ` · ${reds.length} Red`
+                : ` · ${rarityLabel(headline.rarity)}`}
+            </div>
+          )}
         </div>
+      </div>
+
+      {props.featured && show.length > 0 && (
+        <ul className="m-0 p-0 list-none grid gap-1.5 sm:grid-cols-2">
+          {show.map((item) => {
+            const mythic = item.rarity >= 6;
+            return (
+              <li
+                key={item.id}
+                className={[
+                  'flex gap-2 items-center rounded border px-2 py-1.5',
+                  mythic
+                    ? 'border-[var(--mythic)]/45 bg-[#1a0c10]'
+                    : 'border-[var(--border)] bg-[var(--bg)]/50',
+                ].join(' ')}
+              >
+                <ItemThumb item={item} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={[
+                      'text-[11px] font-semibold truncate',
+                      mythic ? 'text-[var(--mythic-gold)]' : 'text-[var(--text)]',
+                    ].join(' ')}
+                  >
+                    {item.name}
+                  </div>
+                  <div className="text-[10px] text-[var(--muted)] truncate">
+                    {item.size}
+                    {item.contactPrice > 0 ? ` · ${formatPrice(item.contactPrice)}` : ''}
+                    {mythic ? ' · RED' : ''}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+          {more > 0 && (
+            <li className="text-[10px] text-[var(--muted)] self-center px-1">+{more} more</li>
+          )}
+        </ul>
       )}
-      {props.featured && nameLine && (
-        <p className="m-0 text-xs leading-relaxed text-[var(--text)]">
-          {nameLine}
-          {more}
-        </p>
-      )}
-      {!props.featured && sorted.length > 1 && (
-        <p className="m-0 text-[10px] text-[var(--muted)] truncate">
-          {nameLine}
-          {more}
-        </p>
+
+      {!props.featured && show.length > 1 && (
+        <div className="flex gap-1 flex-wrap">
+          {show.slice(1, 4).map((item) => (
+            <ItemThumb key={item.id} item={item} size="sm" />
+          ))}
+          {more > 0 && (
+            <span className="text-[10px] text-[var(--muted)] self-center">+{more}</span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -88,6 +145,8 @@ export function ContinuousGrid(props: {
   onClearAll: () => void;
   onNewMerchant: () => void;
   listening: boolean;
+  /** Mid-screen Start Listening (same as header) when not capturing */
+  onStartListening?: () => void;
 }) {
   const latest = props.slots[0] ?? null;
 
@@ -100,7 +159,7 @@ export function ContinuousGrid(props: {
           </h2>
           <p className="m-0 text-[11px] text-[var(--muted)]">
             {props.listening
-              ? 'Multi / listening — move each cargo 3×; locks append here'
+              ? 'Multi / listening — move each cargo 3×; locks append here with item images'
               : 'Not listening'}{' '}
             · {props.slots.length} slot{props.slots.length === 1 ? '' : 's'}
           </p>
@@ -122,6 +181,30 @@ export function ContinuousGrid(props: {
           </button>
         </div>
       </div>
+
+      {!props.listening && (
+        <div className="rounded border border-[var(--accent)] bg-[var(--accent-dim)]/20 px-4 py-8 text-center">
+          <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
+            Style B · Multiple Items
+          </p>
+          <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
+            Start Listening to scan the merchant
+          </h2>
+          <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
+            Dual monitor recommended. After Start Listening: At Shop → Arm Multi scan → drag each
+            cargo 3 times. Locks show item images and value.
+          </p>
+          {props.onStartListening && (
+            <button
+              type="button"
+              onClick={props.onStartListening}
+              className="mt-4 rounded px-4 py-2 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
+            >
+              Start Listening
+            </button>
+          )}
+        </div>
+      )}
 
       {latest && (
         <div
@@ -149,18 +232,20 @@ export function ContinuousGrid(props: {
               <div className="text-[10px] uppercase text-[var(--mythic-gold)]">Red chance</div>
             </div>
           </div>
-          {/* Size breakdown for the latest only — keeps older cards lighter */}
           <ul className="m-0 mt-3 p-0 list-none flex flex-wrap gap-2">
             {groupItemsBySize(latest.items).map((g) => {
               const top = sortRedsFirst(g.items)[0];
               return (
                 <li
                   key={g.size}
-                  className="rounded border border-[var(--border)] bg-[var(--bg)]/60 px-2 py-1 text-[10px] text-[var(--muted)]"
+                  className="rounded border border-[var(--border)] bg-[var(--bg)]/60 px-2 py-1 text-[10px] text-[var(--muted)] flex items-center gap-1.5"
                 >
-                  <span className="text-[var(--text)] font-medium">{g.size}</span>
-                  {top ? ` · ${top.name}` : ''}
-                  {g.redPct > 0 ? ` · Red ${g.redPct}%` : ''}
+                  {top && <ItemThumb item={top} size="sm" />}
+                  <span>
+                    <span className="text-[var(--text)] font-medium">{g.size}</span>
+                    {top ? ` · ${top.name}` : ''}
+                    {g.redPct > 0 ? ` · Red ${g.redPct}%` : ''}
+                  </span>
                 </li>
               );
             })}
@@ -189,18 +274,19 @@ export function ContinuousGrid(props: {
             </button>
           </div>
           <p className="m-0 mt-2 text-[10px] text-[var(--muted)]">
-            High-ticket-only filter (Yellow/Red) comes in the simple GUI rebuild — feed still shows
-            full group for now.
+            Optional hide-images / high-ticket-only filter come in the simple GUI rebuild.
           </p>
         </div>
       )}
 
-      {!props.slots.length ? (
+      {props.listening && !props.slots.length ? (
         <div className="rounded border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs text-[var(--muted)]">
-          Dual + Multiple Items: Arm Multi scan, drag each cargo <strong>3 times</strong>. Each lock
-          shows item names and value here (not just Group #).
+          Listening. At Shop → Arm Multi scan → drag each cargo <strong>3 times</strong>. Each lock
+          shows item images and value here.
         </div>
-      ) : props.slots.length > 1 ? (
+      ) : null}
+
+      {props.slots.length > 1 ? (
         <div>
           <p className="m-0 mb-2 text-[10px] uppercase tracking-wider text-[var(--muted)]">
             Earlier locks

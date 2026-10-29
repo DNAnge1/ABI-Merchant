@@ -13,6 +13,8 @@ export function SingleItemLoop(props: {
   onThumbsDown: () => void;
   onSkip: () => void;
   onPickAlt?: (soundId: number) => void;
+  /** Mid-screen Start Listening (same as header) when not capturing */
+  onStartListening?: () => void;
 }) {
   if (props.phase === 'ready') {
     return (
@@ -21,7 +23,7 @@ export function SingleItemLoop(props: {
           'rounded border px-4 py-8 text-center',
           props.capturing
             ? 'border-[var(--accent)] bg-[var(--accent-dim)]/20 animate-pulse'
-            : 'border-dashed border-[var(--border)] bg-[var(--bg-panel)]/50',
+            : 'border-[var(--accent)] bg-[var(--accent-dim)]/20',
         ].join(' ')}
       >
         <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
@@ -37,6 +39,15 @@ export function SingleItemLoop(props: {
             ? 'Raid noise is gated off. At the Field Merchant click At Shop, Start Moving Item, drag cargo a few times, then Stop & Match.'
             : 'Share game audio anytime. Silence / travel is fine — click At Shop only when you reach the merchant.'}
         </p>
+        {!props.capturing && props.onStartListening && (
+          <button
+            type="button"
+            onClick={props.onStartListening}
+            className="mt-4 rounded px-4 py-2 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
+          >
+            Start Listening
+          </button>
+        )}
       </div>
     );
   }

@@ -451,6 +451,22 @@ export function isKnownNearTwin(a: number, b: number): boolean {
 }
 
 /**
+ * Soft-lock gate for GoldChain (#33) over Coin (#29).
+ * Field #33 often ~93 vs ~91 (2pt); true #29 self-locks with a clearer ≥5pt lead.
+ */
+export function isGoldChainVsCoinSoftLock(
+  topSoundId: number,
+  runnerSoundId: number | undefined,
+  topConfidence: number,
+): boolean {
+  return (
+    topSoundId === 33 &&
+    runnerSoundId === 29 &&
+    topConfidence >= 92
+  );
+}
+
+/**
  * One-way (directed) confusion: dull/neighbor sink IDs that steal the true
  * promoteId when it is close in rank. Append rows as field confirms pairs —
  * do not seed hypotheticals (#24→#15 etc.).
@@ -1060,10 +1076,16 @@ export class AudioMatcher {
       quiet19Residual?: boolean;
       /** Field #10 electronics residual — skip margin after promote. */
       field10Residual?: boolean;
+      /**
+       * GoldChain #33 vs Coin #29: field #33 often ~93 vs ~91 (2pt) while true #29
+       * self-locks with ≥5pt — allow 2pt when #33 is clearly on top (≥92).
+       */
+      goldChainVsCoin?: boolean;
     },
   ): number {
     // Residual #19 / field #10: margin skipped (force-lock path).
     if (opts?.quiet19Residual || opts?.field10Residual) return 0;
+    if (opts?.goldChainVsCoin) return 2;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -1946,6 +1968,11 @@ export class AudioMatcher {
       runnerIsNearTwin,
       quiet19Residual: top.quiet19Residual === true,
       field10Residual: top.field10Residual === true,
+      goldChainVsCoin: isGoldChainVsCoinSoftLock(
+        top.soundId,
+        runner?.soundId,
+        top.confidence,
+      ),
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -1997,6 +2024,11 @@ export class AudioMatcher {
           runnerIsNearTwin,
           quiet19Residual: top.quiet19Residual === true,
           field10Residual: top.field10Residual === true,
+          goldChainVsCoin: isGoldChainVsCoinSoftLock(
+            top.soundId,
+            runner?.soundId,
+            top.confidence,
+          ),
         });
       }
     }
@@ -2500,6 +2532,11 @@ export class AudioMatcher {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
       field10Residual: residual10Lock,
+      goldChainVsCoin: isGoldChainVsCoinSoftLock(
+        top.soundId,
+        runner?.soundId,
+        top.confidence,
+      ),
     });
     if (margin < needGap && !residual19Lock && !residual10Lock) {
       this.surfaceListening(

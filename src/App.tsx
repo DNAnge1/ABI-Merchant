@@ -109,6 +109,10 @@ export default function App() {
   const multiProgressRef = useRef(multiProgress);
   multiProgressRef.current = multiProgress;
   const [shopToast, setShopToast] = useState<string | null>(null);
+  /** Multi identify-fail toast stays until next lock / dismiss / leave shop */
+  const [shopToastSticky, setShopToastSticky] = useState(false);
+  const shopToastStickyRef = useRef(false);
+  shopToastStickyRef.current = shopToastSticky;
   const [burstCaptureUrl, setBurstCaptureUrl] = useState<string | null>(null);
   const [burstCaptureMs, setBurstCaptureMs] = useState(0);
   const burstCaptureBlobRef = useRef<Blob | null>(null);
@@ -255,6 +259,7 @@ export default function App() {
         return;
       }
       setShopToast(null);
+      setShopToastSticky(false);
       if (payload.captureBlob) {
         adoptBurstCapture(payload.captureBlob, payload.captureDurationMs ?? 0);
       }
@@ -332,7 +337,27 @@ export default function App() {
       onMultiProgress: (p) => {
         setMultiProgress(p);
         setMultiArmed(p.phase !== 'idle');
-        if (p.detail) setShopToast(p.detail);
+        if (!p.detail) return;
+        const failLike =
+          /ambiguous|weak match|no fingerprint|failed|error|reject|too quiet|need ≥/i.test(
+            p.detail,
+          );
+        const rearmIdle =
+          p.phase === 'armed' && /Ready for next cargo/i.test(p.detail);
+        if (failLike) {
+          setShopToastSticky(true);
+          setShopToast(p.detail);
+          return;
+        }
+        // Don't wipe a sticky fail with a brief "Ready for next cargo" flash.
+        if (rearmIdle && shopToastStickyRef.current) {
+          setShopToast(
+            (prev) =>
+              `${prev ?? 'Identify failed — try again'}\n——\n${p.detail}`,
+          );
+          return;
+        }
+        if (!shopToastStickyRef.current) setShopToast(p.detail);
       },
     });
     matcher.setCandidates(ALL_SOUND_IDS);
@@ -828,6 +853,7 @@ export default function App() {
           phase: 'idle',
         });
         setShopToast('Left At Shop — listening paused (raid muted).');
+        setShopToastSticky(false);
         return;
       }
       setShopCalibrating(true);
@@ -934,6 +960,9 @@ export default function App() {
       setStatusDetail(result.reason);
       if (!result.ok) {
         setStatus('listening');
+        if (keepMulti) setShopToastSticky(true);
+      } else {
+        setShopToastSticky(false);
       }
       // Dual+Multi Force Stop & Match: cooldown then wait for next cargo.
       if (keepMulti && matcherRef.current.isMultiContinuousArmed()) {
@@ -983,9 +1012,11 @@ export default function App() {
         phase: 'idle',
       });
       setShopToast('Multi stopped — still At Shop.');
+      setShopToastSticky(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setShopToast(`Stop Multi: ${msg}`);
+      setShopToastSticky(true);
     }
   }
 
@@ -1181,6 +1212,7 @@ export default function App() {
                   recordingMove={recordingMove}
                   calibrating={shopCalibrating}
                   toast={shopToast}
+                  toastSticky={shopToastSticky}
                   multiMode={scanStyle === 'continuous' && monitorSetup === 'dual'}
                   multiArmed={multiArmed}
                   multiSpikeCount={multiProgress.spikeCount}
@@ -1193,7 +1225,10 @@ export default function App() {
                   onStopMatch={() => void handleStopMoveBurst()}
                   onArmMulti={() => void handleArmMulti()}
                   onStopMulti={() => void handleStopMulti()}
-                  onDismissToast={() => setShopToast(null)}
+                  onDismissToast={() => {
+                    setShopToast(null);
+                    setShopToastSticky(false);
+                  }}
                   onPlayCapture={playBurstCapture}
                   onDownloadCapture={downloadBurstCapture}
                 />
@@ -1214,6 +1249,7 @@ export default function App() {
                   match={locked?.match ?? null}
                   resultItems={locked?.resultItems ?? []}
                   altMatches={locked?.alt}
+                  onStartListening={() => void startCapture()}
                   onThumbsUp={() => finishLocked('up')}
                   onThumbsDown={() => {
                     setMissTarget('locked');
@@ -1240,6 +1276,7 @@ export default function App() {
                 <ContinuousGrid
                   slots={slots}
                   listening={capturing}
+                  onStartListening={() => void startCapture()}
                   onThumbsUp={(id) => {
                     const slot = slots.find((s) => s.id === id);
                     if (!slot) return;

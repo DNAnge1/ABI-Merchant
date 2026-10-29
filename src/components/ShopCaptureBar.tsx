@@ -11,6 +11,8 @@ export function ShopCaptureBar(props: {
   calibrating?: boolean;
   busy?: boolean;
   toast?: string | null;
+  /** Keep fail/retry toast visually sticky until dismiss or next lock */
+  toastSticky?: boolean;
   /** Dual + Multiple Items continuous scan */
   multiMode?: boolean;
   multiArmed?: boolean;
@@ -49,9 +51,21 @@ export function ShopCaptureBar(props: {
       {props.toast && (
         <div
           role="status"
-          className="flex items-start justify-between gap-2 rounded border border-[var(--warn)]/50 bg-[#2a2208] px-2.5 py-2 text-[11px] text-[var(--warn)]"
+          className={[
+            'flex items-start justify-between gap-2 rounded border px-2.5 py-2 text-[11px]',
+            props.toastSticky
+              ? 'border-[var(--warn)] bg-[#2a2208] text-[var(--warn)] shadow-[0_0_0_1px_rgba(245,197,66,0.25)]'
+              : 'border-[var(--warn)]/50 bg-[#2a2208] text-[var(--warn)]',
+          ].join(' ')}
         >
-          <p className="m-0 leading-relaxed whitespace-pre-wrap">{props.toast}</p>
+          <div className="min-w-0">
+            {props.toastSticky && (
+              <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
+                Retry — stays until next lock or dismiss
+              </p>
+            )}
+            <p className="m-0 leading-relaxed whitespace-pre-wrap">{props.toast}</p>
+          </div>
           {props.onDismissToast && (
             <button
               type="button"

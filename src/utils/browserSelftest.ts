@@ -1,12 +1,13 @@
 /**
  * Built-in self-test: decode each pickup OGG through a live AnalyserNode at the
- * browser AudioContext sample rate, poll getByteFrequencyData for ~300ms
- * (same path as captureAndMatch), and score against fingerprints.
+ * browser AudioContext sample rate, poll getFloatTimeDomainData + linear FFT
+ * for ~300ms (same path as captureAndMatch / burst), and score against fingerprints.
  */
 
 import { assetUrl } from './assetUrl';
 import {
   analyserFftSize,
+  fftLinearMagnitudes,
   magnitudeToBands,
   matchSpectrumAgainstFingerprints,
   spectralCentroidHz,
@@ -57,10 +58,10 @@ async function decodePickup(
   return ctx.decodeAudioData(ab.slice(0));
 }
 
-function timeDomainRms(buf: Uint8Array): number {
+function timeDomainRms(buf: Float32Array): number {
   let sum = 0;
   for (let i = 0; i < buf.length; i++) {
-    const v = (buf[i] - 128) / 128;
+    const v = buf[i];
     sum += v * v;
   }
   return Math.sqrt(sum / buf.length);
@@ -68,7 +69,8 @@ function timeDomainRms(buf: Uint8Array): number {
 
 /**
  * Play buffer into analyser (muted). Prefer fingerprint onsetMs (live300-aligned);
- * fall back to RMS onset if onset unknown.
+ * fall back to RMS onset if onset unknown. Uses linear FFT on float time-domain
+ * data — matches live burst / captureAndMatch (not getByteFrequencyData).
  */
 async function captureLiveSpectrum(
   ctx: AudioContext,
@@ -80,8 +82,7 @@ async function captureLiveSpectrum(
   src.buffer = buffer;
   src.connect(analyser);
 
-  const freqBuf = new Uint8Array(analyser.frequencyBinCount);
-  const timeBuf = new Uint8Array(analyser.fftSize);
+  const timeFloat = new Float32Array(analyser.fftSize);
   const frames: number[][] = [];
   const centroids: number[] = [];
 
@@ -95,8 +96,8 @@ async function captureLiveSpectrum(
   if (onsetMs == null) {
     const t0 = performance.now();
     while (performance.now() - t0 < ONSET_WAIT_MS) {
-      analyser.getByteTimeDomainData(timeBuf);
-      if (timeDomainRms(timeBuf) >= ONSET_RMS) break;
+      analyser.getFloatTimeDomainData(timeFloat);
+      if (timeDomainRms(timeFloat) >= ONSET_RMS) break;
       await raf();
     }
   } else {
@@ -106,11 +107,12 @@ async function captureLiveSpectrum(
 
   const sliceStart = performance.now();
   while (performance.now() - sliceStart < SLICE_MS) {
-    analyser.getByteFrequencyData(freqBuf);
+    analyser.getFloatTimeDomainData(timeFloat);
+    const linMag = fftLinearMagnitudes(timeFloat);
     frames.push(
-      magnitudeToBands(freqBuf, ctx.sampleRate, analyser.fftSize, 32),
+      magnitudeToBands(linMag, ctx.sampleRate, analyser.fftSize, 32),
     );
-    centroids.push(spectralCentroidHz(freqBuf, ctx.sampleRate, analyser.fftSize));
+    centroids.push(spectralCentroidHz(linMag, ctx.sampleRate, analyser.fftSize));
     await raf();
   }
 
@@ -122,9 +124,10 @@ async function captureLiveSpectrum(
   src.disconnect();
 
   if (frames.length === 0) {
-    analyser.getByteFrequencyData(freqBuf);
-    frames.push(magnitudeToBands(freqBuf, ctx.sampleRate, analyser.fftSize, 32));
-    centroids.push(spectralCentroidHz(freqBuf, ctx.sampleRate, analyser.fftSize));
+    analyser.getFloatTimeDomainData(timeFloat);
+    const linMag = fftLinearMagnitudes(timeFloat);
+    frames.push(magnitudeToBands(linMag, ctx.sampleRate, analyser.fftSize, 32));
+    centroids.push(spectralCentroidHz(linMag, ctx.sampleRate, analyser.fftSize));
   }
 
   const bands = frames[0]?.length || 32;
@@ -143,7 +146,7 @@ async function captureLiveSpectrum(
 export type SelftestProgress = (done: number, total: number, row?: SelftestRow) => void;
 
 /**
- * Score all pickup fingerprints via live AnalyserNode / getByteFrequencyData.
+ * Score all pickup fingerprints via live AnalyserNode + linear FFT.
  * Mutes output so the UI can run it without blasting speakers.
  */
 export async function runBrowserAnalyserSelftest(

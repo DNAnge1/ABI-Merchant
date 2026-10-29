@@ -554,6 +554,21 @@ export default function App() {
     matcherRef.current?.setSensitivity(sensitivity);
   }, [sensitivity]);
 
+  // Soft size prior: demote soundIds with no items in checked sizes when conf soft.
+  useEffect(() => {
+    if (!matcherRef.current) return;
+    if (selectedSizes.length === 0) {
+      matcherRef.current.setSizePriorSoundIds(null);
+      return;
+    }
+    const ids = [
+      ...new Set(
+        items.filter((i) => selectedSizes.includes(i.size)).map((i) => i.soundId),
+      ),
+    ];
+    matcherRef.current.setSizePriorSoundIds(ids);
+  }, [selectedSizes]);
+
   useEffect(() => {
     // Manual Mode slider remains an advanced override when not in auto listening.
     if (mode === 'manual') matcherRef.current?.setNoiseFloor(noiseFloor);

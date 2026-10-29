@@ -362,7 +362,8 @@ function interpolateEmptyBands(bandVec: number[], bandCounts: number[]): void {
   }
 }
 
-export function magnitudeToBands(
+/** Unnormalized log-band averages (for ambient subtract before peak-normalize). */
+export function magnitudeToBandsRaw(
   magnitudes: Float32Array | Uint8Array,
   sampleRate: number,
   fftSize: number,
@@ -390,8 +391,45 @@ export function magnitudeToBands(
     if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
   interpolateEmptyBands(bandVec, bandCounts);
+  return bandVec;
+}
+
+export function magnitudeToBands(
+  magnitudes: Float32Array | Uint8Array,
+  sampleRate: number,
+  fftSize: number,
+  bands = 32,
+): number[] {
+  const bandVec = magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
+}
+
+/**
+ * Soft size prior: when top confidence is soft and the top soundId has **no**
+ * items in the checked sizes, demote out-of-size IDs so an in-size runner can
+ * surface. If the top already matches a checked size, leave ranking alone —
+ * demoting other sizes must not turn an ambiguous #28/#31 into a false #28 lock
+ * (Car Battery #6 and Lion #28 both have 3×2 items).
+ */
+export function applySoftSizePrior(
+  matches: MatchResult[],
+  sizePriorSoundIds: Set<number> | null | undefined,
+  softBelow = 92,
+  demotePts = 8,
+): MatchResult[] {
+  if (!sizePriorSoundIds || sizePriorSoundIds.size === 0 || matches.length === 0) {
+    return matches;
+  }
+  const top = matches[0];
+  if (top.confidence >= softBelow) return matches;
+  if (sizePriorSoundIds.has(top.soundId)) return matches;
+  const adjusted = matches.map((m) =>
+    sizePriorSoundIds.has(m.soundId)
+      ? m
+      : { ...m, confidence: Math.round((m.confidence - demotePts) * 10) / 10 },
+  );
+  return adjusted.sort((a, b) => b.confidence - a.confidence);
 }
 
 /** Spectral centroid restricted to fingerprint Nyquist band (50–11025 Hz). */
@@ -979,17 +1017,115 @@ export function resolveField10Residual(
   return [promoted, ...others];
 }
 
+export type PcmLive300Lobe = {
+  spectrumVector: number[];
+  centroid: number;
+  onsetMs: number;
+  frames: number;
+  peakRms: number;
+};
+
+export type PcmLive300Result = {
+  spectrumVector: number[];
+  centroid: number;
+  onsetMs: number;
+  frames: number;
+  /** Quiet-frame ambient subtract ran (raid wind/birds/water). */
+  ambientSubtracted?: boolean;
+  /** Lobes scored (loudest-first); primary = lobes[0] / averaged. */
+  lobes?: PcmLive300Lobe[];
+};
+
+function percentileSorted(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const i = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.floor(sorted.length * p)),
+  );
+  return sorted[i];
+}
+
+function extractPcmLobeWindow(
+  samples: Float32Array,
+  sampleRate: number,
+  fftSize: number,
+  bands: number,
+  onsetSample: number,
+  ambientRaw: number[] | null,
+): PcmLive300Lobe {
+  const sliceSamples = Math.floor((300 / 1000) * sampleRate);
+  const end = Math.min(samples.length, onsetSample + sliceSamples);
+  const hop = Math.max(
+    1,
+    Math.floor(fftSize / (end - onsetSample < fftSize * 2 ? 8 : 4)),
+  );
+  const bandAccum = new Array(bands).fill(0);
+  const centroids: number[] = [];
+  let frames = 0;
+  const scratch = new Float32Array(fftSize);
+  let peakRms = 0;
+
+  for (let start = onsetSample; start + fftSize <= end; start += hop) {
+    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+    let e = 0;
+    for (let i = 0; i < fftSize; i++) e += scratch[i] * scratch[i];
+    peakRms = Math.max(peakRms, Math.sqrt(e / fftSize));
+    const linMag = fftLinearMagnitudes(scratch);
+    const raw = magnitudeToBandsRaw(linMag, sampleRate, fftSize, bands);
+    for (let i = 0; i < bands; i++) {
+      const v =
+        ambientRaw != null
+          ? Math.max(0, raw[i] - ambientRaw[i] * 0.85)
+          : raw[i];
+      bandAccum[i] += v;
+    }
+    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
+    frames += 1;
+  }
+  if (frames === 0) {
+    const start = Math.max(
+      0,
+      Math.min(onsetSample, Math.max(0, samples.length - fftSize)),
+    );
+    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+    const linMag = fftLinearMagnitudes(scratch);
+    const raw = magnitudeToBandsRaw(linMag, sampleRate, fftSize, bands);
+    for (let i = 0; i < bands; i++) {
+      bandAccum[i] =
+        ambientRaw != null
+          ? Math.max(0, raw[i] - ambientRaw[i] * 0.85)
+          : raw[i];
+    }
+    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
+    frames = 1;
+  }
+
+  for (let i = 0; i < bands; i++) bandAccum[i] /= frames;
+  const max = Math.max(...bandAccum, 1e-9);
+  return {
+    spectrumVector: bandAccum.map((v) => v / max),
+    centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
+    onsetMs: (onsetSample / sampleRate) * 1000,
+    frames,
+    peakRms,
+  };
+}
+
 /**
- * PCM live300 window — same onset+~300ms bin-average as fingerprint extract /
- * offline selftest, using {@link fftLinearMagnitudes} at the given sample rate.
- * Prefer this for browser Self-Test (AnalyserNode seek/ring-buffer averages diverge).
+ * PCM live300 window — onset+~300ms bin-average aligned with fingerprint extract /
+ * offline selftest ({@link fftLinearMagnitudes}).
+ *
+ * Long/noisy bursts: pick up to 3 **loudest** transient lobes (not the first hop
+ * above 25% maxRms — that scored raid wind at t=0). When quiet-floor is live
+ * (raid ambience), subtract quiet-frame raw bands before normalize.
+ * Short clean OGG / Self-Test buffers keep a single first-onset window.
  */
 export function analyzePcmLive300Window(
   samples: Float32Array,
   sampleRate: number,
   fftSize: number,
   bands = 32,
-): { spectrumVector: number[]; centroid: number; onsetMs: number; frames: number } {
+): PcmLive300Result {
   const hopEnv = Math.max(1, Math.floor(sampleRate * 0.01));
   const envelope: number[] = [];
   for (let i = 0; i + hopEnv <= samples.length; i += hopEnv) {
@@ -1002,53 +1138,99 @@ export function analyzePcmLive300Window(
   }
   let maxRms = 0;
   for (const r of envelope) maxRms = Math.max(maxRms, r);
-  const floor = Math.max(0.02, maxRms * 0.25);
-  let onset = 0;
-  for (let i = 0; i < envelope.length; i++) {
-    if (envelope[i] >= floor) {
-      onset = i * hopEnv;
-      break;
+  const sortedEnv = [...envelope].sort((a, b) => a - b);
+  const quietFloor = percentileSorted(sortedEnv, 0.25);
+  const durMs = (samples.length / sampleRate) * 1000;
+  const useMultiLobe = durMs >= 600 && maxRms > 1e-6;
+
+  // Ambient from quietest ~30% hops (raw bands) — only when live floor is present.
+  // Skip on near-silent OGG / Self-Test so quiet #19 is not starved.
+  let ambientRaw: number[] | null = null;
+  const ambientSubtracted = quietFloor > 0.003 && useMultiLobe;
+  if (ambientSubtracted) {
+    const withIdx = envelope.map((rms, i) => ({ rms, i }));
+    withIdx.sort((a, b) => a.rms - b.rms);
+    const nQuiet = Math.max(1, Math.floor(envelope.length * 0.3));
+    const quietIdx = withIdx.slice(0, nQuiet).map((x) => x.i);
+    const ambientAccum = new Array(bands).fill(0);
+    let ambientFrames = 0;
+    const scratch = new Float32Array(fftSize);
+    for (const ei of quietIdx) {
+      const start = ei * hopEnv;
+      if (start + fftSize > samples.length) continue;
+      for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+      const linMag = fftLinearMagnitudes(scratch);
+      const raw = magnitudeToBandsRaw(linMag, sampleRate, fftSize, bands);
+      for (let b = 0; b < bands; b++) ambientAccum[b] += raw[b];
+      ambientFrames += 1;
+    }
+    if (ambientFrames > 0) {
+      ambientRaw = ambientAccum.map((v) => v / ambientFrames);
     }
   }
 
-  const sliceSamples = Math.floor((300 / 1000) * sampleRate);
-  const end = Math.min(samples.length, onset + sliceSamples);
-  // Denser hops on short pickups (#19 ~220ms) so 48k/4096 still captures attack.
-  const hop = Math.max(
-    1,
-    Math.floor(fftSize / (end - onset < fftSize * 2 ? 8 : 4)),
+  const lobeOnsets: number[] = [];
+  if (useMultiLobe) {
+    const minSepHops = Math.max(1, Math.round(180 / 10)); // 180ms @ 10ms hops
+    const peakThresh = Math.max(quietFloor + (maxRms - quietFloor) * 0.45, maxRms * 0.45);
+    const peaks: { i: number; rms: number }[] = [];
+    for (let i = 1; i < envelope.length - 1; i++) {
+      const r = envelope[i];
+      if (r < peakThresh) continue;
+      if (r >= envelope[i - 1] && r >= envelope[i + 1]) {
+        peaks.push({ i, rms: r });
+      }
+    }
+    peaks.sort((a, b) => b.rms - a.rms);
+    for (const p of peaks) {
+      if (lobeOnsets.some((o) => Math.abs(o / hopEnv - p.i) < minSepHops)) continue;
+      // Walk back to the transient *foot* (not mid-body). Metal crisp / battery
+      // peaks often sit 50–100ms after the bright attack; a short 40ms walk left
+      // the 300ms window on the dull decay and flipped #6 → #28.
+      const foot = quietFloor + 0.15 * (p.rms - quietFloor);
+      let ai = p.i;
+      for (let k = 0; k < 20 && ai > 0; k++) {
+        if (envelope[ai - 1] < foot) break;
+        ai -= 1;
+      }
+      lobeOnsets.push(ai * hopEnv);
+      if (lobeOnsets.length >= 3) break;
+    }
+  }
+
+  // Short clean OGG / no clear multi-lobe: classic first-threshold onset.
+  if (lobeOnsets.length === 0) {
+    const floor = Math.max(0.02, maxRms * 0.25);
+    let onset = 0;
+    for (let i = 0; i < envelope.length; i++) {
+      if (envelope[i] >= floor) {
+        onset = i * hopEnv;
+        break;
+      }
+    }
+    lobeOnsets.push(onset);
+  }
+
+  const lobes = lobeOnsets.map((onsetSample) =>
+    extractPcmLobeWindow(
+      samples,
+      sampleRate,
+      fftSize,
+      bands,
+      onsetSample,
+      ambientRaw,
+    ),
   );
-  const bandAccum = new Array(bands).fill(0);
-  const centroids: number[] = [];
-  let frames = 0;
-  const scratch = new Float32Array(fftSize);
-
-  for (let start = onset; start + fftSize <= end; start += hop) {
-    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
-    const linMag = fftLinearMagnitudes(scratch);
-    const frameBands = magnitudeToBands(linMag, sampleRate, fftSize, bands);
-    for (let i = 0; i < bands; i++) bandAccum[i] += frameBands[i];
-    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
-    frames += 1;
-  }
-  if (frames === 0) {
-    // Allow a slightly pre-onset frame when the clip is shorter than fftSize.
-    const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
-    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
-    const linMag = fftLinearMagnitudes(scratch);
-    const frameBands = magnitudeToBands(linMag, sampleRate, fftSize, bands);
-    for (let i = 0; i < bands; i++) bandAccum[i] = frameBands[i];
-    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
-    frames = 1;
-  }
-
-  for (let i = 0; i < bands; i++) bandAccum[i] /= frames;
-  const max = Math.max(...bandAccum, 1e-9);
+  // Loudest lobe first (by in-lobe peak RMS).
+  lobes.sort((a, b) => b.peakRms - a.peakRms);
+  const primary = lobes[0];
   return {
-    spectrumVector: bandAccum.map((v) => v / max),
-    centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
-    onsetMs: (onset / sampleRate) * 1000,
-    frames,
+    spectrumVector: primary.spectrumVector,
+    centroid: primary.centroid,
+    onsetMs: primary.onsetMs,
+    frames: primary.frames,
+    ambientSubtracted: ambientSubtracted && ambientRaw != null,
+    lobes,
   };
 }
 
@@ -1212,6 +1394,11 @@ export class AudioMatcher {
   private onMultiProgress?: (p: MultiScanProgress) => void;
   private fingerprints: FingerprintsFile;
   private candidateSoundIds: number[] = [];
+  /**
+   * Sound IDs that have ≥1 item in the UI-checked sizes. Soft prior demotes
+   * others when top confidence is &lt;92%. Null/empty = no size prior.
+   */
+  private sizePriorSoundIds: Set<number> | null = null;
   private onFocusBound = () => this.armFocusGrace();
 
   constructor(
@@ -1270,6 +1457,18 @@ export class AudioMatcher {
 
   setCandidates(soundIds: number[]) {
     this.candidateSoundIds = soundIds;
+  }
+
+  /**
+   * Soft size prior from Latest Lock size checkboxes. Pass empty/omit to clear.
+   * When audio is soft (&lt;92%), soundIds outside this set are demoted.
+   */
+  setSizePriorSoundIds(soundIds: number[] | null | undefined) {
+    if (!soundIds || soundIds.length === 0) {
+      this.sizePriorSoundIds = null;
+      return;
+    }
+    this.sizePriorSoundIds = new Set(soundIds);
   }
 
   setNoiseFloor(v: number) {
@@ -1951,9 +2150,15 @@ export class AudioMatcher {
       }
     }
 
+    // Snapshot spike-majority ranking before pcm300 may overwrite it.
+    const spikeMatches = allMatches;
+    const spikeSpectrum = spectrumVector;
+    const spikeCentroid = centroid;
+
     // Prefer Self-Test-aligned PCM live300 on the burst WAV tee when present.
     // AnalyserNode peak windows were the main exact-OGG vs Self-Test skew (#6/#9/#19).
     let matchSource: 'pcm-live300' | 'analyser-spikes' = 'analyser-spikes';
+    let pcmLobeNote = '';
     const minPcmSamples = Math.floor(pcm.sampleRate * 0.08);
     if (pcm.samples.length >= minPcmSamples) {
       let pcmPeak = 0;
@@ -1969,8 +2174,78 @@ export class AudioMatcher {
           analyserFftSize(pcm.sampleRate),
           this.fingerprints.vectorBands || 32,
         );
-        spectrumVector = pcmWin.spectrumVector;
-        centroid = pcmWin.centroid;
+        const lobes: PcmLive300Lobe[] =
+          pcmWin.lobes && pcmWin.lobes.length > 0
+            ? pcmWin.lobes
+            : [
+                {
+                  spectrumVector: pcmWin.spectrumVector,
+                  centroid: pcmWin.centroid,
+                  onsetMs: pcmWin.onsetMs,
+                  frames: pcmWin.frames,
+                  peakRms: pcmPeak,
+                },
+              ];
+        // Score each loud lobe; majority among lobes resists one wind/decay window.
+        const lobeVotes: { soundId: number; confidence: number; lobe: PcmLive300Lobe }[] =
+          [];
+        for (const lobe of lobes.slice(0, 3)) {
+          const ranked = rankMatchesWithPriors(
+            matchSpectrumAgainstFingerprints(
+              lobe.spectrumVector,
+              this.fingerprints,
+              candidates,
+              this.kind,
+              lobe.centroid,
+            ),
+            lobe.centroid,
+          );
+          if (ranked[0]) {
+            lobeVotes.push({
+              soundId: ranked[0].soundId,
+              confidence: ranked[0].confidence,
+              lobe,
+            });
+          }
+        }
+        const lobeCount = new Map<number, { n: number; confSum: number; lobe: PcmLive300Lobe }>();
+        for (const v of lobeVotes) {
+          const prev = lobeCount.get(v.soundId);
+          if (!prev || v.confidence > prev.confSum / Math.max(prev.n, 1)) {
+            lobeCount.set(v.soundId, {
+              n: (prev?.n ?? 0) + 1,
+              confSum: (prev?.confSum ?? 0) + v.confidence,
+              lobe: v.lobe,
+            });
+          } else {
+            lobeCount.set(v.soundId, {
+              n: prev.n + 1,
+              confSum: prev.confSum + v.confidence,
+              lobe: prev.lobe,
+            });
+          }
+        }
+        let bestLobeId: number | null = null;
+        let bestLobeN = 0;
+        let bestLobeConf = 0;
+        let bestLobe = lobes[0];
+        for (const [id, info] of lobeCount) {
+          const avgConf = info.confSum / info.n;
+          if (
+            info.n > bestLobeN ||
+            (info.n === bestLobeN && avgConf > bestLobeConf)
+          ) {
+            bestLobeId = id;
+            bestLobeN = info.n;
+            bestLobeConf = avgConf;
+            bestLobe = info.lobe;
+          }
+        }
+        // Prefer majority lobe spectrum; else loudest primary from analyzer.
+        const chosenLobe =
+          bestLobeId != null && bestLobeN >= 2 ? bestLobe : lobes[0];
+        spectrumVector = chosenLobe.spectrumVector;
+        centroid = chosenLobe.centroid;
         allMatches = rankMatchesWithPriors(
           matchSpectrumAgainstFingerprints(
             spectrumVector,
@@ -1986,6 +2261,33 @@ export class AudioMatcher {
           capturedCentroid: centroid,
         }));
         matchSource = 'pcm-live300';
+        pcmLobeNote =
+          ` · lobes ${lobes.length}` +
+          (pcmWin.ambientSubtracted ? ' · amb-sub' : '') +
+          (bestLobeId != null && bestLobeN >= 2
+            ? ` · lobeVote ${bestLobeN}/${lobeVotes.length}→#${bestLobeId}`
+            : ` · lobe@${Math.round(chosenLobe.onsetMs)}ms`);
+
+        // Safety: a weak/noisy pcm300 window must not wipe a clear spike majority.
+        if (
+          majorityOk &&
+          majorityId != null &&
+          allMatches[0]?.soundId !== majorityId
+        ) {
+          const pcmTop = allMatches[0];
+          const pcmRunner = allMatches[1];
+          const pcmGap =
+            pcmTop.confidence - (pcmRunner?.confidence ?? 0);
+          const pcmWeak =
+            pcmTop.confidence < 92 || pcmGap < 5;
+          if (pcmWeak) {
+            spectrumVector = spikeSpectrum;
+            centroid = spikeCentroid;
+            allMatches = spikeMatches;
+            matchSource = 'analyser-spikes';
+            pcmLobeNote += ` · keptSpikeMaj#${majorityId}`;
+          }
+        }
       }
     }
 
@@ -2020,6 +2322,12 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    // Soft size prior — demote IDs with no items in checked sizes when conf soft.
+    allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
@@ -2034,13 +2342,14 @@ export class AudioMatcher {
         : 'spikes-only';
     const voteNote =
       matchSource === 'pcm-live300'
-        ? ` · ${sourceNote}`
+        ? ` · ${sourceNote}${pcmLobeNote}`
         : ` · ${sourceNote}` +
           (majorityOk && majorityId != null
             ? ` · vote ${majorityN}/${spikeVotes.length}→#${majorityId}`
             : spikeVotes.length
               ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
-              : '');
+              : '') +
+          pcmLobeNote;
 
     if (!top) {
       const quietNote = quiet
@@ -2654,6 +2963,11 @@ export class AudioMatcher {
       spectrumVector,
       this.fingerprints,
     ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
+    allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
       ...m,
       spectrumVector,
       capturedCentroid: centroid,

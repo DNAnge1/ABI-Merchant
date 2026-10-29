@@ -1,5 +1,6 @@
 /**
- * Premium mid-screen teal-ring CTA: Start/Stop Listening + always-visible moveCount/3.
+ * Premium mid-screen teal-ring CTA.
+ * Multi: always-visible moveCount/3. Single: no fake 0/3 — burst via Stop & Match.
  */
 export function ListenCircle(props: {
   capturing: boolean;
@@ -46,9 +47,15 @@ export function ListenCircle(props: {
           >
             {props.capturing ? 'Stop listening' : 'Start Listening'}
           </span>
-          <span className="text-[28px] font-semibold tracking-tight tabular-nums text-[var(--text)]">
-            {moveCount}/{targetN}
-          </span>
+          {props.multiMode ? (
+            <span className="text-[28px] font-semibold tracking-tight tabular-nums text-[var(--text)]">
+              {moveCount}/{targetN}
+            </span>
+          ) : (
+            <span className="text-[18px] font-semibold tracking-tight text-[var(--text)]">
+              {props.recordingMove ? 'Recording…' : 'Single · burst'}
+            </span>
+          )}
           <span className="text-[10px] font-medium text-[var(--muted)] leading-snug max-w-[140px]">
             {props.capturing
               ? props.multiMode
@@ -58,10 +65,10 @@ export function ListenCircle(props: {
                     : props.multiPhase === 'cooldown'
                       ? 'Cooldown'
                       : 'Multi waits for 3'
-                  : 'Arm Multi in shop bar'
+                  : 'Arm Multi, then move 3×'
                 : props.recordingMove
-                  ? 'Recording moves…'
-                  : 'Ready at Field Merchant'
+                  ? 'Drag cargo, then Stop & Match'
+                  : 'At Shop → Start Moving → Stop & Match'
               : 'Ready at Field Merchant'}
           </span>
         </button>

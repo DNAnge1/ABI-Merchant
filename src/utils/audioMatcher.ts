@@ -767,12 +767,19 @@ export function hardRejectDullSink(top: MatchResult): string | null {
 const QUIET19_DULL_SINKS = new Set([28, 2, 7]);
 /** Mid wood/blunt cluster that quiet #19 drifts into (#14/#2 field, #20 WAV). */
 const QUIET19_WOOD_CLUSTER = new Set([2, 8, 14, 17, 20, 30]);
+/**
+ * Minimum raw (pre-residual) #19 confidence before quiet-19 may promote/floor.
+ * True field toolbox WAVs land raw #19 ≥ ~62; a Vector Pro capture that quiet-19
+ * stole to Toolbox only had raw #19 @ 49 with statue-dull onset — prefer reject
+ * over a false #19 lock when evidence is that thin.
+ */
+export const QUIET19_MIN_RAW_CONF = 55;
 
 /**
  * Residual quiet toolbox (#19): in-game / sample material is genuinely dull — not just
  * a bad mic take. Do **not** map all dull audio to #19.
  *
- * Promote #19 when nothing else self-locks hard (≥92%) and:
+ * Promote #19 when nothing else self-locks hard (≥92%), raw #19 ≥ {@link QUIET19_MIN_RAW_CONF}, and:
  * - weak dull sink (&lt;88%), especially #28 &lt;80% regardless of centroid, OR
  * - mid wood-cluster (&lt;85%) with live centroid in quiet-container band (~2.3–3.8 kHz)
  *   and modest highBand (field: #14@80 vs #2@79).
@@ -801,6 +808,13 @@ export function resolveQuiet19Residual(
   if (top.soundId === 19) {
     // Already #19 on top (often floored soft residual): mark + beat runner.
     // Field: #19@78 vs #2/#14@78.2+ previously stayed ambiguous even with 0pt margin.
+    // Skip soft floor when raw #19 is below the promote gate (unless already marked).
+    if (
+      top.confidence < QUIET19_MIN_RAW_CONF &&
+      !top.quiet19Residual
+    ) {
+      return matches;
+    }
     if (top.confidence <= 80 || top.quiet19Residual) {
       const rest = matches.slice(1);
       const bestOther =
@@ -872,7 +886,9 @@ export function resolveQuiet19Residual(
   if (!weak28 && !dullBandResidual && !woodWeakMid) return matches;
 
   const m19 = matches.find((m) => m.soundId === 19);
-  if (!m19) return matches;
+  // Thin #19 evidence → leave weak dull top for hardRejectDullSink / ambiguity
+  // (Vector Pro mislock had raw #19 @ 49 while true toolbox WAVs are ≥ ~62).
+  if (!m19 || m19.confidence < QUIET19_MIN_RAW_CONF) return matches;
   const others = matches.filter((m) => m.soundId !== 19);
   const bestRunnerConf =
     others.length > 0

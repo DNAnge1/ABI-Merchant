@@ -603,25 +603,27 @@ export function rankMatchesWithPriors(
 
 /** Hard refuse dull statue sink locks that aren't real self-locks (~96%+). */
 export function hardRejectDullSink(top: MatchResult): string | null {
+  // Always block — must run on the *final* top immediately before lock (pitchLock
+  // previously bypassed this and locked #28 @ 75.9% after residual had promoted #19).
   if (top.soundId === 28 && top.confidence < 80) {
-    return `Stop & Match: Group #28 @ ${top.confidence}% is too weak to lock (true #28 self-locks ~96%). Quiet/bright cargo often sinks here — move louder/closer and retry.`;
+    return `Stop & Match: Group #28 @ ${top.confidence}% is too weak to lock (true #28 self-locks ~96%). Quiet toolbox is often #19 — move louder/closer or retry.`;
   }
   return null;
 }
 
 /** Dull sinks that steal quiet toolbox (#19) when it lands soft in-game. */
 const QUIET19_DULL_SINKS = new Set([28, 2, 7, 31]);
-/** Mid wood/blunt cluster that quiet #19 WAV drifts into (#20/@91 on toolbox capture). */
-const QUIET19_WOOD_CLUSTER = new Set([8, 14, 17, 20, 30]);
+/** Mid wood/blunt cluster that quiet #19 drifts into (#14/#2 field, #20 WAV). */
+const QUIET19_WOOD_CLUSTER = new Set([2, 8, 14, 17, 20, 30]);
 
 /**
  * Residual quiet toolbox (#19): in-game / sample material is genuinely dull — not just
  * a bad mic take. Do **not** map all dull audio to #19.
  *
- * Promote #19 only when:
- * - nothing else self-locks hard (≥92%), AND
- * - top is a weak dull sink (&lt;85%), OR mid wood-cluster (&lt;93%) with live centroid
- *   in the quiet-container band (~2.6–3.6 kHz) and modest highBand.
+ * Promote #19 when nothing else self-locks hard (≥92%) and:
+ * - weak dull sink (&lt;88%), especially #28 &lt;80% regardless of centroid, OR
+ * - mid wood-cluster (&lt;85%) with live centroid in quiet-container band (~2.3–3.8 kHz)
+ *   and modest highBand (field: #14@80 vs #2@79).
  */
 export function resolveQuiet19Residual(
   matches: MatchResult[],
@@ -640,13 +642,17 @@ export function resolveQuiet19Residual(
   const nothingStrong = bestOther.soundId === 19 || bestOther.confidence < 92;
 
   const dullWeak =
-    QUIET19_DULL_SINKS.has(top.soundId) && top.confidence < 85;
+    QUIET19_DULL_SINKS.has(top.soundId) && top.confidence < 88;
+  // #28 below 80 is never a real self-lock — residual even if centroid is statue-dull.
+  const weak28 =
+    top.soundId === 28 && top.confidence < 80 && nothingStrong;
   const midCent =
     capturedCentroid != null &&
-    capturedCentroid >= 2600 &&
-    capturedCentroid <= 3600;
+    capturedCentroid >= 2300 &&
+    capturedCentroid <= 3800;
   const modestHigh =
-    capturedHighRatio == null || capturedHighRatio < 0.36;
+    capturedHighRatio == null || capturedHighRatio < 0.38;
+  // <93 catches toolbox WAVs topping #20@~91; field #14@~80 also fits.
   const woodWeakMid =
     QUIET19_WOOD_CLUSTER.has(top.soundId) &&
     top.confidence < 93 &&
@@ -658,9 +664,10 @@ export function resolveQuiet19Residual(
     dullWeak &&
     nothingStrong &&
     (capturedCentroid == null ||
-      (capturedCentroid >= 2200 && capturedCentroid <= 3800));
+      weak28 ||
+      (capturedCentroid >= 2000 && capturedCentroid <= 4000));
 
-  if (!dullBandResidual && !woodWeakMid) return matches;
+  if (!weak28 && !dullBandResidual && !woodWeakMid) return matches;
 
   const m19 = matches.find((m) => m.soundId === 19);
   if (!m19) return matches;
@@ -1567,23 +1574,6 @@ export class AudioMatcher {
       });
     }
 
-    // Hard #28 reject before any ambiguous messaging — never a lock candidate below 80%.
-    // (Runs after quiet-#19 residual so weak #28 can become #19 instead of a reject toast.)
-    const dullReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
-    if (dullReject) {
-      this.lastBurstTopId = null;
-      return this.failBurst({
-        matches: allMatches.slice(0, 3),
-        frameCount: frames.length,
-        spikeCount: chosen.length,
-        peakRms,
-        baseline: effectiveBaseline,
-        threshold,
-        ...captureBase,
-        reason: `${dullReject} (${stats}${voteNote})`,
-      });
-    }
-
     let margin = runner ? top.confidence - runner.confidence : 99;
     const runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
@@ -1599,38 +1589,56 @@ export class AudioMatcher {
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
       this.lastBurstTopId === top.soundId && margin >= 3 && top.confidence >= 90;
-    // Near-tie + live pitch closer to runner FP → lock runner (#31@93.7 vs #6@92.6).
+    // Near-tie + live pitch closer to runner FP → prefer runner (#31@93.7 vs #6@92.6).
+    // Must NOT steal back onto a weak #28 after quiet-19 residual (field lock bug).
     let pitchLock = false;
     if (margin < needGap && !streakOk && runner && centroid != null) {
       const pitched = promotePitchCloserRunner(allMatches, centroid, 2.5);
-      if (pitched[0] && pitched[0].soundId !== top.soundId) {
+      const pitchedTop = pitched[0];
+      if (
+        pitchedTop &&
+        pitchedTop.soundId !== top.soundId &&
+        !hardRejectDullSink(pitchedTop)
+      ) {
         allMatches = pitched.map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
+        // Re-apply residual — pitch may have moved onto wood/#2 mid scores.
+        allMatches = resolveQuiet19Residual(
+          allMatches,
+          centroid,
+          highBandRatio(spectrumVector),
+        ).map((m) => ({
           ...m,
           spectrumVector,
           capturedCentroid: centroid,
         }));
         top = allMatches[0];
         runner = allMatches[1];
-        pitchLock = true;
+        pitchLock = top.soundId === pitchedTop.soundId;
         margin = runner ? Math.abs(top.confidence - runner.confidence) : 99;
       }
     }
+
+    // Absolute gate: never lock weak #28 — runs on FINAL top (after residual + pitch).
+    const finalReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
+    if (finalReject) {
+      this.lastBurstTopId = null;
+      return this.failBurst({
+        matches: allMatches.slice(0, 3),
+        frameCount: frames.length,
+        spikeCount: chosen.length,
+        peakRms,
+        baseline: effectiveBaseline,
+        threshold,
+        ...captureBase,
+        reason: `${finalReject} (${stats}${voteNote})`,
+      });
+    }
+
     if (margin < needGap && !streakOk && !pitchLock) {
-      // Re-check dull sink — never emit "ambiguous #28" below 80%.
-      const againReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
-      if (againReject) {
-        this.lastBurstTopId = null;
-        return this.failBurst({
-          matches: allMatches.slice(0, 3),
-          frameCount: frames.length,
-          spikeCount: chosen.length,
-          peakRms,
-          baseline: effectiveBaseline,
-          threshold,
-          ...captureBase,
-          reason: `${againReject} (${stats}${voteNote})`,
-        });
-      }
       this.lastBurstTopId = top.soundId;
       const tip =
         chosen.length < 2
@@ -2036,7 +2044,7 @@ export class AudioMatcher {
       return [];
     }
 
-    const sinkReject = directedSinkRejectReason(top, centroid);
+    const sinkReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
     if (sinkReject) {
       this.surfaceListening(sinkReject);
       return [];

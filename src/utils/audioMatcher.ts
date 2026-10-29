@@ -16,6 +16,7 @@ import {
   type SensitivityPreset,
 } from './sensitivity';
 import { assetUrl } from './assetUrl';
+import { concatFloat32, encodeWavMono } from './browserAudio';
 
 export type SoundKind = 'pickup' | 'drop';
 
@@ -80,7 +81,7 @@ export interface MatchPayload {
   source?: 'auto' | 'burst';
 }
 
-/** Result of Stop & Match — always populated so the UI can toast failures. */
+/** Result of Stop & Match — always populated so the UI can toast + replay capture. */
 export interface BurstMatchResult {
   ok: boolean;
   reason: string;
@@ -90,6 +91,11 @@ export interface BurstMatchResult {
   peakRms: number;
   baseline: number;
   threshold: number;
+  /** Raw burst PCM as WAV — present even when match fails / “too quiet”. */
+  captureBlob: Blob | null;
+  captureSampleRate: number;
+  captureDurationMs: number;
+  captureSamples: number;
 }
 
 export interface MatcherOptions {
@@ -285,6 +291,11 @@ export class AudioMatcher {
   private burstRecording = false;
   private burstFrames: BurstFrame[] = [];
   private burstStartedAt = 0;
+  /** Continuous mono PCM while Start Moving Item → Stop & Match. */
+  private burstPcmChunks: Float32Array[] = [];
+  private burstProcessor: ScriptProcessorNode | null = null;
+  /** Zero-gain → destination keeps ScriptProcessor alive without audible output. */
+  private burstMute: GainNode | null = null;
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
   private fingerprints: FingerprintsFile;
@@ -473,6 +484,7 @@ export class AudioMatcher {
       this.shopCalibrating = false;
       this.burstRecording = false;
       this.burstFrames = [];
+      this.stopBurstPcmCapture();
       this.listeningPaused = true;
       this.shopPhase = 'in-raid';
       this.surfaceListening(
@@ -490,6 +502,7 @@ export class AudioMatcher {
     }
     this.burstRecording = false;
     this.burstFrames = [];
+    this.stopBurstPcmCapture();
     this.shopCalibrating = true;
     this.shopPhase = 'calibrating';
     this.atShopGate = false;
@@ -527,6 +540,76 @@ export class AudioMatcher {
     };
   }
 
+  /** Tee continuous mono PCM off the capture graph (silent gain → speakers). */
+  private startBurstPcmCapture(): void {
+    this.stopBurstPcmCapture();
+    if (!this.ctx || !this.source) return;
+    this.burstPcmChunks = [];
+    // ScriptProcessor is deprecated but works without a worklet file (GitHub Pages friendly).
+    const proc = this.ctx.createScriptProcessor(4096, 1, 1);
+    const mute = this.ctx.createGain();
+    mute.gain.value = 0;
+    proc.onaudioprocess = (ev) => {
+      if (!this.burstRecording) return;
+      const input = ev.inputBuffer.getChannelData(0);
+      this.burstPcmChunks.push(new Float32Array(input));
+      // Cap ~25s @ 48k to avoid runaway memory
+      let samples = 0;
+      for (const c of this.burstPcmChunks) samples += c.length;
+      while (samples > 48_000 * 25 && this.burstPcmChunks.length > 1) {
+        samples -= this.burstPcmChunks.shift()!.length;
+      }
+    };
+    this.source.connect(proc);
+    proc.connect(mute);
+    mute.connect(this.ctx.destination);
+    this.burstProcessor = proc;
+    this.burstMute = mute;
+  }
+
+  private stopBurstPcmCapture(): {
+    samples: Float32Array;
+    sampleRate: number;
+    blob: Blob | null;
+  } {
+    const sampleRate = this.ctx?.sampleRate ?? 48000;
+    try {
+      this.burstProcessor?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.burstMute?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    // Keep MediaStreamSource → Analyser; only tear the PCM tee.
+    this.burstProcessor = null;
+    this.burstMute = null;
+    const samples = concatFloat32(this.burstPcmChunks);
+    this.burstPcmChunks = [];
+    const blob = samples.length > 0 ? encodeWavMono(samples, sampleRate) : null;
+    return { samples, sampleRate, blob };
+  }
+
+  private burstDiag(opts: {
+    peakRms: number;
+    baseline: number;
+    threshold: number;
+    frameCount: number;
+    spikeCount: number;
+    captureDurationMs: number;
+  }): string {
+    return [
+      `peak ${opts.peakRms.toFixed(3)}`,
+      `floor ${opts.baseline.toFixed(3)}`,
+      `thr ${opts.threshold.toFixed(3)}`,
+      `frames ${opts.frameCount}`,
+      `spikes ${opts.spikeCount}`,
+      `wav ${Math.round(opts.captureDurationMs)}ms`,
+    ].join(' · ');
+  }
+
   /** Primary shop workflow: start buffering while user moves one cargo a few times. */
   async startItemMoveBurst(): Promise<void> {
     if (!this.analyser || !this.ctx) {
@@ -539,6 +622,7 @@ export class AudioMatcher {
     this.burstRecording = true;
     this.burstFrames = [];
     this.burstStartedAt = performance.now();
+    this.startBurstPcmCapture();
     this.shopPhase = 'recording';
     this.setStatus('capturing', this.shopStatusDetail());
   }
@@ -553,6 +637,15 @@ export class AudioMatcher {
 
   /** Stop burst buffer, isolate loudest transients above shop baseline, average & match. */
   async stopItemMoveBurst(): Promise<BurstMatchResult> {
+    const pcm = this.stopBurstPcmCapture();
+    const captureDurationMs =
+      pcm.sampleRate > 0 ? (pcm.samples.length / pcm.sampleRate) * 1000 : 0;
+    const captureBase = {
+      captureBlob: pcm.blob,
+      captureSampleRate: pcm.sampleRate,
+      captureDurationMs,
+      captureSamples: pcm.samples.length,
+    };
     const empty = {
       matches: [] as MatchResult[],
       frameCount: 0,
@@ -560,11 +653,19 @@ export class AudioMatcher {
       peakRms: 0,
       baseline: this.rmsBaseline,
       threshold: 0,
+      ...captureBase,
     };
     if (!this.analyser || !this.ctx) {
       return this.failBurst({
         ...empty,
-        reason: 'Stop & Match failed — audio capture is gone. Start Listening again.',
+        reason: `Stop & Match failed — audio capture is gone. Start Listening again. (${this.burstDiag({
+          peakRms: 0,
+          baseline: this.rmsBaseline,
+          threshold: 0,
+          frameCount: 0,
+          spikeCount: 0,
+          captureDurationMs,
+        })})`,
       });
     }
 
@@ -579,19 +680,28 @@ export class AudioMatcher {
       sortedRms.length > 0
         ? sortedRms[Math.min(sortedRms.length - 1, Math.floor(sortedRms.length * 0.9))]
         : 0;
-    // Softer than auto-onset: catch cargo moves that sit only modestly above idle.
+    // Soft spike bar — prefer detecting quiet cargo moves over empty “no-op”.
     const threshold = Math.max(
-      this.rmsBaseline + Math.max(this.fluxThreshold * 0.45, 0.015),
-      this.rmsBaseline * 1.35 + 0.01,
-      Math.min(p90, this.rmsBaseline + 0.08),
+      this.rmsBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
+      this.rmsBaseline * 1.12 + 0.003,
+      Math.min(p90 * 0.65, this.rmsBaseline + 0.04),
     );
 
-    if (frames.length < 6) {
+    const diagFor = (peakRms: number, spikeCount: number, frameCount = frames.length) =>
+      this.burstDiag({
+        peakRms,
+        baseline: this.rmsBaseline,
+        threshold,
+        frameCount,
+        spikeCount,
+        captureDurationMs,
+      });
+
+    if (frames.length === 0) {
       return this.failBurst({
         ...empty,
-        frameCount: frames.length,
         threshold,
-        reason: `Stop & Match: recording too short (${frames.length} frames). Hold Start Moving Item, drag cargo a few times, then Stop.`,
+        reason: `Stop & Match: no analyser frames buffered. (${diagFor(0, 0, 0)}) Play captured audio below — if silent, mic/loopback isn’t reaching the site.`,
       });
     }
 
@@ -607,37 +717,27 @@ export class AudioMatcher {
     peaks.sort((a, b) => b.rms - a.rms);
     const chosen: BurstFrame[] = [];
     for (const p of peaks) {
-      if (chosen.some((c) => Math.abs(c.t - p.t) < 80)) continue;
+      if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
       chosen.push(p);
-      if (chosen.length >= 5) break;
+      if (chosen.length >= 6) break;
     }
     if (!chosen.length) {
       const loud = [...frames].sort((a, b) => b.rms - a.rms);
       for (const f of loud) {
         if (f.rms < threshold) break;
-        if (chosen.some((c) => Math.abs(c.t - f.t) < 80)) continue;
+        if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
         chosen.push(f);
-        if (chosen.length >= 3) break;
+        if (chosen.length >= 4) break;
       }
     }
-    // Last resort: take absolute loudest 3 frames even if under threshold (still match).
+    // Always attempt match: take absolute loudest frames even under threshold.
     if (!chosen.length) {
-      const loud = [...frames].sort((a, b) => b.rms - a.rms).slice(0, 3);
+      const loud = [...frames].sort((a, b) => b.rms - a.rms).slice(0, 4);
       chosen.push(...loud);
     }
 
-    const peakRms = Math.max(...chosen.map((c) => c.rms), 0);
-    if (peakRms < this.rmsBaseline + 0.008) {
-      return this.failBurst({
-        matches: [],
-        frameCount: frames.length,
-        spikeCount: 0,
-        peakRms,
-        baseline: this.rmsBaseline,
-        threshold,
-        reason: `Stop & Match: too quiet (peak ${peakRms.toFixed(3)} ≈ baseline ${this.rmsBaseline.toFixed(3)}). Move cargo louder / check mic loopback level.`,
-      });
-    }
+    const peakRms = Math.max(...chosen.map((c) => c.rms), ...frames.map((f) => f.rms), 0);
+    const quiet = peakRms < this.rmsBaseline + 0.003;
 
     const bands = chosen[0].spectrum.length;
     const avg = new Array(bands).fill(0);
@@ -673,8 +773,12 @@ export class AudioMatcher {
     const matches = allMatches.filter((m) => m.confidence >= floor);
     const top = matches[0];
     const weak = allMatches[0];
+    const stats = diagFor(peakRms, chosen.length);
 
     if (!top) {
+      const quietNote = quiet
+        ? ' Too quiet vs shop floor — check mic/loopback level, then Play captured audio.'
+        : '';
       return this.failBurst({
         matches: allMatches.slice(0, 3),
         frameCount: frames.length,
@@ -682,18 +786,17 @@ export class AudioMatcher {
         peakRms,
         baseline: this.rmsBaseline,
         threshold,
+        ...captureBase,
         reason: weak
-          ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%). Try again with clearer moves.`
-          : 'Stop & Match: no fingerprint match — try moving the same cargo again.',
+          ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats})`
+          : `Stop & Match: no fingerprint match.${quietNote} (${stats})`,
       });
     }
 
     this.shopPhase = 'locked';
     this.listeningPaused = true;
-    this.setStatus(
-      'done',
-      `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes`,
-    );
+    const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes (${stats})`;
+    this.setStatus('done', reason);
     this.onMatch?.({
       matches,
       peakMs,
@@ -703,13 +806,14 @@ export class AudioMatcher {
     });
     return {
       ok: true,
-      reason: `Locked Group #${top.soundId} · ${top.confidence}%`,
+      reason,
       matches,
       frameCount: frames.length,
       spikeCount: chosen.length,
       peakRms,
       baseline: this.rmsBaseline,
       threshold,
+      ...captureBase,
     };
   }
 
@@ -726,6 +830,7 @@ export class AudioMatcher {
     this.shopCalibrating = false;
     this.burstRecording = false;
     this.burstFrames = [];
+    this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
@@ -824,6 +929,7 @@ export class AudioMatcher {
     this.shopCalibrating = false;
     this.burstRecording = false;
     this.burstFrames = [];
+    this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.rmsBaseline = 0;
     if (this.ctx) {

@@ -103,6 +103,9 @@ export interface MatchPayload {
   capturedCentroid: number;
   /** How the match was produced — burst bypasses auto margin rules in the UI. */
   source?: 'auto' | 'burst';
+  /** Last burst WAV when source is burst (Multi + Stop & Match). */
+  captureBlob?: Blob | null;
+  captureDurationMs?: number;
 }
 
 /** Result of Stop & Match — always populated so the UI can toast + replay capture. */
@@ -159,6 +162,29 @@ export type ShopPhase =
   | 'at-shop'
   | 'recording'
   | 'locked';
+
+/** Dual + Multiple Items: auto-count cargo moves then lock. */
+export const MULTI_SPIKE_TARGET_N = 3;
+/** Early lock after this many spikes when majority vote + high conf. */
+export const MULTI_SPIKE_EARLY_N = 2;
+export const MULTI_EARLY_CONF = 90;
+/** Silence / refractory after a Multi lock before counting the next cargo. */
+export const MULTI_COOLDOWN_MS = 1100;
+const MULTI_SPIKE_SEP_MS = 140;
+
+export type MultiScanPhase =
+  | 'idle'
+  | 'armed'
+  | 'counting'
+  | 'matching'
+  | 'cooldown';
+
+export interface MultiScanProgress {
+  spikeCount: number;
+  targetN: number;
+  phase: MultiScanPhase;
+  detail?: string;
+}
 
 interface BurstFrame {
   t: number;
@@ -927,8 +953,17 @@ export class AudioMatcher {
   private burstProcessor: ScriptProcessorNode | null = null;
   /** Zero-gain → destination keeps ScriptProcessor alive without audible output. */
   private burstMute: GainNode | null = null;
+  /** Dual+Multi: count spikes → auto Stop & Match (same pcm300 path). */
+  private multiContinuousArmed = false;
+  private multiSpikeCount = 0;
+  private multiLastSpikeAt = 0;
+  private multiPrevRms = 0;
+  private multiFinalizing = false;
+  private multiCooldownUntil = 0;
+  private multiSpikeVotes: { soundId: number; confidence: number }[] = [];
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
+  private onMultiProgress?: (p: MultiScanProgress) => void;
   private fingerprints: FingerprintsFile;
   private candidateSoundIds: number[] = [];
   private onFocusBound = () => this.armFocusGrace();
@@ -954,9 +989,38 @@ export class AudioMatcher {
   setCallbacks(cbs: {
     onStatus?: (s: MatcherStatus, detail?: string) => void;
     onMatch?: (payload: MatchPayload) => void;
+    onMultiProgress?: (p: MultiScanProgress) => void;
   }) {
     this.onStatus = cbs.onStatus;
     this.onMatch = cbs.onMatch;
+    this.onMultiProgress = cbs.onMultiProgress;
+  }
+
+  isMultiContinuousArmed() {
+    return this.multiContinuousArmed;
+  }
+
+  getMultiSpikeCount() {
+    return this.multiSpikeCount;
+  }
+
+  private emitMultiProgress(phase: MultiScanPhase, detail?: string) {
+    this.onMultiProgress?.({
+      spikeCount: this.multiSpikeCount,
+      targetN: MULTI_SPIKE_TARGET_N,
+      phase,
+      detail,
+    });
+  }
+
+  private clearMultiState() {
+    this.multiContinuousArmed = false;
+    this.multiSpikeCount = 0;
+    this.multiSpikeVotes = [];
+    this.multiLastSpikeAt = 0;
+    this.multiPrevRms = 0;
+    this.multiFinalizing = false;
+    this.multiCooldownUntil = 0;
   }
 
   setCandidates(soundIds: number[]) {
@@ -1121,9 +1185,11 @@ export class AudioMatcher {
       this.burstRecording = false;
       this.burstFrames = [];
       this.lastBurstTopId = null;
+      this.clearMultiState();
       this.stopBurstPcmCapture();
       this.listeningPaused = true;
       this.shopPhase = 'in-raid';
+      this.emitMultiProgress('idle');
       this.surfaceListening(
         'In Raid (gate closed) — listening paused. Click At Shop when back at the merchant.',
       );
@@ -1285,10 +1351,184 @@ export class AudioMatcher {
     this.setStatus('capturing', this.shopStatusDetail());
   }
 
+  /**
+   * Dual + Multiple Items: arm continuous burst — count cargo moves to N=3
+   * (early lock at 2 when majority vote + conf ≥90), then same Stop & Match matcher.
+   */
+  async startMultiContinuous(): Promise<void> {
+    this.multiContinuousArmed = true;
+    this.multiSpikeCount = 0;
+    this.multiSpikeVotes = [];
+    this.multiLastSpikeAt = 0;
+    this.multiPrevRms = 0;
+    this.multiFinalizing = false;
+    this.multiCooldownUntil = 0;
+    this.autoDetectArmed = false;
+    await this.startItemMoveBurst();
+    this.emitMultiProgress(
+      'armed',
+      `Multi armed — move cargo ${MULTI_SPIKE_TARGET_N}× (early lock at ${MULTI_SPIKE_EARLY_N} if clear)`,
+    );
+    this.setStatus(
+      'capturing',
+      `Multi scan 0/${MULTI_SPIKE_TARGET_N} — drag cargo; locks into grid automatically`,
+    );
+  }
+
+  /** Disarm Multi continuous (keeps At Shop). Optionally finalize current buffer. */
+  async stopMultiContinuous(opts?: { match?: boolean }): Promise<BurstMatchResult | null> {
+    const wasArmed = this.multiContinuousArmed;
+    this.multiContinuousArmed = false;
+    this.multiFinalizing = false;
+    this.multiCooldownUntil = 0;
+    this.emitMultiProgress('idle', 'Multi disarmed');
+    if (!wasArmed && !this.burstRecording) return null;
+    if (opts?.match && this.burstRecording) {
+      return this.stopItemMoveBurst();
+    }
+    if (this.burstRecording) {
+      this.stopBurstPcmCapture();
+      this.burstRecording = false;
+      this.burstFrames = [];
+      this.burstAnalyserPcmChunks = [];
+      this.shopPhase = this.atShopGate ? 'at-shop' : 'in-raid';
+      this.listeningPaused = true;
+      this.surfaceListening('Multi stopped — still At Shop (burst-ready)');
+    }
+    return null;
+  }
+
+  private multiEarlyLockReady(): boolean {
+    if (this.multiSpikeCount < MULTI_SPIKE_EARLY_N) return false;
+    if (this.multiSpikeVotes.length < MULTI_SPIKE_EARLY_N) return false;
+    const voteCount = new Map<number, { n: number; confSum: number }>();
+    for (const v of this.multiSpikeVotes) {
+      const prev = voteCount.get(v.soundId) ?? { n: 0, confSum: 0 };
+      prev.n += 1;
+      prev.confSum += v.confidence;
+      voteCount.set(v.soundId, prev);
+    }
+    let bestN = 0;
+    let bestConf = 0;
+    for (const info of voteCount.values()) {
+      const avg = info.confSum / info.n;
+      if (info.n > bestN || (info.n === bestN && avg > bestConf)) {
+        bestN = info.n;
+        bestConf = avg;
+      }
+    }
+    return (
+      bestN >= 2 &&
+      bestN > this.multiSpikeVotes.length / 2 &&
+      bestConf >= MULTI_EARLY_CONF
+    );
+  }
+
+  private noteMultiSpikeVoteFromLatestFrame(): void {
+    const frames = this.burstFrames;
+    if (frames.length === 0) return;
+    const c = frames[frames.length - 1];
+    const LIVE300_PRE_MS = 16;
+    const LIVE300_POST_MS = 280;
+    const win = frames.filter(
+      (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+    );
+    const slice = win.length > 0 ? win : [c];
+    const bands = c.spectrum.length;
+    const local = new Array(bands).fill(0);
+    let localCentroid = 0;
+    for (const f of slice) {
+      for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
+      localCentroid += f.centroid;
+    }
+    for (let i = 0; i < bands; i++) local[i] /= slice.length;
+    const localMax = Math.max(...local, 1e-9);
+    const spikeSpectrum = local.map((v) => v / localMax);
+    const spikeCentroid = localCentroid / slice.length;
+    const candidates =
+      this.candidateSoundIds.length > 0
+        ? this.candidateSoundIds
+        : Object.keys(this.fingerprints.fingerprints).map(Number);
+    const spikeRank = rankMatchesWithPriors(
+      matchSpectrumAgainstFingerprints(
+        spikeSpectrum,
+        this.fingerprints,
+        candidates,
+        this.kind,
+        spikeCentroid,
+      ),
+      spikeCentroid,
+    );
+    if (spikeRank[0]) {
+      this.multiSpikeVotes.push({
+        soundId: spikeRank[0].soundId,
+        confidence: spikeRank[0].confidence,
+      });
+    }
+  }
+
+  /** After a Multi lock (or Force Stop & Match), cooldown then listen for the next cargo. */
+  async rearmMultiAfterMatch(detail?: string): Promise<void> {
+    if (!this.multiContinuousArmed) return;
+    this.multiCooldownUntil = performance.now() + MULTI_COOLDOWN_MS;
+    this.multiSpikeCount = 0;
+    this.multiSpikeVotes = [];
+    this.multiLastSpikeAt = 0;
+    this.multiPrevRms = 0;
+    this.emitMultiProgress('cooldown', detail ?? 'Cooldown…');
+    await new Promise((r) => setTimeout(r, MULTI_COOLDOWN_MS));
+    this.multiCooldownUntil = 0;
+    this.multiFinalizing = false;
+    if (!this.multiContinuousArmed || !this.atShopGate || !this.analyser) {
+      this.emitMultiProgress('idle');
+      return;
+    }
+    this.listeningPaused = true;
+    this.burstRecording = true;
+    this.burstFrames = [];
+    this.burstAnalyserPcmChunks = [];
+    this.burstStartedAt = performance.now();
+    this.startBurstPcmCapture();
+    this.shopPhase = 'recording';
+    this.emitMultiProgress(
+      'armed',
+      'Ready for next cargo — move it 2–3 times',
+    );
+    this.setStatus(
+      'capturing',
+      `Multi scan 0/${MULTI_SPIKE_TARGET_N} — next cargo`,
+    );
+  }
+
+  private async commitMultiBurst(): Promise<void> {
+    if (!this.multiContinuousArmed || this.multiFinalizing) return;
+    this.multiFinalizing = true;
+    this.emitMultiProgress('matching', `Matching ${this.multiSpikeCount} moves…`);
+    try {
+      const result = await this.stopItemMoveBurst();
+      this.emitMultiProgress(
+        result.ok ? 'cooldown' : 'armed',
+        result.reason,
+      );
+      if (!this.multiContinuousArmed) {
+        this.multiFinalizing = false;
+        return;
+      }
+      await this.rearmMultiAfterMatch(result.reason);
+    } catch (err) {
+      this.multiFinalizing = false;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.emitMultiProgress('armed', msg);
+      this.surfaceListening(`Multi match error: ${msg}`);
+    }
+  }
+
   private failBurst(partial: Omit<BurstMatchResult, 'ok'>): BurstMatchResult {
     this.shopPhase = 'at-shop';
     this.listeningPaused = true;
-    this.autoDetectArmed = false; // don't leave auto open after a failed burst
+    if (!this.multiContinuousArmed) {
+      this.autoDetectArmed = false; // don't leave auto open after a failed burst
+    }
     this.surfaceListening(partial.reason);
     return { ok: false, ...partial };
   }
@@ -1729,6 +1969,8 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
       source: 'burst',
+      captureBlob: captureBase.captureBlob,
+      captureDurationMs: captureBase.captureDurationMs,
     });
     return {
       ok: true,
@@ -1756,6 +1998,7 @@ export class AudioMatcher {
     this.shopCalibrating = false;
     this.burstRecording = false;
     this.burstFrames = [];
+    this.clearMultiState();
     this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.analyser = this.ctx.createAnalyser();
@@ -1856,6 +2099,7 @@ export class AudioMatcher {
     this.burstRecording = false;
     this.burstFrames = [];
     this.lastBurstTopId = null;
+    this.clearMultiState();
     this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.rmsBaseline = 0;
@@ -1890,7 +2134,7 @@ export class AudioMatcher {
     const focusBlocked = now < this.focusBlockUntil;
     const startBlocked = now < this.startGraceUntil;
 
-    // Manual move burst: buffer spectra continuously until Stop & Match.
+    // Manual move burst / Multi continuous: buffer spectra until Stop & Match or auto-N.
     if (this.burstRecording && !this.shopCalibrating) {
       const timeFloat = new Float32Array(this.analyser.fftSize);
       this.analyser.getFloatTimeDomainData(timeFloat);
@@ -1914,6 +2158,44 @@ export class AudioMatcher {
       const offset = Math.max(0, timeFloat.length - hop);
       this.burstAnalyserPcmChunks.push(timeFloat.slice(offset));
       if (this.burstAnalyserPcmChunks.length > 2000) this.burstAnalyserPcmChunks.shift();
+
+      // Multi continuous: count cargo-move spikes → auto-finalize with same matcher.
+      if (
+        this.multiContinuousArmed &&
+        !this.multiFinalizing &&
+        now >= this.multiCooldownUntil
+      ) {
+        const thr = Math.max(
+          this.rmsBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
+          this.rmsBaseline * 1.12 + 0.003,
+        );
+        const rising =
+          rms >= thr &&
+          rms > this.multiPrevRms * 1.12 &&
+          now - this.multiLastSpikeAt >= MULTI_SPIKE_SEP_MS;
+        if (rising) {
+          this.multiLastSpikeAt = now;
+          this.multiSpikeCount += 1;
+          this.noteMultiSpikeVoteFromLatestFrame();
+          this.emitMultiProgress(
+            'counting',
+            `Move ${this.multiSpikeCount}/${MULTI_SPIKE_TARGET_N}`,
+          );
+          this.setStatus(
+            'capturing',
+            `Multi scan ${this.multiSpikeCount}/${MULTI_SPIKE_TARGET_N}`,
+          );
+          if (
+            this.multiSpikeCount >= MULTI_SPIKE_TARGET_N ||
+            (this.multiSpikeCount >= MULTI_SPIKE_EARLY_N &&
+              this.multiEarlyLockReady())
+          ) {
+            void this.commitMultiBurst();
+          }
+        }
+        this.multiPrevRms = rms;
+      }
+
       this.raf = requestAnimationFrame(this.loop);
       return;
     }

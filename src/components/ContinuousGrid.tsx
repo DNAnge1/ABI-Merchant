@@ -29,7 +29,7 @@ export function ContinuousGrid(props: {
           </h2>
           <p className="m-0 text-[11px] text-[var(--muted)]">
             {props.listening
-              ? 'Listening… waiting for cargo (silence OK until Stop)'
+              ? 'Multi / listening — move cargo 2–3× per item; locks append here'
               : 'Not listening'}{' '}
             · {props.slots.length} slot{props.slots.length === 1 ? '' : 's'}
           </p>
@@ -54,8 +54,8 @@ export function ContinuousGrid(props: {
 
       {!props.slots.length ? (
         <div className="rounded border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs text-[var(--muted)]">
-          Dual-monitor continuous scan. Each pickup/drop appends a merchant slot with Group #,
-          confidence, and size-grouped Red %.
+          Dual + Multiple Items: Arm Multi scan at the shop, drag each cargo 2–3 times. Each lock
+          appends a slot (Group #, confidence, Red %). Cooldown, then the next cargo.
         </div>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">

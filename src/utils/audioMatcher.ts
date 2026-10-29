@@ -94,6 +94,11 @@ export interface MatchResult {
    * Lock path uses a softer (or zero) margin so ~78% vs ~77–78% can lock.
    */
   quiet19Residual?: boolean;
+  /**
+   * Set when {@link resolveField10Residual} promoted dulled in-game electronics (#10).
+   * Field #10 often lands ~3.4 kHz vs FP ~4.6 kHz and gets buried under #32/#21.
+   */
+  field10Residual?: boolean;
 }
 
 export interface MatchPayload {
@@ -312,6 +317,23 @@ export function highBandRatio(vec: number[]): number {
   const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
   const upper = vec.slice(16).reduce((s, v) => s + v, 0);
   return upper / total;
+}
+
+/**
+ * Share of energy in the top third of log-bands.
+ * Field #10 (electronics) keeps a strong upper third (~0.33+) even when mic-dulled;
+ * teapot #32 (~0.27) and solar #16 (~0.17) do not.
+ */
+export function upperThirdRatio(vec: number[]): number {
+  const n = vec.length;
+  if (n === 0) return 0;
+  let hi = 0;
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    total += vec[i];
+    if (Math.floor((i * 3) / n) >= 2) hi += vec[i];
+  }
+  return hi / (total || 1e-9);
 }
 
 /** Fill log-bands that received zero FFT bins (common at 44.1/48k with coarse fftSize). */
@@ -750,6 +772,82 @@ export function resolveQuiet19Residual(
 }
 
 /**
+ * Field electronics (#10): in-game / loopback often lands ~3.3–3.6 kHz with a strong
+ * upper-third band, while the OGG FP is ~4.6 kHz. Centroid prior then buries #10 under
+ * weak #32/#21/#34 tops (~76–79%) even though #10 shape cosine stays ~0.92 and true
+ * teapot/solar self-lock at ≥95%.
+ *
+ * Promote #10 when:
+ * - nothing else self-locks hard (≥90%),
+ * - upper-third energy ≥0.30 (separates from #32 ~0.27 / #16 ~0.17),
+ * - highBand in dulled-electronics band (~0.52–0.75),
+ * - raw shape cosine vs #10 FP ≥0.84.
+ */
+export function resolveField10Residual(
+  matches: MatchResult[],
+  spectrumVector: number[] | undefined,
+  fingerprints: FingerprintsFile,
+  capturedHighRatio?: number,
+): MatchResult[] {
+  if (!spectrumVector || matches.length === 0) return matches;
+  const top = matches[0];
+  if (top.soundId === 10) {
+    if (top.field10Residual || top.confidence <= 88) {
+      const rest = matches.slice(1);
+      const bestOther =
+        rest.length > 0
+          ? rest.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+          : undefined;
+      return [
+        {
+          ...top,
+          confidence: Math.max(top.confidence, 78, (bestOther ?? 0) + 1),
+          field10Residual: true,
+        },
+        ...rest,
+      ];
+    }
+    return matches;
+  }
+  if (top.confidence >= 90) return matches;
+
+  const hi3 = upperThirdRatio(spectrumVector);
+  if (hi3 < 0.3) return matches;
+  const high =
+    capturedHighRatio ?? highBandRatio(spectrumVector);
+  if (high < 0.52 || high > 0.78) return matches;
+
+  const fp10 = fingerprints.fingerprints['10']?.pickup;
+  if (!fp10?.spectrumVector) return matches;
+  const shape = cosineSimilarity(spectrumVector, fp10.spectrumVector);
+  if (shape < 0.84) return matches;
+
+  const shapeConf = Math.round(shape * 1000) / 10;
+  const m10 = matches.find((m) => m.soundId === 10);
+  const others = matches.filter((m) => m.soundId !== 10);
+  const bestRunner =
+    others.length > 0
+      ? others.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+      : undefined;
+  const promoted: MatchResult = {
+    soundId: 10,
+    confidence: Math.max(
+      m10?.confidence ?? 0,
+      shapeConf,
+      78,
+      (bestRunner ?? 0) + 1,
+    ),
+    kind: 'pickup',
+    items: m10?.items ?? [],
+    spectralCentroid: fp10.spectralCentroid,
+    spectrumVector: m10?.spectrumVector,
+    capturedCentroid: m10?.capturedCentroid,
+    field10Residual: true,
+  };
+  return [promoted, ...others];
+}
+
+/**
  * PCM live300 window — same onset+~300ms bin-average as fingerprint extract /
  * offline selftest, using {@link fftLinearMagnitudes} at the given sample rate.
  * Prefer this for browser Self-Test (AnalyserNode seek/ring-buffer averages diverge).
@@ -852,10 +950,17 @@ export function matchSpectrumAgainstFingerprints(
 
       // Centroid prior — slightly tighter than 1500/0.25; heavy pitch breaks use
       // {@link resolveCentroidDisagreement} so we don't overturn clean self-matches.
+      // #10 (electronics): field mic often lands ~3.3–3.6 kHz vs FP ~4.6 kHz — use a
+      // wider prior so shape can still surface #10 before {@link resolveField10Residual}.
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 1400);
-        score = score * 0.72 + prior * 0.28;
+        if (soundId === 10) {
+          const prior = Math.max(0, 1 - delta / 2000);
+          score = score * 0.8 + prior * 0.2;
+        } else {
+          const prior = Math.max(0, 1 - delta / 1400);
+          score = score * 0.72 + prior * 0.28;
+        }
       }
 
       results.push({
@@ -930,10 +1035,12 @@ export class AudioMatcher {
       runnerIsNearTwin?: boolean;
       /** Quiet #19 residual — skip margin so floored ~78% can lock vs ~77–78% runners. */
       quiet19Residual?: boolean;
+      /** Field #10 electronics residual — skip margin after promote. */
+      field10Residual?: boolean;
     },
   ): number {
-    // Residual #19: margin skipped (force-lock path); 0 also covers post-boost ties.
-    if (opts?.quiet19Residual) return 0;
+    // Residual #19 / field #10: margin skipped (force-lock path).
+    if (opts?.quiet19Residual || opts?.field10Residual) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -1825,6 +1932,17 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    // Field electronics (#10) dulled by mic — promote before weak #32/#21 bury it.
+    allMatches = resolveField10Residual(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+      highBandRatio(spectrumVector),
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
@@ -1877,6 +1995,7 @@ export class AudioMatcher {
       nearTwinMajority,
       runnerIsNearTwin,
       quiet19Residual: top.quiet19Residual === true,
+      field10Residual: top.field10Residual === true,
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -1907,6 +2026,16 @@ export class AudioMatcher {
           spectrumVector,
           capturedCentroid: centroid,
         }));
+        allMatches = resolveField10Residual(
+          allMatches,
+          spectrumVector,
+          this.fingerprints,
+          highBandRatio(spectrumVector),
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
         top = allMatches[0];
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
@@ -1917,6 +2046,7 @@ export class AudioMatcher {
           nearTwinMajority: false,
           runnerIsNearTwin,
           quiet19Residual: top.quiet19Residual === true,
+          field10Residual: top.field10Residual === true,
         });
       }
     }
@@ -1937,9 +2067,16 @@ export class AudioMatcher {
       });
     }
 
-    // Quiet #19 residual always locks once ranked top (conf already boosted above runner).
+    // Quiet #19 / field #10 residual always locks once ranked top (conf boosted above runner).
     const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
-    if (margin < needGap && !streakOk && !pitchLock && !residual19Lock) {
+    const residual10Lock = top.field10Residual === true && top.soundId === 10;
+    if (
+      margin < needGap &&
+      !streakOk &&
+      !pitchLock &&
+      !residual19Lock &&
+      !residual10Lock
+    ) {
       this.lastBurstTopId = top.soundId;
       const tip =
         chosen.length < 2
@@ -1960,7 +2097,11 @@ export class AudioMatcher {
     this.lastBurstTopId = null;
     this.shopPhase = 'locked';
     this.listeningPaused = true;
-    const residualNote = residual19Lock ? ' · quiet19-residual' : '';
+    const residualNote = residual19Lock
+      ? ' · quiet19-residual'
+      : residual10Lock
+        ? ' · field10-residual'
+        : '';
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
@@ -2371,6 +2512,16 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    allMatches = resolveField10Residual(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+      highBandRatio(spectrumVector),
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     // Auto path: stricter floor + require clear winner vs runner-up (heal/ambient often ties ~95%).
     const autoFloor = Math.max(this.minConfidence, 68);
@@ -2398,11 +2549,13 @@ export class AudioMatcher {
     const runnerIsNearTwin =
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
     const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
+    const residual10Lock = top.field10Residual === true && top.soundId === 10;
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
+      field10Residual: residual10Lock,
     });
-    if (margin < needGap && !residual19Lock) {
+    if (margin < needGap && !residual19Lock && !residual10Lock) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
       );
@@ -2412,7 +2565,7 @@ export class AudioMatcher {
     this.shopPhase = 'locked';
     this.setStatus(
       'done',
-      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : ''})`,
+      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : residual10Lock ? ' · field10-residual' : ''})`,
     );
     this.onMatch?.({
       matches,

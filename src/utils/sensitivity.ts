@@ -27,8 +27,9 @@ export const SENSITIVITY_PRESETS: Record<SensitivityLevel, SensitivityPreset> = 
     fluxThreshold: 0.11,
     minConfidence: 65,
     startGraceMs: 500,
-    // Peak may sit at onset (t≈0); reject only late/sustained energy past ~merchant attack.
-    peakWindowMs: [0, 380],
+    // Merchant pickups attack in the first ~150ms. Late peaks → decay windows
+    // that confuse near-neighbors (#36↔#7, #22↔#21).
+    peakWindowMs: [0, 160],
     label: 'Low',
     hint: 'Strict — best against footsteps / ambient (recommended for mic)',
   },
@@ -37,7 +38,7 @@ export const SENSITIVITY_PRESETS: Record<SensitivityLevel, SensitivityPreset> = 
     fluxThreshold: 0.075,
     minConfidence: 60,
     startGraceMs: 400,
-    peakWindowMs: [0, 400],
+    peakWindowMs: [0, 180],
     label: 'Med',
     hint: 'Balanced for screen share',
   },
@@ -46,7 +47,7 @@ export const SENSITIVITY_PRESETS: Record<SensitivityLevel, SensitivityPreset> = 
     fluxThreshold: 0.045,
     minConfidence: 55,
     startGraceMs: 300,
-    peakWindowMs: [0, 450],
+    peakWindowMs: [0, 200],
     label: 'High',
     hint: 'More sensitive — quieter game audio; more false positives',
   },

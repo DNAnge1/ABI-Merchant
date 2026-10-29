@@ -228,8 +228,8 @@ function matchSpectrumAgainstFingerprints(
       let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 2200);
-        score = score * 0.78 + prior * 0.22;
+        const prior = Math.max(0, 1 - delta / 1500);
+        score = score * 0.75 + prior * 0.25;
       }
       results.push({
         soundId,

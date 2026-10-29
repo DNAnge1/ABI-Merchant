@@ -12,7 +12,7 @@ import {
   analyserFftSize,
   analyzePcmLive300Window,
   matchSpectrumAgainstFingerprints,
-  resolveDirectedSinks,
+  rankMatchesWithPriors,
   type FingerprintsFile,
   type MatchResult,
 } from './audioMatcher';
@@ -111,7 +111,7 @@ export async function runBrowserAnalyserSelftest(
           fftSize,
           bands,
         );
-        const matches: MatchResult[] = resolveDirectedSinks(
+        const matches: MatchResult[] = rankMatchesWithPriors(
           matchSpectrumAgainstFingerprints(
             spectrumVector,
             fingerprints,

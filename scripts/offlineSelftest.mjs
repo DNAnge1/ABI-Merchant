@@ -101,6 +101,28 @@ function fft(re, im) {
   }
 }
 
+const FP_NYQUIST_HZ = 11025;
+const CENTROID_MIN_HZ = 50;
+
+function interpolateEmptyBands(bandVec, bandCounts) {
+  const n = bandVec.length;
+  for (let bi = 0; bi < n; bi++) {
+    if (bandCounts[bi] > 0) continue;
+    let lo = bi - 1;
+    while (lo >= 0 && bandCounts[lo] === 0) lo--;
+    let hi = bi + 1;
+    while (hi < n && bandCounts[hi] === 0) hi++;
+    if (lo >= 0 && hi < n) {
+      const t = (bi - lo) / (hi - lo);
+      bandVec[bi] = bandVec[lo] * (1 - t) + bandVec[hi] * t;
+    } else if (lo >= 0) {
+      bandVec[bi] = bandVec[lo];
+    } else if (hi < n) {
+      bandVec[bi] = bandVec[hi];
+    }
+  }
+}
+
 function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
   const half = magnitudes.length;
   const bandVec = new Array(bands).fill(0);
@@ -118,6 +140,7 @@ function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
   for (let bi = 0; bi < bands; bi++) {
     if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
+  interpolateEmptyBands(bandVec, bandCounts);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
 }
@@ -127,10 +150,12 @@ function spectralCentroidHz(magnitudes, sampleRate, fftSize) {
   let den = 0;
   for (let i = 1; i < magnitudes.length; i++) {
     const freq = (i * sampleRate) / fftSize;
+    if (freq < CENTROID_MIN_HZ || freq > FP_NYQUIST_HZ) continue;
     num += freq * magnitudes[i];
     den += magnitudes[i];
   }
-  return den > 0 ? num / den : 0;
+  if (den <= 0) return 0;
+  return Math.min(FP_NYQUIST_HZ, Math.max(CENTROID_MIN_HZ, num / den));
 }
 
 function cosineSimilarity(a, b) {

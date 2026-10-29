@@ -12,7 +12,9 @@ import { SingleItemLoop, type SingleLoopPhase } from './components/SingleItemLoo
 import { ContinuousGrid, buildSlotFromMatch, type SessionSlot } from './components/ContinuousGrid';
 import { MissFeedbackModal } from './components/MissFeedbackModal';
 import { AccuracyPanel } from './components/AccuracyPanel';
+import { SelftestPanel } from './components/SelftestPanel';
 import {
+  analyserFftSize,
   AudioMatcher,
   filterItemsByCargo,
   type FingerprintsFile,
@@ -21,6 +23,10 @@ import {
   type MatchResult,
   type MerchantItem,
 } from './utils/audioMatcher';
+import {
+  runBrowserAnalyserSelftest,
+  type SelftestReport,
+} from './utils/browserSelftest';
 import {
   detectBrowser,
   rmsFromAnalyser,
@@ -104,6 +110,13 @@ export default function App() {
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
   const [suggestMicFallback, setSuggestMicFallback] = useState(false);
   const [micBusy, setMicBusy] = useState(false);
+  const [selftestOpen, setSelftestOpen] = useState(false);
+  const [selftestRunning, setSelftestRunning] = useState(false);
+  const [selftestProgress, setSelftestProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [selftestReport, setSelftestReport] = useState<SelftestReport | null>(null);
   const [singlePhase, setSinglePhase] = useState<SingleLoopPhase>('ready');
   const [locked, setLocked] = useState<LockedScan | null>(null);
   const [slots, setSlots] = useState<SessionSlot[]>([]);
@@ -143,6 +156,33 @@ export default function App() {
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
     verifyCleanupRef.current = null;
+  }, []);
+
+  const runSelftest = useCallback(async () => {
+    setSelftestOpen(true);
+    setSelftestRunning(true);
+    setSelftestProgress({ done: 0, total: 38 });
+    try {
+      const report = await runBrowserAnalyserSelftest(fingerprints, (done, total) => {
+        setSelftestProgress({ done, total });
+      });
+      setSelftestReport(report);
+    } catch (err) {
+      setSelftestReport({
+        ok: false,
+        passed: 0,
+        total: 0,
+        passRate: 0,
+        sampleRate: 0,
+        fftSize: 0,
+        rows: [],
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+      });
+      console.error('Self-test failed', err);
+    } finally {
+      setSelftestRunning(false);
+    }
   }, []);
 
   const itemsForSound = useCallback((soundId: number) => {
@@ -461,7 +501,7 @@ export default function App() {
   function attachVerifyMeter(boot: BootstrappedCapture) {
     const { stream, ctx } = boot;
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = analyserFftSize(ctx.sampleRate);
     const source = ctx.createMediaStreamSource(stream);
     source.connect(analyser);
     let peak = 0;
@@ -944,6 +984,10 @@ export default function App() {
         onStart={() => void startCapture()}
         onStop={() => void stopCapture()}
         onVerify={() => void runVerify()}
+        onSelftest={() => {
+          setSelftestOpen(true);
+          if (!selftestReport && !selftestRunning) void runSelftest();
+        }}
         onMicFallback={() => {
           stopVerifySession();
           setSuggestMicFallback(true);
@@ -957,6 +1001,15 @@ export default function App() {
             hasAudioTrack: false,
           });
         }}
+      />
+
+      <SelftestPanel
+        open={selftestOpen}
+        running={selftestRunning}
+        progress={selftestProgress}
+        report={selftestReport}
+        onRun={() => void runSelftest()}
+        onClose={() => setSelftestOpen(false)}
       />
 
       <AudioVerifyPanel

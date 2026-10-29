@@ -53,6 +53,8 @@ export function StatusBar(props: {
   onVerify: () => void;
   /** Open Verify with mic/loopback fallback highlighted */
   onMicFallback?: () => void;
+  /** Built-in AnalyserNode pickup self-test (38 OGGs) */
+  onSelftest?: () => void;
 }) {
   const { step, detail } = stepFromStatus(
     props.status,
@@ -123,6 +125,17 @@ export function StatusBar(props: {
           >
             Verify / Test Audio Access
           </button>
+
+          {props.onSelftest && (
+            <button
+              type="button"
+              onClick={props.onSelftest}
+              className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)]"
+              title="Score all 38 pickup OGGs through live AnalyserNode"
+            >
+              Self-test
+            </button>
+          )}
 
           {props.onMicFallback && !props.capturing && props.mode === 'automatic' && (
             <button

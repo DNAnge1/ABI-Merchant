@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { playReferenceSound, type MerchantItem } from '../utils/audioMatcher';
+import { assetUrl } from '../utils/assetUrl';
 
 export interface SoundProfile {
   soundId: number;
@@ -15,14 +17,30 @@ export function SoundBoard(props: {
   activeSoundId?: number | null;
   onPickSound: (soundId: number) => void;
 }) {
+  const [playHint, setPlayHint] = useState<string | null>(null);
+
+  function audition(file: string, label: string) {
+    const url = assetUrl(file);
+    const audio = playReferenceSound(file);
+    audio.addEventListener(
+      'error',
+      () => setPlayHint(`Couldn’t load ${label}: ${url}`),
+      { once: true },
+    );
+    audio.addEventListener('playing', () => setPlayHint(null), { once: true });
+  }
+
   return (
     <section className="rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="m-0 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
           Sound board ({props.sounds.length})
         </h2>
-        <span className="text-[10px] text-[var(--muted)]">Manual fallback</span>
+        <span className="text-[10px] text-[var(--muted)]">Manual fallback · audition only</span>
       </div>
+      {playHint && (
+        <p className="m-0 mt-1 text-[10px] text-[var(--warn)] break-all">{playHint}</p>
+      )}
       <div className="mt-2 max-h-[28rem] overflow-auto grid gap-1">
         {props.sounds.map((s) => {
           const active = props.activeSoundId === s.soundId;
@@ -51,14 +69,14 @@ export function SoundBoard(props: {
               <button
                 type="button"
                 className="rounded px-2 py-0.5 text-[10px] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent-dim)]"
-                onClick={() => playReferenceSound(s.pickupFile)}
+                onClick={() => audition(s.pickupFile, `Pick #${s.soundId}`)}
               >
                 Pick up
               </button>
               <button
                 type="button"
                 className="rounded px-2 py-0.5 text-[10px] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent-dim)]"
-                onClick={() => playReferenceSound(s.dropFile)}
+                onClick={() => audition(s.dropFile, `Drop #${s.soundId}`)}
               >
                 Drop
               </button>

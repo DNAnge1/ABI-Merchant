@@ -15,6 +15,7 @@ import {
   type SensitivityLevel,
   type SensitivityPreset,
 } from './sensitivity';
+import { assetUrl } from './assetUrl';
 
 export type SoundKind = 'pickup' | 'drop';
 
@@ -928,10 +929,21 @@ export class AudioMatcher {
   }
 }
 
-/** Play a local reference sound from /sounds */
-export function playReferenceSound(filePath: string, volume = 0.7): HTMLAudioElement {
-  const audio = new Audio(filePath);
+/**
+ * Play a reference OGG for Manual Mode audition only.
+ * Live Automatic matching does NOT call this — it compares mic/loopback FFT
+ * against precomputed fingerprint vectors in fingerprints.json.
+ */
+export function playReferenceSound(
+  filePath: string,
+  volume = 0.7,
+): HTMLAudioElement {
+  const url = assetUrl(filePath);
+  const audio = new Audio(url);
   audio.volume = volume;
-  void audio.play().catch(() => undefined);
+  // Click handler = user gesture, so autoplay policy is satisfied.
+  void audio.play().catch((err) => {
+    console.warn('[playReferenceSound] failed', url, err);
+  });
   return audio;
 }

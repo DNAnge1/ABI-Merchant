@@ -142,16 +142,17 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-/** Mirror of audioMatcher.matchSpectrumAgainstFingerprints */
+/** Mirror of audioMatcher.matchSpectrumAgainstFingerprints (pickup-only default). */
 function matchSpectrumAgainstFingerprints(
   spectrumVector,
   fingerprints,
   candidateSoundIds,
-  kind = 'auto',
+  kind = 'pickup',
   capturedCentroid,
 ) {
   const results = [];
-  const kinds = kind === 'auto' ? ['pickup', 'drop'] : [kind];
+  // Field Merchant: only pickup is heard / matched.
+  const kinds = kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -312,59 +313,57 @@ function main() {
   let storedHit = 0;
   let storedN = 0;
 
+  // Pickup-only: Field Merchant does not play drop when dragging cargo.
   for (const sound of merchant.soundIds) {
-    for (const kind of ['pickup', 'drop']) {
-      const base = kind === 'pickup' ? sound.pickupSound : sound.dropSound;
-      const file = join(SOUNDS_DIR, `${base}.ogg`);
-      const expected = sound.soundId;
-      const row = {
-        soundId: expected,
-        kind,
-        file: `${base}.ogg`,
-        missing: !existsSync(file),
-      };
+    const kind = 'pickup';
+    const base = sound.pickupSound;
+    const file = join(SOUNDS_DIR, `${base}.ogg`);
+    const expected = sound.soundId;
+    const row = {
+      soundId: expected,
+      kind,
+      file: `${base}.ogg`,
+      missing: !existsSync(file),
+    };
 
-      if (row.missing) {
-        rows.push(row);
-        continue;
-      }
-
-      // Sanity: stored fingerprint vector vs DB (should be ~100% to self)
-      const stored = fingerprints.fingerprints[String(expected)]?.[kind];
-      if (stored?.spectrumVector) {
-        const s = scoreOne(stored.spectrumVector, stored.spectralCentroid, fingerprints, allIds, 'auto');
-        row.stored = s;
-        storedN++;
-        if (s.topId === expected) storedHit++;
-      }
-
-      try {
-        const pcm = decodeOggToPcm(file, FP_SAMPLE_RATE);
-
-        const rex = extractReextract(pcm, FP_SAMPLE_RATE);
-        const rAuto = scoreOne(rex.spectrumVector, rex.centroid, fingerprints, allIds, 'auto');
-        const rKind = scoreOne(rex.spectrumVector, rex.centroid, fingerprints, allIds, kind);
-        row.reextract = { ...rAuto, frames: rex.frames, kindLocked: rKind };
-        reextractN++;
-        if (rAuto.topId === expected) reextractHit++;
-
-        const live = extractLive300(pcm, FP_SAMPLE_RATE);
-        const lAuto = scoreOne(live.spectrumVector, live.centroid, fingerprints, allIds, 'auto');
-        const lKind = scoreOne(live.spectrumVector, live.centroid, fingerprints, allIds, kind);
-        row.live300 = {
-          ...lAuto,
-          frames: live.frames,
-          onsetMs: live.onsetMs,
-          kindLocked: lKind,
-        };
-        liveN++;
-        if (lAuto.topId === expected) liveHit++;
-      } catch (err) {
-        row.error = err.message;
-      }
-
+    if (row.missing) {
       rows.push(row);
+      continue;
     }
+
+    // Sanity: stored fingerprint vector vs DB (should be ~100% to self)
+    const stored = fingerprints.fingerprints[String(expected)]?.[kind];
+    if (stored?.spectrumVector) {
+      const s = scoreOne(stored.spectrumVector, stored.spectralCentroid, fingerprints, allIds, 'pickup');
+      row.stored = s;
+      storedN++;
+      if (s.topId === expected) storedHit++;
+    }
+
+    try {
+      const pcm = decodeOggToPcm(file, FP_SAMPLE_RATE);
+
+      // "Re-extract" now means live300 (same window fingerprints were built with).
+      const rex = extractLive300(pcm, FP_SAMPLE_RATE);
+      const rAuto = scoreOne(rex.spectrumVector, rex.centroid, fingerprints, allIds, 'pickup');
+      row.reextract = { ...rAuto, frames: rex.frames, onsetMs: rex.onsetMs };
+      reextractN++;
+      if (rAuto.topId === expected) reextractHit++;
+
+      const live = extractLive300(pcm, FP_SAMPLE_RATE);
+      const lAuto = scoreOne(live.spectrumVector, live.centroid, fingerprints, allIds, 'pickup');
+      row.live300 = {
+        ...lAuto,
+        frames: live.frames,
+        onsetMs: live.onsetMs,
+      };
+      liveN++;
+      if (lAuto.topId === expected) liveHit++;
+    } catch (err) {
+      row.error = err.message;
+    }
+
+    rows.push(row);
   }
 
   const missesRe = rows.filter((r) => r.reextract && r.reextract.topId !== r.soundId);
@@ -416,26 +415,30 @@ function main() {
     `| Stored vector → self (sanity) | **${pct(summary.passRate.storedSelf)}** | ${storedN} | ${storedN - storedHit} |`,
   );
   lines.push(
-    `| Re-extract full file (analyzePcm) | **${pct(summary.passRate.reextractAuto)}** | ${reextractN} | ${missesRe.length} |`,
+    `| Re-extract live300 (= fingerprint window) | **${pct(summary.passRate.reextractAuto)}** | ${reextractN} | ${missesRe.length} |`,
   );
   lines.push(
-    `| Live-like 300ms post-onset | **${pct(summary.passRate.live300Auto)}** | ${liveN} | ${missesLive.length} |`,
+    `| Live300 pickup-only | **${pct(summary.passRate.live300Auto)}** | ${liveN} | ${missesLive.length} |`,
   );
   lines.push('');
   lines.push(
     `Near-ties (correct but gap < ${NEAR_TIE_GAP}pt, live300): ${nearTiesLive.length}. Wrong near-ties: ${nearTiesWrong.length}.`,
   );
   lines.push('');
+  lines.push(
+    `Fingerprint meta: matchSide=${fingerprints.matchSide || 'n/a'} windowMs=${fingerprints.windowMs || 'n/a'} analysis=${fingerprints.analysis || 'n/a'}`,
+  );
+  lines.push('');
   lines.push('## Interpretation');
   lines.push('');
+  lines.push(
+    '- **Pickup-only:** Field Merchant drag plays pickup; drop vectors are ignored.',
+  );
   lines.push(
     '- **Stored self** must be ~100% (cosine of fingerprint vs itself).',
   );
   lines.push(
-    '- **Re-extract** uses the same FFT/band pipeline as `scripts/extractMerchantData.js`. Misses here mean non-determinism or file/fingerprint drift.',
-  );
-  lines.push(
-    '- **Live300** averages ~300ms after onset (closer to `AudioMatcher.captureAndMatch`). Systematic misses vs re-extract imply **fingerprint vs live capture mismatch** (sample rate, window, byte scaling, slice length) — not bad JSON IDs.',
+    '- **Live300** averages ~300ms after onset — same window used to build `fingerprints.json`. Pass rate should be high if generator and matcher agree.',
   );
   lines.push('');
 
@@ -490,17 +493,17 @@ function main() {
   const reRate = summary.passRate.reextractAuto;
   lines.push('## Root-cause note');
   lines.push('');
-  if (reRate >= 0.98 && liveRate >= 0.9) {
+  if (liveRate >= 0.95) {
     lines.push(
-      'Fingerprints and matcher look healthy offline. Live shop misses are more likely capture/onset/gating (mic level, burst threshold) than ID confusion in the fingerprint DB.',
+      'Pickup-only live300 fingerprints look healthy offline. Remaining shop misses are more likely capture/onset/gating (mic level, burst threshold) or near-tie clusters than ID map errors.',
     );
-  } else if (reRate >= 0.98 && liveRate < 0.9) {
+  } else if (liveRate >= 0.85) {
     lines.push(
-      '**Fingerprint vs live-slice drift:** full-file re-extract matches well, but 300ms onset windows confuse IDs. Live capture uses AudioContext native sample rate + AnalyserNode byte magnitudes; fingerprints were built at 22050 Hz float FFT. Consider regenerating fingerprints at 48k or adapting live vectors — not a quick one-liner unless rates are very low.',
+      'Pickup live300 is improved but still has misses/near-ties among similar clusters — consider burst multi-spike averaging and margin rules.',
     );
-  } else if (reRate < 0.98) {
+  } else {
     lines.push(
-      '**Fingerprint drift / generator mismatch:** re-extract from committed OGGs does not recover expected IDs. Regenerate `fingerprints.json` via `npm run extract` or investigate shared OGGs across soundIds.',
+      '**Pickup live300 still weak:** regenerate via `npm run fingerprints` or inspect shared/confused OGGs among near-tie soundIds.',
     );
   }
   lines.push('');

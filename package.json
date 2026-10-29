@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "extract": "node scripts/extractMerchantData.js",
+    "fingerprints": "node scripts/extractMerchantData.js --fingerprints-only",
     "selftest:audio": "node scripts/offlineSelftest.mjs"
   },
   "dependencies": {

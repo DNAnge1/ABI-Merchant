@@ -277,7 +277,7 @@ function centeredCosine(a: number[], b: number[]): number {
 }
 
 /** Share of energy in upper half of the band vector (bright/gritty vs dull thud). */
-function highBandRatio(vec: number[]): number {
+export function highBandRatio(vec: number[]): number {
   const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
   const upper = vec.slice(16).reduce((s, v) => s + v, 0);
   return upper / total;
@@ -607,6 +607,69 @@ export function hardRejectDullSink(top: MatchResult): string | null {
     return `Stop & Match: Group #28 @ ${top.confidence}% is too weak to lock (true #28 self-locks ~96%). Quiet/bright cargo often sinks here — move louder/closer and retry.`;
   }
   return null;
+}
+
+/** Dull sinks that steal quiet toolbox (#19) when it lands soft in-game. */
+const QUIET19_DULL_SINKS = new Set([28, 2, 7, 31]);
+/** Mid wood/blunt cluster that quiet #19 WAV drifts into (#20/@91 on toolbox capture). */
+const QUIET19_WOOD_CLUSTER = new Set([8, 14, 17, 20, 30]);
+
+/**
+ * Residual quiet toolbox (#19): in-game / sample material is genuinely dull — not just
+ * a bad mic take. Do **not** map all dull audio to #19.
+ *
+ * Promote #19 only when:
+ * - nothing else self-locks hard (≥92%), AND
+ * - top is a weak dull sink (&lt;85%), OR mid wood-cluster (&lt;93%) with live centroid
+ *   in the quiet-container band (~2.6–3.6 kHz) and modest highBand.
+ */
+export function resolveQuiet19Residual(
+  matches: MatchResult[],
+  capturedCentroid?: number,
+  capturedHighRatio?: number,
+): MatchResult[] {
+  if (matches.length === 0) return matches;
+  const top = matches[0];
+  if (top.soundId === 19) return matches;
+  // Never override a hard self-lock (pristine #28/#2/#6/#20 stay put).
+  if (top.confidence >= 92) return matches;
+
+  const bestOther = matches.reduce((a, b) =>
+    a.soundId === 19 ? b : b.soundId === 19 ? a : a.confidence >= b.confidence ? a : b,
+  );
+  const nothingStrong = bestOther.soundId === 19 || bestOther.confidence < 92;
+
+  const dullWeak =
+    QUIET19_DULL_SINKS.has(top.soundId) && top.confidence < 85;
+  const midCent =
+    capturedCentroid != null &&
+    capturedCentroid >= 2600 &&
+    capturedCentroid <= 3600;
+  const modestHigh =
+    capturedHighRatio == null || capturedHighRatio < 0.36;
+  const woodWeakMid =
+    QUIET19_WOOD_CLUSTER.has(top.soundId) &&
+    top.confidence < 93 &&
+    midCent &&
+    modestHigh &&
+    nothingStrong;
+
+  const dullBandResidual =
+    dullWeak &&
+    nothingStrong &&
+    (capturedCentroid == null ||
+      (capturedCentroid >= 2200 && capturedCentroid <= 3800));
+
+  if (!dullBandResidual && !woodWeakMid) return matches;
+
+  const m19 = matches.find((m) => m.soundId === 19);
+  if (!m19) return matches;
+  // Floor residual confidence so lock margin / UI don't look like a 62% guess.
+  const promoted: MatchResult = {
+    ...m19,
+    confidence: Math.max(m19.confidence, 78),
+  };
+  return [promoted, ...matches.filter((m) => m.soundId !== 19)];
 }
 
 /**
@@ -1454,6 +1517,17 @@ export class AudioMatcher {
       }
     }
 
+    // Quiet toolbox residual (#19 is dull in-game) — only when nothing else self-locks hard.
+    allMatches = resolveQuiet19Residual(
+      allMatches,
+      centroid,
+      highBandRatio(spectrumVector),
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
+
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
     let top = matches[0];
@@ -1494,6 +1568,7 @@ export class AudioMatcher {
     }
 
     // Hard #28 reject before any ambiguous messaging — never a lock candidate below 80%.
+    // (Runs after quiet-#19 residual so weak #28 can become #19 instead of a reject toast.)
     const dullReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
     if (dullReject) {
       this.lastBurstTopId = null;
@@ -1921,7 +1996,7 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    const allMatches = rankMatchesWithPriors(
+    let allMatches = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
@@ -1930,6 +2005,15 @@ export class AudioMatcher {
         centroid,
       ),
       centroid,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
+    allMatches = resolveQuiet19Residual(
+      allMatches,
+      centroid,
+      highBandRatio(spectrumVector),
     ).map((m) => ({
       ...m,
       spectrumVector,

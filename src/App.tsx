@@ -94,6 +94,11 @@ export default function App() {
   const [shopCalibrating, setShopCalibrating] = useState(false);
   const [autoArmed, setAutoArmed] = useState(false);
   const [shopToast, setShopToast] = useState<string | null>(null);
+  const [burstCaptureUrl, setBurstCaptureUrl] = useState<string | null>(null);
+  const [burstCaptureMs, setBurstCaptureMs] = useState(0);
+  const burstCaptureBlobRef = useRef<Blob | null>(null);
+  const burstCaptureUrlRef = useRef<string | null>(null);
+  const burstAudioRef = useRef<HTMLAudioElement | null>(null);
   const [manualSoundId, setManualSoundId] = useState<number | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
@@ -404,6 +409,12 @@ export default function App() {
       setScanStyle('single');
     }
   }, [monitorSetup, scanStyle]);
+
+  useEffect(() => {
+    return () => {
+      if (burstCaptureUrlRef.current) URL.revokeObjectURL(burstCaptureUrlRef.current);
+    };
+  }, []);
 
   function finishLocked(
     feedback: 'up' | 'down' | 'skip',
@@ -726,6 +737,7 @@ export default function App() {
     setShopCalibrating(false);
     setAutoArmed(false);
     setShopToast(null);
+    clearBurstCapture();
     setSinglePhase('ready');
   }
 
@@ -755,11 +767,61 @@ export default function App() {
     }
   }
 
+  function clearBurstCapture() {
+    if (burstCaptureUrlRef.current) {
+      URL.revokeObjectURL(burstCaptureUrlRef.current);
+      burstCaptureUrlRef.current = null;
+    }
+    setBurstCaptureUrl(null);
+    setBurstCaptureMs(0);
+    burstCaptureBlobRef.current = null;
+    if (burstAudioRef.current) {
+      burstAudioRef.current.pause();
+      burstAudioRef.current = null;
+    }
+  }
+
+  function adoptBurstCapture(blob: Blob | null, durationMs: number) {
+    clearBurstCapture();
+    if (!blob) return;
+    burstCaptureBlobRef.current = blob;
+    setBurstCaptureMs(durationMs);
+    const url = URL.createObjectURL(blob);
+    burstCaptureUrlRef.current = url;
+    setBurstCaptureUrl(url);
+  }
+
+  function playBurstCapture() {
+    if (!burstCaptureUrl) return;
+    if (burstAudioRef.current) {
+      burstAudioRef.current.pause();
+      burstAudioRef.current = null;
+    }
+    const audio = new Audio(burstCaptureUrl);
+    burstAudioRef.current = audio;
+    void audio.play().catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      setShopToast(`Could not play captured audio: ${msg}`);
+    });
+  }
+
+  function downloadBurstCapture() {
+    const blob = burstCaptureBlobRef.current;
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `abi-burst-capture-${Date.now()}.wav`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleStartMoveBurst() {
     if (!matcherRef.current || !capturing) return;
     try {
       setShopCalibrating(!atShop);
       setShopToast(null);
+      clearBurstCapture();
       await matcherRef.current.startItemMoveBurst();
       setAtShop(true);
       setRecordingMove(true);
@@ -776,19 +838,23 @@ export default function App() {
   }
 
   async function handleStopMoveBurst() {
-    if (!matcherRef.current) return;
+    if (!matcherRef.current) {
+      setShopToast('Stop & Match: matcher not ready — Start Listening first.');
+      return;
+    }
     setRecordingMove(false);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
       setAutoArmed(false);
+      adoptBurstCapture(result.captureBlob, result.captureDurationMs);
+      // Always toast diagnostics (peak/floor/frames) — never a silent no-op.
+      setShopToast(result.reason);
+      setStatusDetail(result.reason);
       if (!result.ok) {
-        setShopToast(result.reason);
         setStatus('listening');
-        setStatusDetail(result.reason);
         return;
       }
-      setShopToast(null);
-      // onMatch locks UI when confidence clears the floor
+      // onMatch locks UI when confidence clears the floor; keep toast + Play available.
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
@@ -989,11 +1055,15 @@ export default function App() {
                   autoArmed={autoArmed}
                   calibrating={shopCalibrating}
                   toast={shopToast}
+                  captureUrl={burstCaptureUrl}
+                  captureDurationMs={burstCaptureMs}
                   onToggleAtShop={() => void handleToggleAtShop()}
                   onStartMove={() => void handleStartMoveBurst()}
                   onStopMatch={() => void handleStopMoveBurst()}
                   onToggleAuto={handleToggleAutoDetect}
                   onDismissToast={() => setShopToast(null)}
+                  onPlayCapture={playBurstCapture}
+                  onDownloadCapture={downloadBurstCapture}
                 />
               )}
               <AccuracyPanel

@@ -86,6 +86,53 @@ export function rmsFromAnalyser(analyser: AnalyserNode): number {
   return Math.sqrt(sum / buf.length);
 }
 
+/** Encode mono Float32 PCM (−1…1) as a 16-bit WAV Blob for Play / Download. */
+export function encodeWavMono(samples: Float32Array, sampleRate: number): Blob {
+  const numSamples = samples.length;
+  const dataBytes = numSamples * 2;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM fmt chunk size
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits
+  writeStr(36, 'data');
+  view.setUint32(40, dataBytes, true);
+
+  let o = 44;
+  for (let i = 0; i < numSamples; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    o += 2;
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+/** Concatenate Float32 chunks into one buffer (burst PCM capture). */
+export function concatFloat32(chunks: Float32Array[]): Float32Array {
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Float32Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
+
 export function browserFixSteps(info: BrowserInfo): string[] {
   switch (info.kind) {
     case 'chrome':

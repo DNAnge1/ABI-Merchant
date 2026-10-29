@@ -19,17 +19,12 @@ export function ShopCaptureBar(props: {
   multiSpikeCount?: number;
   multiTargetN?: number;
   multiPhase?: string;
-  /** Object URL for last Stop & Match WAV (playable even when match fails). */
-  captureUrl?: string | null;
-  captureDurationMs?: number;
   onToggleAtShop: () => void;
   onStartMove: () => void;
   onStopMatch: () => void;
   onArmMulti?: () => void;
   onStopMulti?: () => void;
   onDismissToast?: () => void;
-  onPlayCapture?: () => void;
-  onDownloadCapture?: () => void;
 }) {
   const multi = props.multiMode === true;
   const targetN = props.multiTargetN ?? 3;
@@ -75,32 +70,6 @@ export function ShopCaptureBar(props: {
               Dismiss
             </button>
           )}
-        </div>
-      )}
-
-      {props.captureUrl && (
-        <div className="flex flex-wrap items-center gap-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2">
-          <p className="m-0 text-[11px] text-[var(--muted)]">
-            Captured burst
-            {props.captureDurationMs != null
-              ? ` · ${Math.round(props.captureDurationMs)}ms`
-              : ''}{' '}
-            — hear whether the site got the cargo noise
-          </p>
-          <button
-            type="button"
-            onClick={props.onPlayCapture}
-            className="rounded px-2.5 py-1 text-[11px] font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10"
-          >
-            ▶ Play captured audio
-          </button>
-          <button
-            type="button"
-            onClick={props.onDownloadCapture}
-            className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
-          >
-            Download WAV
-          </button>
         </div>
       )}
 

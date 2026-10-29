@@ -4,6 +4,11 @@ import {
   sortRedsFirst,
 } from '../utils/sizeGroups';
 import type { MerchantItem } from '../utils/audioMatcher';
+import {
+  BurstCaptureControls,
+  SessionErrorHistory,
+  type SessionErrorEntry,
+} from './SessionErrorHistory';
 
 export interface SessionSlot {
   id: string;
@@ -147,6 +152,13 @@ export function ContinuousGrid(props: {
   listening: boolean;
   /** Mid-screen Start Listening (same as header) when not capturing */
   onStartListening?: () => void;
+  /** Last burst WAV — under Start Listening / listening box, above errors + Latest Lock */
+  captureUrl?: string | null;
+  captureDurationMs?: number;
+  onPlayCapture?: () => void;
+  onDownloadCapture?: () => void;
+  sessionErrors?: SessionErrorEntry[];
+  onClearSessionErrors?: () => void;
 }) {
   const latest = props.slots[0] ?? null;
 
@@ -205,6 +217,18 @@ export function ContinuousGrid(props: {
           )}
         </div>
       )}
+
+      {/* Under Start Listening / listening area: playback → errors → Latest Lock */}
+      <BurstCaptureControls
+        captureUrl={props.captureUrl}
+        captureDurationMs={props.captureDurationMs}
+        onPlayCapture={props.onPlayCapture}
+        onDownloadCapture={props.onDownloadCapture}
+      />
+      <SessionErrorHistory
+        entries={props.sessionErrors ?? []}
+        onClear={props.onClearSessionErrors}
+      />
 
       {latest && (
         <div

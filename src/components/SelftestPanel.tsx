@@ -20,9 +20,9 @@ export function SelftestPanel(props: {
               AnalyserNode self-test
             </h2>
             <p className="m-0 mt-0.5 text-[11px] text-[var(--muted)]">
-              Decode all 38 pickup OGGs through live{' '}
-              <code className="text-[var(--accent)]">getByteFrequencyData</code> at the
-              browser sample rate (same path as shop capture).
+              Decode all 38 pickup OGGs and score PCM live300 (onset + ~300ms linear FFT)
+              at the browser sample rate — same window math as fingerprints / offline
+              self-test.
             </p>
           </div>
           <div className="flex gap-2">

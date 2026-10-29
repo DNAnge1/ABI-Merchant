@@ -1,8 +1,18 @@
 /**
  * Real-time Web Audio matcher for Field Merchant mystery cargo sounds.
- * Uses AnalyserNode (fftSize 2048), onset detection, 300ms spectral slices,
- * and cosine similarity against precomputed fingerprints filtered by cargo size+price.
+ * Uses AnalyserNode (fftSize 2048, or 4096 when sampleRate > 30k), onset detection,
+ * 300ms spectral slices, and cosine similarity against precomputed fingerprints
+ * filtered by cargo size+price.
  */
+
+/** Fingerprint extract rate Nyquist (22050/2) — live centroids must stay in this band. */
+export const FP_NYQUIST_HZ = 11025;
+export const CENTROID_MIN_HZ = 50;
+
+/** Prefer ~10.8Hz bins at 44.1/48k so live FFT resolution matches 22050@2048 fingerprints. */
+export function analyserFftSize(sampleRate: number): number {
+  return sampleRate > 30000 ? 4096 : 2048;
+}
 
 import {
   captureDisplayWithAudio,
@@ -210,7 +220,27 @@ function highBandRatio(vec: number[]): number {
   return upper / total;
 }
 
-function magnitudeToBands(
+/** Fill log-bands that received zero FFT bins (common at 44.1/48k with coarse fftSize). */
+function interpolateEmptyBands(bandVec: number[], bandCounts: number[]): void {
+  const n = bandVec.length;
+  for (let bi = 0; bi < n; bi++) {
+    if (bandCounts[bi] > 0) continue;
+    let lo = bi - 1;
+    while (lo >= 0 && bandCounts[lo] === 0) lo--;
+    let hi = bi + 1;
+    while (hi < n && bandCounts[hi] === 0) hi++;
+    if (lo >= 0 && hi < n) {
+      const t = (bi - lo) / (hi - lo);
+      bandVec[bi] = bandVec[lo] * (1 - t) + bandVec[hi] * t;
+    } else if (lo >= 0) {
+      bandVec[bi] = bandVec[lo];
+    } else if (hi < n) {
+      bandVec[bi] = bandVec[hi];
+    }
+  }
+}
+
+export function magnitudeToBands(
   magnitudes: Float32Array | Uint8Array,
   sampleRate: number,
   fftSize: number,
@@ -237,11 +267,13 @@ function magnitudeToBands(
   for (let bi = 0; bi < bands; bi++) {
     if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
+  interpolateEmptyBands(bandVec, bandCounts);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
 }
 
-function spectralCentroidHz(
+/** Spectral centroid restricted to fingerprint Nyquist band (50–11025 Hz). */
+export function spectralCentroidHz(
   magnitudes: Float32Array | Uint8Array,
   sampleRate: number,
   fftSize: number,
@@ -250,14 +282,16 @@ function spectralCentroidHz(
   let num = 0;
   let den = 0;
   for (let i = 1; i < magnitudes.length; i++) {
+    const freq = (i * sampleRate) / fftSize;
+    if (freq < CENTROID_MIN_HZ || freq > FP_NYQUIST_HZ) continue;
     const mag = isByte
       ? byteToLinearMag((magnitudes as Uint8Array)[i])
       : (magnitudes as Float32Array)[i];
-    const freq = (i * sampleRate) / fftSize;
     num += freq * mag;
     den += mag;
   }
-  return den > 0 ? num / den : 0;
+  if (den <= 0) return 0;
+  return Math.min(FP_NYQUIST_HZ, Math.max(CENTROID_MIN_HZ, num / den));
 }
 
 /** Items valid for a given cargo size + price (and optional cargo type). */
@@ -944,7 +978,7 @@ export class AudioMatcher {
     this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
+    this.analyser.fftSize = analyserFftSize(this.ctx.sampleRate);
     this.analyser.smoothingTimeConstant = 0.15;
     this.source = this.ctx.createMediaStreamSource(this.stream);
     this.source.connect(this.analyser);

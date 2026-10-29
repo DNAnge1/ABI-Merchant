@@ -421,6 +421,7 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
     for (let i = 0; i < half; i++) mag[i] = Math.hypot(re[i], im[i]);
     const bands = 32;
     const bandVec = new Array(bands).fill(0);
+    const bandCounts = new Array(bands).fill(0);
     const minF = 80;
     const maxF = Math.min(sampleRate / 2, 8000);
     for (let i = 1; i < half; i++) {
@@ -429,6 +430,11 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
       const t = Math.log(freq / minF) / Math.log(maxF / minF);
       const bi = Math.min(bands - 1, Math.floor(t * bands));
       bandVec[bi] += mag[i];
+      bandCounts[bi] += 1;
+    }
+    // Average bins per log-band (raw += inflates highs).
+    for (let bi = 0; bi < bands; bi++) {
+      if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
     }
     const bandMax = Math.max(...bandVec, 1e-9);
     const normalized = bandVec.map((v) => v / bandMax);
@@ -543,7 +549,7 @@ function generateFingerprints(merchant) {
     vectorBands: 32,
     windowMs: LIVE_SLICE_MS,
     matchSide: 'pickup',
-    analysis: 'live300-post-onset',
+    analysis: 'live300-post-onset-binavg',
     fingerprints,
   };
 }

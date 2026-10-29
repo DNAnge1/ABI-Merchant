@@ -166,6 +166,50 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+/**
+ * Web Audio getByteFrequencyData maps minDecibels=-100 … maxDecibels=-30 → 0..255.
+ * Fingerprints are built from linear FFT magnitudes — convert dB bytes back to linear.
+ */
+function byteToLinearMag(byteVal: number): number {
+  if (byteVal <= 0) return 0;
+  const db = -100 + (byteVal / 255) * 70;
+  return Math.pow(10, db / 20);
+}
+
+/** Pearson / mean-centered cosine mapped to [0, 1] — kills flat broadband DC bias. */
+function centeredCosine(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return 0;
+  let meanA = 0;
+  let meanB = 0;
+  for (let i = 0; i < n; i++) {
+    meanA += a[i];
+    meanB += b[i];
+  }
+  meanA /= n;
+  meanB /= n;
+
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    dot += da * db;
+    na += da * da;
+    nb += db * db;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return Math.max(0, (dot / (Math.sqrt(na) * Math.sqrt(nb)) + 1) / 2);
+}
+
+/** Share of energy in upper half of the band vector (bright/gritty vs dull thud). */
+function highBandRatio(vec: number[]): number {
+  const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
+  const upper = vec.slice(16).reduce((s, v) => s + v, 0);
+  return upper / total;
+}
+
 function magnitudeToBands(
   magnitudes: Float32Array | Uint8Array,
   sampleRate: number,
@@ -175,6 +219,7 @@ function magnitudeToBands(
   const half = magnitudes.length;
   const isByte = magnitudes instanceof Uint8Array;
   const bandVec = new Array(bands).fill(0);
+  const bandCounts = new Array(bands).fill(0);
   const minF = 80;
   const maxF = Math.min(sampleRate / 2, 8000);
   for (let i = 1; i < half; i++) {
@@ -182,8 +227,15 @@ function magnitudeToBands(
     if (freq < minF || freq > maxF) continue;
     const t = Math.log(freq / minF) / Math.log(maxF / minF);
     const bi = Math.min(bands - 1, Math.floor(t * bands));
-    const mag = isByte ? (magnitudes as Uint8Array)[i] / 255 : (magnitudes as Float32Array)[i];
+    const mag = isByte
+      ? byteToLinearMag((magnitudes as Uint8Array)[i])
+      : (magnitudes as Float32Array)[i];
     bandVec[bi] += mag;
+    bandCounts[bi] += 1;
+  }
+  // Average bins per log-band — raw += inflates highs (many more FFT bins).
+  for (let bi = 0; bi < bands; bi++) {
+    if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
@@ -198,7 +250,9 @@ function spectralCentroidHz(
   let num = 0;
   let den = 0;
   for (let i = 1; i < magnitudes.length; i++) {
-    const mag = isByte ? (magnitudes as Uint8Array)[i] / 255 : (magnitudes as Float32Array)[i];
+    const mag = isByte
+      ? byteToLinearMag((magnitudes as Uint8Array)[i])
+      : (magnitudes as Float32Array)[i];
     const freq = (i * sampleRate) / fftSize;
     num += freq * mag;
     den += mag;
@@ -233,6 +287,7 @@ export function matchSpectrumAgainstFingerprints(
   // Field Merchant: players only hear pickup. Default / 'auto' → pickup only.
   const kinds: SoundKind[] =
     kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
+  const capturedHighRatio = highBandRatio(spectrumVector);
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -240,13 +295,22 @@ export function matchSpectrumAgainstFingerprints(
     for (const k of kinds) {
       const side = fp[k];
       if (!side?.spectrumVector) continue;
-      let score = cosineSimilarity(spectrumVector, side.spectrumVector);
-      // Soft centroid prior (±2kHz tolerance)
+
+      const rawCos = cosineSimilarity(spectrumVector, side.spectrumVector);
+      const shapeCos = centeredCosine(spectrumVector, side.spectrumVector);
+      const fpHighRatio = highBandRatio(side.spectrumVector);
+      // Penalize dark/bass (#4 ~0.35) vs bright/gritty (#5 ~0.68) tilt mismatches.
+      const tiltPenalty = Math.max(0, 1 - Math.abs(capturedHighRatio - fpHighRatio) * 1.8);
+
+      let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
+
+      // Tighter centroid prior (2200Hz scale vs old 4000Hz).
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 4000);
-        score = score * 0.85 + prior * 0.15;
+        const prior = Math.max(0, 1 - delta / 2200);
+        score = score * 0.78 + prior * 0.22;
       }
+
       results.push({
         soundId,
         confidence: Math.round(Math.max(0, Math.min(1, score)) * 1000) / 10,

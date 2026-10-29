@@ -385,7 +385,6 @@ export const KNOWN_NEAR_TWIN_PAIRS: ReadonlyArray<readonly [number, number]> = [
   [8, 14],
   [8, 20],
   [14, 20],
-  [21, 35],
   [21, 36],
   [27, 35],
   [30, 31],
@@ -407,34 +406,54 @@ export interface DirectedSinkOverride {
   promoteId: number;
   /** Max confidence gap (sink − promote) still eligible for promotion. */
   maxGapPts: number;
-  /** Optional: only fire when live centroid is above this (Hz). */
+  /** Optional: only fire promote when live centroid is above this (Hz). */
   minCentroidHz?: number;
   /** How deep to search for promoteId (default 3). */
   topN?: number;
   /**
-   * If promote never appears and sink still tops below this confidence on a
-   * bright capture (minCentroidHz), refuse to lock the sink — ask for a louder retry.
+   * Refuse to lock this sink below this confidence (true self-locks are ~96%+).
+   * Does **not** require minCentroidHz — quiet captures often lose brightness
+   * and would otherwise skip the reject (#19 → #28 @ 68%).
    */
   rejectLockBelow?: number;
+  /** Only promote when live centroid is clearly closer to promote FP than sink FP. */
+  requireCloserCentroid?: boolean;
 }
 
 /**
- * Field-confirmed directed sinks:
- * - #28 steals quiet/bright #19 (statue sink ~2 kHz vs #19 ~4.4 kHz)
- * - #31 steals #6 at ~1pt (Oct 29 abibuilder; centroid #6 2466 vs #31 2118)
- * - #5 steals #9 when capture stays bright (#9 ~3800 vs #5 ~3284)
+ * Field-confirmed directed sinks (promote still needs centroid gate + rank).
+ * Reject-below fires on low-conf sink tops even when promote is absent.
+ * Brent: true #31/#5/#28 self-lock ~96–99% — weak field tops on those IDs are not “really X”.
  */
 export const DIRECTED_SINK_OVERRIDES: ReadonlyArray<DirectedSinkOverride> = [
   {
     sinkId: 28,
     promoteId: 19,
-    maxGapPts: 12,
+    maxGapPts: 15,
     minCentroidHz: 2900,
-    topN: 10,
+    topN: 12,
     rejectLockBelow: 80,
+    requireCloserCentroid: true,
   },
-  { sinkId: 31, promoteId: 6, maxGapPts: 3, minCentroidHz: 2280, topN: 5 },
-  { sinkId: 5, promoteId: 9, maxGapPts: 4, minCentroidHz: 3550, topN: 5 },
+  {
+    sinkId: 31,
+    promoteId: 6,
+    maxGapPts: 8,
+    // Above typical true-#31 re-extract drift (~2.3k); true #6 FP ~2466.
+    minCentroidHz: 2420,
+    topN: 12,
+    rejectLockBelow: 94,
+    requireCloserCentroid: true,
+  },
+  {
+    sinkId: 5,
+    promoteId: 9,
+    maxGapPts: 10,
+    minCentroidHz: 3600,
+    topN: 12,
+    rejectLockBelow: 94,
+    requireCloserCentroid: true,
+  },
 ];
 
 /**
@@ -463,33 +482,98 @@ export function resolveDirectedSinks(
     if (!promote) continue;
     const gap = top.confidence - promote.confidence;
     if (gap > rule.maxGapPts) continue;
+    if (
+      rule.requireCloserCentroid &&
+      capturedCentroid != null &&
+      top.spectralCentroid > 0 &&
+      promote.spectralCentroid > 0
+    ) {
+      const dSink = Math.abs(capturedCentroid - top.spectralCentroid);
+      const dProm = Math.abs(capturedCentroid - promote.spectralCentroid);
+      // Promote must be clearly closer in pitch (≥120 Hz).
+      if (!(dProm + 120 < dSink)) continue;
+    }
     return [promote, ...matches.filter((m) => m.soundId !== rule.promoteId)];
   }
   return matches;
 }
 
 /**
- * Refuse locking a dull sink on a bright/quiet capture when promote never ranked
- * (field #19 → #28 @ 71–76% with runner #2, not #19).
+ * Refuse locking a dull/confused sink at low confidence when the true ID often
+ * never ranks (field #19 → #28 @ 68%; #6 → #31 @ 93% with #6 absent).
+ * True self-locks for these sinks are ~96%+ — safe to demand a louder retry.
  */
 export function directedSinkRejectReason(
   top: MatchResult,
-  capturedCentroid?: number,
+  _capturedCentroid?: number,
   overrides: ReadonlyArray<DirectedSinkOverride> = DIRECTED_SINK_OVERRIDES,
 ): string | null {
   for (const rule of overrides) {
     if (rule.rejectLockBelow == null) continue;
     if (top.soundId !== rule.sinkId) continue;
     if (top.confidence >= rule.rejectLockBelow) continue;
-    if (
-      rule.minCentroidHz != null &&
-      (capturedCentroid == null || !(capturedCentroid > rule.minCentroidHz))
-    ) {
-      continue;
-    }
-    return `Stop & Match: Group #${rule.sinkId} @ ${top.confidence}% looks like a dull sink on a bright/quiet capture (want #${rule.promoteId}?). Move louder/closer and retry.`;
+    return `Stop & Match: Group #${rule.sinkId} @ ${top.confidence}% is a weak/dull sink lock (often #${rule.promoteId}). Move louder/closer and retry — do not treat this as a lock.`;
   }
   return null;
+}
+
+/** Dull sinks that steal brighter cargo when live pitch is still crisp. */
+const DULL_SINK_IDS = new Set([7, 28, 31]);
+
+/**
+ * When the live centroid strongly disagrees with the top fingerprint’s pitch,
+ * promote a nearer-centroid candidate (field: #31/#28 dull vs #6 bright,
+ * #5/#1 vs #9, #21 vs #5, #30 vs #4). Prefer pitch over blind ID overrides.
+ */
+export function resolveCentroidDisagreement(
+  matches: MatchResult[],
+  capturedCentroid?: number,
+): MatchResult[] {
+  if (capturedCentroid == null || matches.length < 2) return matches;
+  const top = matches[0];
+  if (!(top.spectralCentroid > 0)) return matches;
+  const topDelta = Math.abs(capturedCentroid - top.spectralCentroid);
+  const dullTop =
+    DULL_SINK_IDS.has(top.soundId) &&
+    capturedCentroid > top.spectralCentroid + 400;
+  // Top already pitch-aligned — leave ranking alone (unless dull sink on clearly brighter live).
+  if (topDelta < 400 && !dullTop) return matches;
+
+  const searchN = Math.min(matches.length, 14);
+  let best = top;
+  let bestDelta = topDelta;
+  for (let i = 0; i < searchN; i++) {
+    const m = matches[i];
+    if (!(m.spectralCentroid > 0)) continue;
+    const d = Math.abs(capturedCentroid - m.spectralCentroid);
+    const needCloser = dullTop ? 200 : 250;
+    if (d + needCloser < bestDelta) {
+      best = m;
+      bestDelta = d;
+    }
+  }
+  if (best.soundId === top.soundId) return matches;
+  const gap = top.confidence - best.confidence;
+  const maxGap = dullTop
+    ? 22
+    : topDelta >= 900
+      ? 22
+      : topDelta >= 650
+        ? 16
+        : 10;
+  if (gap > maxGap) return matches;
+  return [best, ...matches.filter((m) => m.soundId !== best.soundId)];
+}
+
+/** Match → pitch prior → directed sinks (shared by burst spikes + Self-Test). */
+export function rankMatchesWithPriors(
+  matches: MatchResult[],
+  capturedCentroid?: number,
+): MatchResult[] {
+  return resolveDirectedSinks(
+    resolveCentroidDisagreement(matches, capturedCentroid),
+    capturedCentroid,
+  );
 }
 
 /**
@@ -526,7 +610,11 @@ export function analyzePcmLive300Window(
 
   const sliceSamples = Math.floor((300 / 1000) * sampleRate);
   const end = Math.min(samples.length, onset + sliceSamples);
-  const hop = Math.max(1, Math.floor(fftSize / 4));
+  // Denser hops on short pickups (#19 ~220ms) so 48k/4096 still captures attack.
+  const hop = Math.max(
+    1,
+    Math.floor(fftSize / (end - onset < fftSize * 2 ? 8 : 4)),
+  );
   const bandAccum = new Array(bands).fill(0);
   const centroids: number[] = [];
   let frames = 0;
@@ -541,6 +629,7 @@ export function analyzePcmLive300Window(
     frames += 1;
   }
   if (frames === 0) {
+    // Allow a slightly pre-onset frame when the clip is shorter than fftSize.
     const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
     for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
     const linMag = fftLinearMagnitudes(scratch);
@@ -588,12 +677,12 @@ export function matchSpectrumAgainstFingerprints(
 
       let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
 
-      // Tight centroid prior — separates dull rubber/plastic (#7 ~2.9k) from
-      // brighter statue/metal clusters (#36 ~4.0k, #22 ~6.2k).
+      // Centroid prior — slightly tighter than 1500/0.25; heavy pitch breaks use
+      // {@link resolveCentroidDisagreement} so we don't overturn clean self-matches.
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 1500);
-        score = score * 0.75 + prior * 0.25;
+        const prior = Math.max(0, 1 - delta / 1400);
+        score = score * 0.72 + prior * 0.28;
       }
 
       results.push({
@@ -658,18 +747,19 @@ export class AudioMatcher {
 
   /**
    * Adaptive gap: high confidence → smaller required margin.
-   * Near-twin + spike majority → 2pt (field: #8/#2 at 95.2/95.1 with 2 clicks).
+   * Near-twin runners stay stricter; non-twins (e.g. #35 vs #21) soften so a
+   * clear 3pt lead can lock instead of demanding 8.
    */
   private lockMarginRequired(
     topConfidence: number,
-    opts?: { nearTwinMajority?: boolean },
+    opts?: { nearTwinMajority?: boolean; runnerIsNearTwin?: boolean },
   ): number {
     if (opts?.nearTwinMajority) return 2;
-    if (topConfidence >= 94) return 3;
-    if (topConfidence >= 88) return 4;
-    // Mid-confidence quiet cargo (#21/#35) often leads by 5–7pt but failed the flat 8pt bar.
-    if (topConfidence >= 82) return 5;
-    return this.autoMarginPts;
+    const twin = opts?.runnerIsNearTwin === true;
+    if (topConfidence >= 94) return twin ? 3 : 2;
+    if (topConfidence >= 88) return twin ? 4 : 3;
+    if (topConfidence >= 82) return twin ? 5 : 3;
+    return twin ? this.autoMarginPts : 5;
   }
   private shopPhase: ShopPhase = 'in-raid';
   private shopCalibrating = false;
@@ -1179,7 +1269,7 @@ export class AudioMatcher {
 
       const localMax = Math.max(...local, 1e-9);
       const spikeSpectrum = local.map((v) => v / localMax);
-      const spikeRank = resolveDirectedSinks(
+      const spikeRank = rankMatchesWithPriors(
         matchSpectrumAgainstFingerprints(
           spikeSpectrum,
           this.fingerprints,
@@ -1229,7 +1319,7 @@ export class AudioMatcher {
     }
     const majorityOk = majorityId != null && majorityN >= 2 && majorityN > spikeVotes.length / 2;
 
-    let allMatches = resolveDirectedSinks(
+    let allMatches = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
@@ -1253,7 +1343,7 @@ export class AudioMatcher {
       if (bestSpike) {
         spectrumVector = bestSpike.spectrum;
         centroid = bestSpike.centroid;
-        allMatches = resolveDirectedSinks(
+        allMatches = rankMatchesWithPriors(
           matchSpectrumAgainstFingerprints(
             spectrumVector,
             this.fingerprints,
@@ -1270,18 +1360,56 @@ export class AudioMatcher {
       }
     }
 
+    // Prefer Self-Test-aligned PCM live300 on the burst WAV tee when present.
+    // AnalyserNode peak windows were the main exact-OGG vs Self-Test skew (#6/#9/#19).
+    let matchSource: 'pcm-live300' | 'analyser-spikes' = 'analyser-spikes';
+    const minPcmSamples = Math.floor(pcm.sampleRate * 0.08);
+    if (pcm.samples.length >= minPcmSamples) {
+      let pcmPeak = 0;
+      for (let i = 0; i < pcm.samples.length; i++) {
+        const a = Math.abs(pcm.samples[i]);
+        if (a > pcmPeak) pcmPeak = a;
+      }
+      if (pcmPeak >= 0.008) {
+        const pcmWin = analyzePcmLive300Window(
+          pcm.samples,
+          pcm.sampleRate,
+          analyserFftSize(pcm.sampleRate),
+          this.fingerprints.vectorBands || 32,
+        );
+        spectrumVector = pcmWin.spectrumVector;
+        centroid = pcmWin.centroid;
+        allMatches = rankMatchesWithPriors(
+          matchSpectrumAgainstFingerprints(
+            spectrumVector,
+            this.fingerprints,
+            candidates,
+            this.kind,
+            centroid,
+          ),
+          centroid,
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
+        matchSource = 'pcm-live300';
+      }
+    }
+
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
     const top = matches[0];
     const runner = matches[1] ?? allMatches[1];
     const weak = allMatches[0];
     const stats = diagFor(peakRms, chosen.length);
+    const sourceNote = matchSource === 'pcm-live300' ? ' · pcm300' : ' · spikes';
     const voteNote =
-      majorityOk && majorityId != null
+      (majorityOk && majorityId != null
         ? ` · vote ${majorityN}/${spikeVotes.length}→#${majorityId}`
         : spikeVotes.length
           ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
-          : '';
+          : '') + sourceNote;
 
     if (!top) {
       const quietNote = quiet
@@ -1317,12 +1445,16 @@ export class AudioMatcher {
     }
 
     const margin = runner ? top.confidence - runner.confidence : 99;
+    const runnerIsNearTwin =
+      runner != null && isKnownNearTwin(top.soundId, runner.soundId);
     const nearTwinMajority =
       majorityOk &&
-      runner != null &&
-      isKnownNearTwin(top.soundId, runner.soundId) &&
+      runnerIsNearTwin &&
       majorityId === top.soundId;
-    const needGap = this.lockMarginRequired(top.confidence, { nearTwinMajority });
+    const needGap = this.lockMarginRequired(top.confidence, {
+      nearTwinMajority,
+      runnerIsNearTwin,
+    });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
       this.lastBurstTopId === top.soundId && margin >= 3 && top.confidence >= 90;
@@ -1687,11 +1819,14 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    const allMatches = matchSpectrumAgainstFingerprints(
-      spectrumVector,
-      this.fingerprints,
-      candidates,
-      this.kind,
+    const allMatches = rankMatchesWithPriors(
+      matchSpectrumAgainstFingerprints(
+        spectrumVector,
+        this.fingerprints,
+        candidates,
+        this.kind,
+        centroid,
+      ),
       centroid,
     ).map((m) => ({
       ...m,
@@ -1715,8 +1850,16 @@ export class AudioMatcher {
       return [];
     }
 
+    const sinkReject = directedSinkRejectReason(top, centroid);
+    if (sinkReject) {
+      this.surfaceListening(sinkReject);
+      return [];
+    }
+
     const margin = runner ? top.confidence - runner.confidence : 99;
-    const needGap = this.lockMarginRequired(top.confidence);
+    const runnerIsNearTwin =
+      runner != null && isKnownNearTwin(top.soundId, runner.soundId);
+    const needGap = this.lockMarginRequired(top.confidence, { runnerIsNearTwin });
     if (margin < needGap) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,

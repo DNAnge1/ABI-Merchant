@@ -1,19 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import merchantData from './data/merchantData.json';
 import fingerprintsData from './data/fingerprints.json';
-import { StatusBar, type AppMode } from './components/StatusBar';
+import type { AppMode } from './components/StatusBar';
 import { AudioVerifyPanel, playTestTone } from './components/AudioVerifyPanel';
 import { ManualFilters } from './components/ManualFilters';
 import { SoundBoard, type SoundProfile } from './components/SoundBoard';
 import { SizeGroupedResults } from './components/SizeGroupedResults';
-import { SetupSelector } from './components/SetupSelector';
-import { ShopCaptureBar } from './components/ShopCaptureBar';
-import { SingleItemLoop, type SingleLoopPhase } from './components/SingleItemLoop';
-import { ContinuousGrid, buildSlotFromMatch, type SessionSlot } from './components/ContinuousGrid';
-import type { SessionErrorEntry } from './components/SessionErrorHistory';
+import { buildSlotFromMatch, type SessionSlot } from './components/ContinuousGrid';
+import {
+  ActiveSessionError,
+  BurstCaptureControls,
+  SessionErrorHistory,
+  type SessionErrorEntry,
+} from './components/SessionErrorHistory';
 import { MissFeedbackModal } from './components/MissFeedbackModal';
 import { AccuracyPanel } from './components/AccuracyPanel';
 import { SelftestPanel } from './components/SelftestPanel';
+import { ChromeBar } from './components/ChromeBar';
+import { EntryScreen } from './components/EntryScreen';
+import { AutoWizard, type AutoSettings } from './components/AutoWizard';
+import { StepRow, type WizardStep } from './components/StepRow';
+import { ListenCircle } from './components/ListenCircle';
+import { LatestLockFeed } from './components/LatestLockFeed';
+import {
+  TroubleshootingPage,
+  type TroubleSection,
+} from './components/TroubleshootingPage';
+import { WipAccuracyBanner } from './components/WipAccuracyBanner';
+import type { SingleLoopPhase } from './components/SingleItemLoop';
 import {
   analyserFftSize,
   AudioMatcher,
@@ -82,8 +96,22 @@ interface LockedScan {
 
 export default function App() {
   const [mode, setMode] = useState<AppMode>('automatic');
-  const [monitorSetup, setMonitorSetup] = useState<MonitorSetup>('dual');
+  const [shellScreen, setShellScreen] = useState<
+    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting'
+  >('entry');
+  const [wizardStep, setWizardStep] = useState<WizardStep>('monitors');
+  const [monitorSetup, setMonitorSetup] = useState<MonitorSetup | null>(null);
   const [scanStyle, setScanStyle] = useState<ScanStyle>('single');
+  const [hideImages, setHideImages] = useState(false);
+  const [focusGuard, setFocusGuard] = useState(true);
+  const [onlyRed, setOnlyRed] = useState(false);
+  const [onlyYellow, setOnlyYellow] = useState(false);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [troubleSection, setTroubleSection] =
+    useState<TroubleSection>('overview');
+  const [troubleReturn, setTroubleReturn] = useState<
+    'entry' | 'wizard' | 'listen' | 'manual'
+  >('entry');
   const [soundAlerts, setSoundAlerts] = useState(true);
   const [useTts, setUseTts] = useState(true);
   const [size, setSize] = useState('');
@@ -146,12 +174,12 @@ export default function App() {
   const verifyCleanupRef = useRef<(() => void) | null>(null);
   const pipRef = useRef<PipHandle | null>(null);
   const scanStyleRef = useRef(scanStyle);
-  const monitorRef = useRef(monitorSetup);
+  const monitorRef = useRef<MonitorSetup>(monitorSetup ?? 'dual');
   const matchHandlerRef = useRef<(payload: MatchPayload) => void>(() => undefined);
   const finishLockedRef = useRef<(feedback: 'up' | 'down' | 'skip') => void>(() => undefined);
   const singlePhaseRef = useRef(singlePhase);
   scanStyleRef.current = scanStyle;
-  monitorRef.current = monitorSetup;
+  monitorRef.current = monitorSetup ?? 'dual';
   singlePhaseRef.current = singlePhase;
 
   const filteredManual = useMemo(
@@ -406,6 +434,8 @@ export default function App() {
     if (!demo) return;
     if (demo === 'shop' || demo === 'shop-record') {
       setMode('automatic');
+      setShellScreen('listen');
+      setWizardStep('listen');
       setMonitorSetup('dual');
       setScanStyle('single');
       setCapturing(true);
@@ -424,6 +454,8 @@ export default function App() {
     }
     if (demo === 'raid') {
       setMode('automatic');
+      setShellScreen('listen');
+      setMonitorSetup('single');
       setCapturing(true);
       setAtShop(false);
       setRecordingMove(false);
@@ -433,6 +465,8 @@ export default function App() {
     }
     if (demo === 'lock' || demo === 'grid') {
       setMode('automatic');
+      setShellScreen('listen');
+      setWizardStep('listen');
       setMonitorSetup(demo === 'grid' ? 'dual' : 'single');
       setScanStyle(demo === 'grid' ? 'continuous' : 'single');
       const soundId = demo === 'grid' ? 28 : 32;
@@ -509,8 +543,10 @@ export default function App() {
   }, [noiseFloor, mode]);
 
   useEffect(() => {
-    matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
-  }, [monitorSetup]);
+    matcherRef.current?.setFocusGraceMs(
+      focusGuard && monitorSetup === 'single' ? 1500 : 0,
+    );
+  }, [monitorSetup, focusGuard]);
 
   useEffect(() => {
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
@@ -760,7 +796,9 @@ export default function App() {
     setShopCalibrating(false);
     setShopToast(null);
     matcherRef.current?.setSensitivity(sensitivity);
-    matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
+    matcherRef.current?.setFocusGraceMs(
+      focusGuard && monitorSetup === 'single' ? 1500 : 0,
+    );
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
   }
 
@@ -1055,6 +1093,7 @@ export default function App() {
   function switchToManual() {
     stopVerifySession();
     setMode('manual');
+    setShellScreen('manual');
     setVerifyOpen(false);
     void stopCapture();
   }
@@ -1073,6 +1112,7 @@ export default function App() {
       setFloatOverlay(true);
     }
   }
+  void popOutOverlay;
 
   const hasResult =
     (mode === 'automatic' && scanStyle === 'single' && singlePhase === 'locked' && !!locked) ||
@@ -1102,41 +1142,163 @@ export default function App() {
     return list;
   }, [manualSoundId, locked, size, cargoType, cargoPrice, itemsForSound]);
 
+  const multiMode = scanStyle === 'continuous' && monitorSetup === 'dual';
+  // Keep captureSource / statusDetail live for matcher diagnostics (chrome uses capturing).
+  void captureSource;
+  void statusDetail;
+
+  const autoSettings: AutoSettings = {
+    soundAlerts,
+    useTts,
+    sensitivity,
+    hideImages,
+    focusGuard,
+  };
+
+  function startOver() {
+    void stopCapture();
+    setShellScreen('entry');
+    setWizardStep('monitors');
+    setMonitorSetup(null);
+    setScanStyle('single');
+    setMode('automatic');
+    setLocked(null);
+    setSlots([]);
+    setSinglePhase('ready');
+    setSelectedSizes([]);
+  }
+
+  function openTroubleshooting(section: TroubleSection = 'overview') {
+    if (shellScreen !== 'troubleshooting') {
+      setTroubleReturn(
+        shellScreen === 'entry' ||
+          shellScreen === 'wizard' ||
+          shellScreen === 'listen' ||
+          shellScreen === 'manual'
+          ? shellScreen
+          : 'entry',
+      );
+    }
+    setTroubleSection(section);
+    setShellScreen('troubleshooting');
+  }
+
+  function chooseAutomatic() {
+    setMode('automatic');
+    setShellScreen('wizard');
+    setWizardStep('monitors');
+    setMonitorSetup(null);
+  }
+
+  function chooseManual() {
+    setMode('manual');
+    setShellScreen('manual');
+  }
+
+  function jumpWizard(step: WizardStep) {
+    if (step === 'listen') {
+      if (!monitorSetup) {
+        setWizardStep('monitors');
+        setShellScreen('wizard');
+        return;
+      }
+      setWizardStep('listen');
+      setShellScreen('listen');
+      return;
+    }
+    if (step === 'settings' && !monitorSetup) {
+      setWizardStep('monitors');
+      setShellScreen('wizard');
+      return;
+    }
+    setWizardStep(step);
+    setShellScreen('wizard');
+  }
+
+  function stepBack() {
+    if (wizardStep === 'listen' || shellScreen === 'listen') {
+      jumpWizard('settings');
+      return;
+    }
+    if (wizardStep === 'settings') {
+      setWizardStep('monitors');
+      return;
+    }
+    startOver();
+  }
+
+  function selectMonitors(m: MonitorSetup) {
+    setMonitorSetup(m);
+    setScanStyle(m === 'dual' ? 'continuous' : 'single');
+    setWizardStep('settings');
+  }
+
+  function goNextFromSettings() {
+    setWizardStep('listen');
+    setShellScreen('listen');
+  }
+
+  function toggleSize(sizeKey: string) {
+    setSelectedSizes((prev) =>
+      prev.includes(sizeKey) ? prev.filter((s) => s !== sizeKey) : [...prev, sizeKey],
+    );
+  }
+
+  function handleModeChange(next: AppMode) {
+    if (next === 'manual') {
+      chooseManual();
+      return;
+    }
+    if (monitorSetup) {
+      setMode('automatic');
+      setShellScreen('listen');
+      setWizardStep('listen');
+    } else {
+      chooseAutomatic();
+    }
+  }
+
+  const latestLock =
+    multiMode && slots[0]
+      ? {
+          soundId: slots[0].soundId,
+          confidence: slots[0].confidence,
+          items: slots[0].items,
+        }
+      : locked
+        ? {
+            soundId: locked.match.soundId,
+            confidence: locked.match.confidence,
+            items: locked.resultItems,
+          }
+        : null;
+
+  const activeError = sessionErrors[0] ?? null;
+  const chromeScreen =
+    shellScreen === 'troubleshooting'
+      ? 'troubleshooting'
+      : shellScreen === 'manual'
+        ? 'manual'
+        : shellScreen === 'listen'
+          ? 'listen'
+          : shellScreen === 'wizard'
+            ? 'wizard'
+            : 'entry';
+
   return (
     <div className="min-h-full flex flex-col">
-      <StatusBar
-        status={hasResult ? 'done' : status}
-        mode={mode}
-        detail={
-          hasResult && locked
-            ? `Group #${locked.match.soundId} · RED ${locked.redPct}% · ${locked.match.confidence}% audio`
-            : statusDetail
-        }
-        capturing={capturing}
-        hasResult={!!hasResult}
-        redPct={displayRed}
-        onModeChange={setMode}
-        onStart={() => void startCapture()}
-        onStop={() => void stopCapture()}
-        onVerify={() => void runVerify()}
-        onSelftest={() => {
-          setSelftestOpen(true);
-          if (!selftestReport && !selftestRunning) void runSelftest();
-        }}
-        onMicFallback={() => {
-          stopVerifySession();
-          setSuggestMicFallback(true);
-          setVerifyOpen(true);
-          setVerifyState({
-            phase: 'idle',
-            message:
-              'Screen share optional — pick a mic / loopback device below (VB-Cable, Stereo Mix, etc.).',
-            rms: 0,
-            peakRms: 0,
-            hasAudioTrack: false,
-          });
-        }}
-      />
+      {shellScreen !== 'entry' && (
+        <ChromeBar
+          mode={mode}
+          screen={chromeScreen}
+          capturing={capturing}
+          onStartOver={startOver}
+          onModeChange={handleModeChange}
+          onOpenTrouble={() => openTroubleshooting('overview')}
+          onStartListening={() => void startCapture()}
+          onStopListening={() => void stopCapture()}
+        />
+      )}
 
       <SelftestPanel
         open={selftestOpen}
@@ -1166,9 +1328,6 @@ export default function App() {
           void startCapture();
         }}
         onUseMicLoopback={(deviceId) => {
-          // Prefer live Automatic Listening when user picks fallback after a share failure;
-          // if they only want a Verify meter, they can open Verify first — both paths work.
-          // Live path keeps them in Automatic Mode without a second share dialog.
           if (suggestMicFallback || verifyState.phase === 'error' || verifyState.phase === 'no-audio') {
             void startCaptureFromMic(deviceId);
           } else {
@@ -1177,153 +1336,208 @@ export default function App() {
         }}
       />
 
-      <main
-        className={[
-          'flex-1 p-3 grid gap-3',
-          mode === 'manual' ? 'lg:grid-cols-[300px_1fr]' : 'lg:grid-cols-1',
-        ].join(' ')}
-      >
-        {mode === 'manual' && (
-          <aside className="flex flex-col gap-3 min-w-0">
-            <ManualFilters
-              sizes={merchantData.sizes}
-              cargoTypes={merchantData.cargoTypes}
-              cargoPrices={merchantData.cargoPrices}
-              size={size}
-              cargoType={cargoType}
-              cargoPrice={cargoPrice}
-              noiseFloor={noiseFloor}
-              onChange={(patch) => {
-                if (patch.size !== undefined) setSize(patch.size);
-                if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
-                if (patch.cargoPrice !== undefined) setCargoPrice(patch.cargoPrice);
-                if (patch.noiseFloor !== undefined) setNoiseFloor(patch.noiseFloor);
-              }}
-            />
-            <SoundBoard
-              sounds={sounds}
-              items={filteredManual}
-              activeSoundId={manualSoundId ?? locked?.match.soundId}
-              onPickSound={(id) => {
-                setManualSoundId(id);
-                setLocked(null);
-                setSinglePhase('ready');
-              }}
-            />
-            <AccuracyPanel
-              stats={stats}
-              onExport={() => downloadCalibrationJson(sessionId)}
-              onClear={() => {
-                clearCalibrationEvents();
-                setStatsTick((n) => n + 1);
-              }}
-            />
-          </aside>
+      <main className="flex-1 p-4 md:px-6">
+        {shellScreen === 'entry' && (
+          <EntryScreen
+            onAutomatic={chooseAutomatic}
+            onManual={chooseManual}
+            onTrouble={() => openTroubleshooting('overview')}
+          />
         )}
 
-        <section className="min-w-0 flex flex-col gap-3">
-          {mode === 'automatic' && (
-            <>
-              <SetupSelector
-                monitorSetup={monitorSetup}
-                scanStyle={scanStyle}
-                soundAlerts={soundAlerts}
-                useTts={useTts}
-                sensitivity={sensitivity}
-                captureSource={captureSource}
-                onMonitorSetup={setMonitorSetup}
-                onScanStyle={setScanStyle}
-                onSoundAlerts={setSoundAlerts}
-                onUseTts={setUseTts}
-                onSensitivity={setSensitivity}
-                onPopOut={() => void popOutOverlay()}
-              />
-              {capturing && (
-                <ShopCaptureBar
-                  atShop={atShop}
-                  recordingMove={recordingMove}
-                  calibrating={shopCalibrating}
-                  toast={shopToast}
-                  toastSticky={shopToastSticky}
-                  multiMode={scanStyle === 'continuous' && monitorSetup === 'dual'}
-                  multiArmed={multiArmed}
-                  multiSpikeCount={multiProgress.spikeCount}
-                  multiTargetN={multiProgress.targetN}
-                  multiPhase={multiProgress.phase}
-                  onToggleAtShop={() => void handleToggleAtShop()}
-                  onStartMove={() => void handleStartMoveBurst()}
-                  onStopMatch={() => void handleStopMoveBurst()}
-                  onArmMulti={() => void handleArmMulti()}
-                  onStopMulti={() => void handleStopMulti()}
-                  onDismissToast={() => {
-                    setShopToast(null);
-                    setShopToastSticky(false);
-                  }}
-                />
-              )}
-              <AccuracyPanel
-                stats={stats}
-                onExport={() => downloadCalibrationJson(sessionId)}
-                onClear={() => {
-                  clearCalibrationEvents();
-                  setStatsTick((n) => n + 1);
-                }}
-              />
+        {shellScreen === 'wizard' && (
+          <AutoWizard
+            step={wizardStep === 'listen' ? 'settings' : wizardStep}
+            monitorSetup={monitorSetup}
+            settings={autoSettings}
+            onSelectMonitors={selectMonitors}
+            onJump={jumpWizard}
+            onBack={stepBack}
+            onChangeSettings={(patch) => {
+              if (patch.soundAlerts != null) setSoundAlerts(patch.soundAlerts);
+              if (patch.useTts != null) setUseTts(patch.useTts);
+              if (patch.sensitivity != null) setSensitivity(patch.sensitivity);
+              if (patch.hideImages != null) setHideImages(patch.hideImages);
+              if (patch.focusGuard != null) setFocusGuard(patch.focusGuard);
+            }}
+            onNext={goNextFromSettings}
+          />
+        )}
 
-              {scanStyle === 'single' || monitorSetup === 'single' ? (
-                <SingleItemLoop
-                  phase={singlePhase}
-                  capturing={capturing}
-                  match={locked?.match ?? null}
-                  resultItems={locked?.resultItems ?? []}
-                  altMatches={locked?.alt}
-                  onStartListening={() => void startCapture()}
-                  captureUrl={burstCaptureUrl}
-                  captureDurationMs={burstCaptureMs}
-                  onPlayCapture={playBurstCapture}
-                  onDownloadCapture={downloadBurstCapture}
-                  sessionErrors={sessionErrors}
-                  onClearSessionErrors={() => setSessionErrors([])}
-                  onThumbsUp={() => finishLocked('up')}
-                  onThumbsDown={() => {
-                    setMissTarget('locked');
-                    setMissOpen(true);
-                  }}
-                  onSkip={() => finishLocked('skip')}
-                  onPickAlt={(id) => {
-                    if (!locked) return;
-                    const resultItems = itemsForSound(id);
-                    const redPct = redLikelihoodPercent(resultItems);
-                    const alt = locked.alt.find((m) => m.soundId === id) || {
-                      ...locked.match,
-                      soundId: id,
-                    };
-                    setLocked({
-                      ...locked,
-                      match: alt,
-                      redPct,
-                      resultItems,
-                    });
-                  }}
-                />
-              ) : (
-                <ContinuousGrid
-                  slots={slots}
-                  listening={capturing}
-                  onStartListening={() => void startCapture()}
-                  captureUrl={burstCaptureUrl}
-                  captureDurationMs={burstCaptureMs}
-                  onPlayCapture={playBurstCapture}
-                  onDownloadCapture={downloadBurstCapture}
-                  sessionErrors={sessionErrors}
-                  onClearSessionErrors={() => setSessionErrors([])}
-                  multiArmed={multiArmed}
-                  multiSpikeCount={multiProgress.spikeCount}
-                  multiTargetN={multiProgress.targetN}
-                  multiPhase={multiProgress.phase}
-                  onThumbsUp={(id) => {
-                    const slot = slots.find((s) => s.id === id);
-                    if (!slot) return;
+        {shellScreen === 'listen' && (
+          <div className="max-w-[820px] mx-auto flex flex-col gap-5">
+            <StepRow
+              step="listen"
+              onJump={jumpWizard}
+              onBack={stepBack}
+              backLabel="← Settings"
+            />
+
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="m-0 text-2xl font-medium tracking-tight">Listening</h2>
+                <span
+                  className={[
+                    'rounded-full px-2.5 py-0.5 text-[11px] font-semibold border',
+                    capturing
+                      ? 'border-[var(--listening)]/50 text-[var(--text)] bg-[var(--listening)]/20'
+                      : 'border-[var(--border)] text-[var(--muted)]',
+                  ].join(' ')}
+                >
+                  {capturing ? 'Live' : 'Stopped'}
+                </span>
+                <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border border-[var(--accent)]/40 text-[var(--text)] bg-[var(--accent-dim)]/30">
+                  {monitorSetup === 'dual' ? 'Multi monitors' : 'Single monitor'}
+                </span>
+                {displayRed != null && hasResult && (
+                  <span
+                    className={[
+                      'rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums',
+                      displayRed > 0
+                        ? 'bg-[var(--mythic)] text-white'
+                        : 'border border-[var(--border)] text-[var(--muted)]',
+                    ].join(' ')}
+                  >
+                    RED {displayRed}%
+                  </span>
+                )}
+              </div>
+              <p className="m-0 text-[13px] text-[var(--muted)]">
+                Mid-screen circle CTA — step row above for Back / Monitors. Multi always waits for
+                3 moves.
+              </p>
+            </div>
+
+            <WipAccuracyBanner />
+
+            <ListenCircle
+              capturing={capturing}
+              multiMode={multiMode}
+              multiArmed={multiArmed}
+              moveCount={capturing ? (multiMode ? multiProgress.spikeCount : recordingMove ? 1 : 0) : 0}
+              targetN={multiProgress.targetN}
+              multiPhase={multiProgress.phase}
+              atShop={atShop}
+              recordingMove={recordingMove}
+              calibrating={shopCalibrating}
+              onStartListening={() => void startCapture()}
+              onStopListening={() => void stopCapture()}
+              onAtShop={() => void handleToggleAtShop()}
+              onStartMove={() => void handleStartMoveBurst()}
+              onStopMatch={() => void handleStopMoveBurst()}
+              onArmMulti={() => void handleArmMulti()}
+              onStopMulti={() => void handleStopMulti()}
+            />
+
+            <BurstCaptureControls
+              captureUrl={burstCaptureUrl}
+              captureDurationMs={burstCaptureMs}
+              onPlayCapture={playBurstCapture}
+              onDownloadCapture={downloadBurstCapture}
+            />
+
+            {activeError && (
+              <ActiveSessionError
+                entry={activeError}
+                onFixInfra={() => openTroubleshooting('windows')}
+              />
+            )}
+            <SessionErrorHistory
+              entries={sessionErrors}
+              onClear={() => setSessionErrors([])}
+              hideActiveBanner
+              onFixInfra={() => openTroubleshooting('windows')}
+            />
+
+            {shopToast && (
+              <div
+                role="status"
+                className={[
+                  'rounded border px-2.5 py-2 text-[11px]',
+                  shopToastSticky
+                    ? 'border-[var(--warn)] bg-[#2a2208] text-[var(--warn)]'
+                    : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--muted)]',
+                ].join(' ')}
+              >
+                <div className="flex justify-between gap-2">
+                  <p className="m-0 whitespace-pre-wrap">{shopToast}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShopToast(null);
+                      setShopToastSticky(false);
+                    }}
+                    className="shrink-0 text-[10px] text-[var(--muted)]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {latestLock ? (
+              <LatestLockFeed
+                soundId={latestLock.soundId}
+                audioConfidence={latestLock.confidence}
+                items={latestLock.items}
+                hideImages={hideImages}
+                onlyRed={onlyRed}
+                onlyYellow={onlyYellow}
+                selectedSizes={selectedSizes}
+                onToggleSize={toggleSize}
+                onOnlyRed={setOnlyRed}
+                onOnlyYellow={setOnlyYellow}
+                onShowAll={() => {
+                  setOnlyRed(false);
+                  setOnlyYellow(false);
+                }}
+                onThumbsUp={
+                  multiMode
+                    ? () => {
+                        const slot = slots[0];
+                        if (!slot) return;
+                        logFeedback({
+                          predicted: {
+                            soundId: slot.soundId,
+                            confidence: slot.confidence,
+                            kind: slot.kind as 'pickup' | 'drop',
+                            items: slot.items,
+                            spectralCentroid: 0,
+                          },
+                          redPct: slot.redPct,
+                          feedback: 'up',
+                        });
+                        setSlots((prev) => prev.filter((s) => s.id !== slot.id));
+                      }
+                    : () => finishLocked('up')
+                }
+                onThumbsDown={
+                  multiMode
+                    ? () => {
+                        if (slots[0]) {
+                          setMissTarget(slots[0].id);
+                          setMissOpen(true);
+                        }
+                      }
+                    : () => {
+                        setMissTarget('locked');
+                        setMissOpen(true);
+                      }
+                }
+                onSkip={multiMode ? undefined : () => finishLocked('skip')}
+                earlier={
+                  multiMode
+                    ? slots.slice(1).map((s) => ({
+                        id: s.id,
+                        soundId: s.soundId,
+                        confidence: s.confidence,
+                        items: s.items,
+                      }))
+                    : undefined
+                }
+                onDismissEarlier={(id) => {
+                  const slot = slots.find((s) => s.id === id);
+                  if (slot) {
                     logFeedback({
                       predicted: {
                         soundId: slot.soundId,
@@ -1333,58 +1547,137 @@ export default function App() {
                         spectralCentroid: 0,
                       },
                       redPct: slot.redPct,
-                      feedback: 'up',
+                      feedback: 'dismiss',
                     });
-                    setSlots((prev) => prev.filter((s) => s.id !== id));
-                  }}
-                  onThumbsDown={(id) => {
-                    setMissTarget(id);
-                    setMissOpen(true);
-                  }}
-                  onDismiss={(id) => {
-                    const slot = slots.find((s) => s.id === id);
-                    if (slot) {
-                      logFeedback({
-                        predicted: {
-                          soundId: slot.soundId,
-                          confidence: slot.confidence,
-                          kind: slot.kind as 'pickup' | 'drop',
-                          items: slot.items,
-                          spectralCentroid: 0,
-                        },
-                        redPct: slot.redPct,
-                        feedback: 'dismiss',
-                      });
-                    }
-                    setSlots((prev) => prev.filter((s) => s.id !== id));
-                  }}
-                  onClearAll={() => setSlots([])}
-                  onNewMerchant={() => setSlots([])}
-                />
-              )}
-            </>
-          )}
+                  }
+                  setSlots((prev) => prev.filter((s) => s.id !== id));
+                }}
+              />
+            ) : (
+              <div className="rounded border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs text-[var(--muted)]">
+                {capturing
+                  ? multiMode
+                    ? 'At Shop → Arm Multi → drag each cargo 3 times. Locks appear here with images and value.'
+                    : 'At Shop → Start Moving Item → Stop & Match. Locks appear here with images and value.'
+                  : 'Start Listening, then At Shop when you reach the Field Merchant.'}
+              </div>
+            )}
 
-          {mode === 'manual' && (manualSoundId != null || locked) && (
-            <SizeGroupedResults
-              soundId={(manualSoundId ?? locked!.match.soundId)!}
-              items={manualResultItems}
-              matchConfidence={locked?.match.confidence}
-              matchKind={locked?.match.kind}
-              modeLabel="Manual Sound ID"
+            <AccuracyPanel
+              stats={stats}
+              onExport={() => downloadCalibrationJson(sessionId)}
               onClear={() => {
-                setManualSoundId(null);
-                setLocked(null);
+                clearCalibrationEvents();
+                setStatsTick((n) => n + 1);
               }}
             />
-          )}
+          </div>
+        )}
 
-          {mode === 'manual' && manualSoundId == null && !locked && (
-            <div className="rounded border border-dashed border-[var(--border)] p-6 text-center text-xs text-[var(--muted)]">
-              Pick a Sound ID or Start Listening. 👍/👎 from Automatic Mode feed Accuracy Stats.
+        {shellScreen === 'manual' && (
+          <div className="max-w-[960px] mx-auto flex flex-col gap-4">
+            <WipAccuracyBanner />
+            <div className="space-y-1">
+              <h2 className="m-0 text-2xl font-medium tracking-tight">Manual</h2>
+              <p className="m-0 text-sm text-[var(--muted)]">
+                Filters + sound board — audition pickup IDs by hand. Not the listen/scan loop.
+              </p>
             </div>
-          )}
-        </section>
+            <div className="grid gap-3 lg:grid-cols-[300px_1fr]">
+              <aside className="flex flex-col gap-3 min-w-0">
+                <ManualFilters
+                  sizes={merchantData.sizes}
+                  cargoTypes={merchantData.cargoTypes}
+                  cargoPrices={merchantData.cargoPrices}
+                  size={size}
+                  cargoType={cargoType}
+                  cargoPrice={cargoPrice}
+                  noiseFloor={noiseFloor}
+                  onChange={(patch) => {
+                    if (patch.size !== undefined) setSize(patch.size);
+                    if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
+                    if (patch.cargoPrice !== undefined) setCargoPrice(patch.cargoPrice);
+                    if (patch.noiseFloor !== undefined) setNoiseFloor(patch.noiseFloor);
+                  }}
+                />
+                <SoundBoard
+                  sounds={sounds}
+                  items={filteredManual}
+                  activeSoundId={manualSoundId ?? locked?.match.soundId}
+                  onPickSound={(id) => {
+                    setManualSoundId(id);
+                    setLocked(null);
+                    setSinglePhase('ready');
+                  }}
+                />
+                <AccuracyPanel
+                  stats={stats}
+                  onExport={() => downloadCalibrationJson(sessionId)}
+                  onClear={() => {
+                    clearCalibrationEvents();
+                    setStatsTick((n) => n + 1);
+                  }}
+                />
+              </aside>
+              <section className="min-w-0 flex flex-col gap-3">
+                {(manualSoundId != null || locked) && (
+                  <SizeGroupedResults
+                    soundId={(manualSoundId ?? locked!.match.soundId)!}
+                    items={manualResultItems}
+                    matchConfidence={locked?.match.confidence}
+                    matchKind={locked?.match.kind}
+                    modeLabel="Manual Sound ID"
+                    onClear={() => {
+                      setManualSoundId(null);
+                      setLocked(null);
+                    }}
+                  />
+                )}
+                {manualSoundId == null && !locked && (
+                  <div className="rounded border border-dashed border-[var(--border)] p-6 text-center text-xs text-[var(--muted)]">
+                    Pick a Sound ID from the board. Switch to Auto for Field Merchant listening.
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openTroubleshooting('overview')}
+                  className="self-start bg-transparent border-none text-[var(--accent)] text-xs cursor-pointer p-0"
+                >
+                  Audio issues? Open Troubleshooting →
+                </button>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {shellScreen === 'troubleshooting' && (
+          <TroubleshootingPage
+            section={troubleSection}
+            capturing={capturing}
+            onSection={setTroubleSection}
+            onBack={() => setShellScreen(troubleReturn)}
+            onVerify={() => void runVerify()}
+            onSelftest={() => {
+              setSelftestOpen(true);
+              if (!selftestReport && !selftestRunning) void runSelftest();
+            }}
+            onStartListening={() => void startCapture()}
+            onStopListening={() => void stopCapture()}
+            onMicFallback={() => {
+              stopVerifySession();
+              setSuggestMicFallback(true);
+              setVerifyOpen(true);
+              setVerifyState({
+                phase: 'idle',
+                message:
+                  'Screen share optional — pick a mic / loopback device below (VB-Cable, Stereo Mix, etc.).',
+                rms: 0,
+                peakRms: 0,
+                hasAudioTrack: false,
+              });
+            }}
+          />
+        )}
       </main>
 
       {floatOverlay && (

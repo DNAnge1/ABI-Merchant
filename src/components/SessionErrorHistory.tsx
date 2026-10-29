@@ -1,8 +1,10 @@
 /**
  * Session diagnostic history (Multi + Single).
  * Newest/active fail is always visible; expand shows older entries.
- * Match ambiguous / detect-fail — NOT troubleshooting — so no "Fix" link.
+ * Fix → only on infra errors; ambiguous / match-fail never get Fix.
  */
+
+import { isInfraSessionError } from '../utils/sessionErrorKind';
 
 export interface SessionErrorEntry {
   id: string;
@@ -18,6 +20,7 @@ export function SessionErrorHistory(props: {
    * in the Listening space). History list still includes that newest entry.
    */
   hideActiveBanner?: boolean;
+  onFixInfra?: () => void;
 }) {
   if (props.entries.length === 0) return null;
 
@@ -26,7 +29,10 @@ export function SessionErrorHistory(props: {
   return (
     <div className="space-y-2">
       {!props.hideActiveBanner && (
-        <ActiveSessionError entry={active} label="Active detect error" />
+        <ActiveSessionError
+          entry={active}
+          onFixInfra={props.onFixInfra}
+        />
       )}
 
       {older.length > 0 ? (
@@ -44,14 +50,8 @@ export function SessionErrorHistory(props: {
           <div className="mt-2 space-y-2 border-t border-[var(--border)] pt-2">
             <ul className="m-0 p-0 list-none space-y-1.5 max-h-48 overflow-y-auto">
               {older.map((e) => (
-                <li
-                  key={e.id}
-                  className="rounded border border-[var(--warn)]/30 bg-[#2a2208]/70 px-2 py-1.5 text-[11px] text-[var(--warn)] leading-relaxed whitespace-pre-wrap font-mono"
-                >
-                  <span className="text-[10px] text-[var(--muted)] block mb-0.5">
-                    {formatEntryTime(e.ts)}
-                  </span>
-                  {e.message}
+                <li key={e.id} className="list-none">
+                  <ActiveSessionError entry={e} compact onFixInfra={props.onFixInfra} />
                 </li>
               ))}
             </ul>
@@ -65,23 +65,40 @@ export function SessionErrorHistory(props: {
   );
 }
 
-/** Always-visible newest ambiguous / detect-fail (no Fix / troubleshooting link). */
+/** Always-visible newest error. Fix → only when infra (NotReadableError / exclusive). */
 export function ActiveSessionError(props: {
   entry: SessionErrorEntry;
   label?: string;
+  compact?: boolean;
+  onFixInfra?: () => void;
 }) {
+  const infra = isInfraSessionError(props.entry.message);
   return (
     <div
       role="status"
       className="rounded border border-[var(--warn)] bg-[#2a2208] px-2.5 py-2 text-[11px] text-[var(--warn)] shadow-[0_0_0_1px_rgba(245,197,66,0.2)]"
     >
-      <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
-        {props.label ?? 'Active detect error'}
-        <span className="ml-2 font-normal normal-case tracking-normal text-[var(--muted)]">
-          {formatEntryTime(props.entry.ts)} · not a troubleshooting issue
-        </span>
-      </p>
-      <p className="m-0 leading-relaxed whitespace-pre-wrap font-mono">{props.entry.message}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
+            {props.label ?? (infra ? 'Audio setup error' : 'Active detect error')}
+            <span className="ml-2 font-normal normal-case tracking-normal text-[var(--muted)]">
+              {formatEntryTime(props.entry.ts)}
+              {infra ? '' : ' · not a troubleshooting issue'}
+            </span>
+          </p>
+          <p className="m-0 leading-relaxed whitespace-pre-wrap font-mono">{props.entry.message}</p>
+        </div>
+        {infra && props.onFixInfra && (
+          <button
+            type="button"
+            onClick={props.onFixInfra}
+            className="shrink-0 bg-transparent border-none text-[var(--accent)] text-[11px] font-semibold underline underline-offset-2 cursor-pointer"
+          >
+            Fix →
+          </button>
+        )}
+      </div>
     </div>
   );
 }

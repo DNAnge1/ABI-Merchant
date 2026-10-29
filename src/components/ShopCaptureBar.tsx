@@ -1,17 +1,22 @@
 /**
  * Primary Field Merchant workflow while audio is capturing:
- * 1) At Shop — calibrate idle baseline / open gate
+ * 1) At Shop — calibrate idle baseline (burst-ready; auto off)
  * 2) Move Item → Stop & Match — manual burst capture
+ * Optional: Arm auto-detect (stricter margin) after At Shop
  */
 
 export function ShopCaptureBar(props: {
   atShop: boolean;
   recordingMove: boolean;
+  autoArmed?: boolean;
   calibrating?: boolean;
   busy?: boolean;
+  toast?: string | null;
   onToggleAtShop: () => void;
   onStartMove: () => void;
   onStopMatch: () => void;
+  onToggleAuto?: () => void;
+  onDismissToast?: () => void;
 }) {
   return (
     <section className="rounded border border-[var(--accent)]/40 bg-[var(--bg-elevated)] px-3 py-3 space-y-2">
@@ -20,9 +25,27 @@ export function ShopCaptureBar(props: {
           Shop capture
         </h2>
         <p className="m-0 text-[10px] text-[var(--muted)]">
-          Primary workflow · auto-onset optional after At Shop
+          Burst-only by default · auto-detect optional
         </p>
       </div>
+
+      {props.toast && (
+        <div
+          role="status"
+          className="flex items-start justify-between gap-2 rounded border border-[var(--warn)]/50 bg-[#2a2208] px-2.5 py-2 text-[11px] text-[var(--warn)]"
+        >
+          <p className="m-0 leading-relaxed whitespace-pre-wrap">{props.toast}</p>
+          {props.onDismissToast && (
+            <button
+              type="button"
+              onClick={props.onDismissToast}
+              className="shrink-0 text-[10px] text-[var(--muted)] hover:text-[var(--text)]"
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -39,7 +62,7 @@ export function ShopCaptureBar(props: {
           {props.calibrating
             ? 'At Shop (calibrating…)'
             : props.atShop
-              ? '✓ At Shop (Listening Active)'
+              ? '✓ At Shop (burst-ready)'
               : '1. Click When At Shop'}
         </button>
 
@@ -62,28 +85,50 @@ export function ShopCaptureBar(props: {
             ■ Stop & Match Item
           </button>
         )}
+
+        {props.atShop && props.onToggleAuto && (
+          <button
+            type="button"
+            disabled={props.busy || props.recordingMove || props.calibrating}
+            onClick={props.onToggleAuto}
+            className={[
+              'rounded px-2.5 py-1.5 text-[11px] font-medium border',
+              props.autoArmed
+                ? 'border-[var(--warn)] text-[var(--warn)] bg-[#2a2208]'
+                : 'border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]',
+            ].join(' ')}
+          >
+            {props.autoArmed ? 'Auto-detect ON' : 'Arm auto-detect'}
+          </button>
+        )}
       </div>
 
       <p className="m-0 text-[11px] leading-relaxed text-[var(--muted)]">
         {!props.atShop && !props.recordingMove && (
           <>
-            <strong className="text-[var(--text)]">In Raid (gate closed)</strong> — Start Listening
-            anytime; raid/footstep noise is ignored until you are at the Field Merchant and click{' '}
-            <strong className="text-[var(--text)]">At Shop</strong> or{' '}
-            <strong className="text-[var(--text)]">Start Moving Item</strong>.
+            <strong className="text-[var(--text)]">In Raid (gate closed)</strong> — listening paused;
+            footsteps/heals ignored. At the Field Merchant click{' '}
+            <strong className="text-[var(--text)]">At Shop</strong>, then use Move Item → Stop &amp;
+            Match.
           </>
         )}
-        {props.atShop && !props.recordingMove && (
+        {props.atShop && !props.recordingMove && !props.autoArmed && (
           <>
-            <strong className="text-[var(--text)]">At Shop (open)</strong> — shop baseline locked.
-            Prefer <strong className="text-[var(--text)]">Manual Move Scan</strong> (Start Moving
-            Item → drag cargo a few times → Stop & Match). Optional auto-onset is also armed.
+            <strong className="text-[var(--text)]">At Shop · burst-only</strong> — baseline locked;
+            auto-onset is <strong className="text-[var(--text)]">off</strong> (heals won’t lock). Prefer
+            Start Moving Item → drag cargo → Stop &amp; Match. Optional: Arm auto-detect.
+          </>
+        )}
+        {props.atShop && !props.recordingMove && props.autoArmed && (
+          <>
+            <strong className="text-[var(--warn)]">At Shop · auto-detect armed</strong> — stricter
+            floor + margin. Heal/ambient with tied scores is rejected; burst Move scan is still safer.
           </>
         )}
         {props.recordingMove && (
           <>
             <strong className="text-[var(--warn)]">Recording moves…</strong> Drag the same Mystery
-            Cargo a few times in-game, then click Stop & Match Item.
+            Cargo a few times in-game, then click Stop &amp; Match Item.
           </>
         )}
       </p>

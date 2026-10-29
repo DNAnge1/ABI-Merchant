@@ -92,6 +92,8 @@ export default function App() {
   const [atShop, setAtShop] = useState(false);
   const [recordingMove, setRecordingMove] = useState(false);
   const [shopCalibrating, setShopCalibrating] = useState(false);
+  const [autoArmed, setAutoArmed] = useState(false);
+  const [shopToast, setShopToast] = useState<string | null>(null);
   const [manualSoundId, setManualSoundId] = useState<number | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
@@ -182,16 +184,24 @@ export default function App() {
   const handleMatchPayload = useCallback(
     (payload: MatchPayload) => {
       const top = payload.matches[0];
-      if (!top) return;
-      // Belt-and-suspenders: never lock junk below the matcher confidence floor.
-      const floor = matcherRef.current?.getMinConfidence() ?? 60;
-      if (top.confidence < floor) {
-        setStatus('listening');
-        setStatusDetail(
-          `Listening… weak match ignored (${top.confidence}% < ${floor}% floor)`,
-        );
+      if (!top) {
+        setShopToast('Match produced no candidates — try Stop & Match again.');
         return;
       }
+      const isBurst = payload.source === 'burst';
+      // Burst uses a softer floor inside the matcher; auto keeps the full floor.
+      const floor = isBurst
+        ? Math.max(48, (matcherRef.current?.getMinConfidence() ?? 60) - 8)
+        : Math.max(matcherRef.current?.getMinConfidence() ?? 60, 68);
+      if (top.confidence < floor) {
+        const msg = `${isBurst ? 'Stop & Match' : 'Auto'}: weak match Group #${top.soundId} at ${top.confidence}% (need ≥${floor}%).`;
+        setStatus('listening');
+        setStatusDetail(msg);
+        setShopToast(msg);
+        return;
+      }
+      setShopToast(null);
+      setRecordingMove(false);
       const resultItems = itemsForSound(top.soundId);
       const redPct = redLikelihoodPercent(resultItems);
 
@@ -414,6 +424,9 @@ export default function App() {
     setSinglePhase('ready');
     setMissOpen(false);
     setMissTarget(null);
+    // Stay burst-only after feedback — don't leave auto-onset hot for heals.
+    matcherRef.current?.setAutoDetectArmed(false);
+    setAutoArmed(false);
     matcherRef.current?.setListeningPaused(false);
     updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Ready' });
   }
@@ -604,6 +617,8 @@ export default function App() {
     setAtShop(false);
     setRecordingMove(false);
     setShopCalibrating(false);
+    setAutoArmed(false);
+    setShopToast(null);
     matcherRef.current?.setSensitivity(sensitivity);
     matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
     matcherRef.current?.setCooldownMs(scanStyle === 'continuous' ? 600 : 900);
@@ -709,6 +724,8 @@ export default function App() {
     setAtShop(false);
     setRecordingMove(false);
     setShopCalibrating(false);
+    setAutoArmed(false);
+    setShopToast(null);
     setSinglePhase('ready');
   }
 
@@ -718,15 +735,21 @@ export default function App() {
       if (atShop) {
         await matcherRef.current.setAtShop(false);
         setAtShop(false);
+        setAutoArmed(false);
+        setShopToast('Left At Shop — listening paused (raid muted).');
         return;
       }
       setShopCalibrating(true);
+      setShopToast(null);
       await matcherRef.current.setAtShop(true);
       setAtShop(true);
+      setAutoArmed(false);
+      setShopToast('At Shop ready — use Start Moving Item → Stop & Match (auto-detect off).');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
       setStatusDetail(msg);
+      setShopToast(msg);
     } finally {
       setShopCalibrating(false);
     }
@@ -736,6 +759,7 @@ export default function App() {
     if (!matcherRef.current || !capturing) return;
     try {
       setShopCalibrating(!atShop);
+      setShopToast(null);
       await matcherRef.current.startItemMoveBurst();
       setAtShop(true);
       setRecordingMove(true);
@@ -745,6 +769,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
       setStatusDetail(msg);
+      setShopToast(msg);
     } finally {
       setShopCalibrating(false);
     }
@@ -754,13 +779,34 @@ export default function App() {
     if (!matcherRef.current) return;
     setRecordingMove(false);
     try {
-      await matcherRef.current.stopItemMoveBurst();
-      // onMatch handler locks UI when confidence clears the floor
+      const result = await matcherRef.current.stopItemMoveBurst();
+      setAutoArmed(false);
+      if (!result.ok) {
+        setShopToast(result.reason);
+        setStatus('listening');
+        setStatusDetail(result.reason);
+        return;
+      }
+      setShopToast(null);
+      // onMatch locks UI when confidence clears the floor
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
       setStatusDetail(msg);
+      setShopToast(`Stop & Match error: ${msg}`);
     }
+  }
+
+  function handleToggleAutoDetect() {
+    if (!matcherRef.current || !atShop) return;
+    const next = !autoArmed;
+    matcherRef.current.setAutoDetectArmed(next);
+    setAutoArmed(next);
+    setShopToast(
+      next
+        ? 'Auto-detect armed (stricter floor + margin). Burst Move scan is still recommended.'
+        : 'Auto-detect off — burst-only.',
+    );
   }
 
   function switchToManual() {
@@ -940,10 +986,14 @@ export default function App() {
                 <ShopCaptureBar
                   atShop={atShop}
                   recordingMove={recordingMove}
+                  autoArmed={autoArmed}
                   calibrating={shopCalibrating}
+                  toast={shopToast}
                   onToggleAtShop={() => void handleToggleAtShop()}
                   onStartMove={() => void handleStartMoveBurst()}
                   onStopMatch={() => void handleStopMoveBurst()}
+                  onToggleAuto={handleToggleAutoDetect}
+                  onDismissToast={() => setShopToast(null)}
                 />
               )}
               <AccuracyPanel

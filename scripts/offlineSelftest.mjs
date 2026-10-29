@@ -104,6 +104,7 @@ function fft(re, im) {
 function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
   const half = magnitudes.length;
   const bandVec = new Array(bands).fill(0);
+  const bandCounts = new Array(bands).fill(0);
   const minF = 80;
   const maxF = Math.min(sampleRate / 2, 8000);
   for (let i = 1; i < half; i++) {
@@ -112,6 +113,10 @@ function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
     const t = Math.log(freq / minF) / Math.log(maxF / minF);
     const bi = Math.min(bands - 1, Math.floor(t * bands));
     bandVec[bi] += magnitudes[i];
+    bandCounts[bi] += 1;
+  }
+  for (let bi = 0; bi < bands; bi++) {
+    if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
@@ -142,7 +147,38 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-/** Mirror of audioMatcher.matchSpectrumAgainstFingerprints (pickup-only default). */
+function centeredCosine(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return 0;
+  let meanA = 0;
+  let meanB = 0;
+  for (let i = 0; i < n; i++) {
+    meanA += a[i];
+    meanB += b[i];
+  }
+  meanA /= n;
+  meanB /= n;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    dot += da * db;
+    na += da * da;
+    nb += db * db;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return Math.max(0, (dot / (Math.sqrt(na) * Math.sqrt(nb)) + 1) / 2);
+}
+
+function highBandRatio(vec) {
+  const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
+  const upper = vec.slice(16).reduce((s, v) => s + v, 0);
+  return upper / total;
+}
+
+/** Mirror of audioMatcher.matchSpectrumAgainstFingerprints (pickup-only + Gemini scoring). */
 function matchSpectrumAgainstFingerprints(
   spectrumVector,
   fingerprints,
@@ -151,8 +187,8 @@ function matchSpectrumAgainstFingerprints(
   capturedCentroid,
 ) {
   const results = [];
-  // Field Merchant: only pickup is heard / matched.
   const kinds = kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
+  const capturedHighRatio = highBandRatio(spectrumVector);
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -160,11 +196,15 @@ function matchSpectrumAgainstFingerprints(
     for (const k of kinds) {
       const side = fp[k];
       if (!side?.spectrumVector) continue;
-      let score = cosineSimilarity(spectrumVector, side.spectrumVector);
+      const rawCos = cosineSimilarity(spectrumVector, side.spectrumVector);
+      const shapeCos = centeredCosine(spectrumVector, side.spectrumVector);
+      const fpHighRatio = highBandRatio(side.spectrumVector);
+      const tiltPenalty = Math.max(0, 1 - Math.abs(capturedHighRatio - fpHighRatio) * 1.8);
+      let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 4000);
-        score = score * 0.85 + prior * 0.15;
+        const prior = Math.max(0, 1 - delta / 2200);
+        score = score * 0.78 + prior * 0.22;
       }
       results.push({
         soundId,

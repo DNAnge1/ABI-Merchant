@@ -45,3 +45,10 @@ npm run extract   # needs ffmpeg; not used by Pages
 ## Pages build path
 
 `.github/workflows/deploy-pages.yml` on `main`: verify committed JSON + 76 OGGs → `GITHUB_PAGES=1 npm run build` → deploy `dist/`.
+
+## Versioning
+
+Footer shows `v{package.json}` (Vite `__APP_VERSION__`).
+
+- **Pre-publish:** `0.9.<PR_number>` (e.g. PR #30 → `0.9.30`)
+- **After public publish:** `1.0.<PR_number>` per PR

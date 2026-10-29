@@ -10,6 +10,7 @@ import { SetupSelector } from './components/SetupSelector';
 import { ShopCaptureBar } from './components/ShopCaptureBar';
 import { SingleItemLoop, type SingleLoopPhase } from './components/SingleItemLoop';
 import { ContinuousGrid, buildSlotFromMatch, type SessionSlot } from './components/ContinuousGrid';
+import type { SessionErrorEntry } from './components/SessionErrorHistory';
 import { MissFeedbackModal } from './components/MissFeedbackModal';
 import { AccuracyPanel } from './components/AccuracyPanel';
 import { SelftestPanel } from './components/SelftestPanel';
@@ -113,6 +114,8 @@ export default function App() {
   const [shopToastSticky, setShopToastSticky] = useState(false);
   const shopToastStickyRef = useRef(false);
   shopToastStickyRef.current = shopToastSticky;
+  /** Collapsed session fail history — survives re-arm / toast dismiss (not cleared on move 3×). */
+  const [sessionErrors, setSessionErrors] = useState<SessionErrorEntry[]>([]);
   const [burstCaptureUrl, setBurstCaptureUrl] = useState<string | null>(null);
   const [burstCaptureMs, setBurstCaptureMs] = useState(0);
   const burstCaptureBlobRef = useRef<Blob | null>(null);
@@ -239,11 +242,36 @@ export default function App() {
     }
   }, []);
 
+  const isFailDiagnostic = useCallback((msg: string) => {
+    return /ambiguous|weak match|no fingerprint|failed|error|reject|too quiet|need ≥|no candidates/i.test(
+      msg,
+    );
+  }, []);
+
+  const pushSessionError = useCallback((message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed || !isFailDiagnostic(trimmed)) return;
+    setSessionErrors((prev) => {
+      // Dedupe consecutive identical messages (re-arm spam).
+      if (prev[0]?.message === trimmed) return prev;
+      const entry: SessionErrorEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        ts: Date.now(),
+        message: trimmed,
+      };
+      return [entry, ...prev].slice(0, 40);
+    });
+  }, [isFailDiagnostic]);
+  const pushSessionErrorRef = useRef(pushSessionError);
+  pushSessionErrorRef.current = pushSessionError;
+
   const handleMatchPayload = useCallback(
     (payload: MatchPayload) => {
       const top = payload.matches[0];
       if (!top) {
-        setShopToast('Match produced no candidates — try Stop & Match again.');
+        const msg = 'Match produced no candidates — try Stop & Match again.';
+        setShopToast(msg);
+        pushSessionError(msg);
         return;
       }
       const isBurst = payload.source === 'burst';
@@ -256,6 +284,7 @@ export default function App() {
         setStatus('listening');
         setStatusDetail(msg);
         setShopToast(msg);
+        pushSessionError(msg);
         return;
       }
       setShopToast(null);
@@ -315,7 +344,7 @@ export default function App() {
         resultItems,
       });
     },
-    [itemsForSound, mode, soundAlerts, updatePip, useTts],
+    [itemsForSound, mode, pushSessionError, soundAlerts, updatePip, useTts],
   );
 
   matchHandlerRef.current = handleMatchPayload;
@@ -347,6 +376,7 @@ export default function App() {
         if (failLike) {
           setShopToastSticky(true);
           setShopToast(p.detail);
+          pushSessionErrorRef.current(p.detail);
           return;
         }
         // Don't wipe a sticky fail with a brief "Ready for next cargo" flash.
@@ -961,6 +991,7 @@ export default function App() {
       if (!result.ok) {
         setStatus('listening');
         if (keepMulti) setShopToastSticky(true);
+        pushSessionError(result.reason);
       } else {
         setShopToastSticky(false);
       }
@@ -974,6 +1005,7 @@ export default function App() {
       setStatus('error');
       setStatusDetail(msg);
       setShopToast(`Stop & Match error: ${msg}`);
+      pushSessionError(`Stop & Match error: ${msg}`);
       setRecordingMove(false);
     }
   }
@@ -1218,8 +1250,6 @@ export default function App() {
                   multiSpikeCount={multiProgress.spikeCount}
                   multiTargetN={multiProgress.targetN}
                   multiPhase={multiProgress.phase}
-                  captureUrl={burstCaptureUrl}
-                  captureDurationMs={burstCaptureMs}
                   onToggleAtShop={() => void handleToggleAtShop()}
                   onStartMove={() => void handleStartMoveBurst()}
                   onStopMatch={() => void handleStopMoveBurst()}
@@ -1229,8 +1259,6 @@ export default function App() {
                     setShopToast(null);
                     setShopToastSticky(false);
                   }}
-                  onPlayCapture={playBurstCapture}
-                  onDownloadCapture={downloadBurstCapture}
                 />
               )}
               <AccuracyPanel
@@ -1250,6 +1278,12 @@ export default function App() {
                   resultItems={locked?.resultItems ?? []}
                   altMatches={locked?.alt}
                   onStartListening={() => void startCapture()}
+                  captureUrl={burstCaptureUrl}
+                  captureDurationMs={burstCaptureMs}
+                  onPlayCapture={playBurstCapture}
+                  onDownloadCapture={downloadBurstCapture}
+                  sessionErrors={sessionErrors}
+                  onClearSessionErrors={() => setSessionErrors([])}
                   onThumbsUp={() => finishLocked('up')}
                   onThumbsDown={() => {
                     setMissTarget('locked');
@@ -1277,6 +1311,12 @@ export default function App() {
                   slots={slots}
                   listening={capturing}
                   onStartListening={() => void startCapture()}
+                  captureUrl={burstCaptureUrl}
+                  captureDurationMs={burstCaptureMs}
+                  onPlayCapture={playBurstCapture}
+                  onDownloadCapture={downloadBurstCapture}
+                  sessionErrors={sessionErrors}
+                  onClearSessionErrors={() => setSessionErrors([])}
                   onThumbsUp={(id) => {
                     const slot = slots.find((s) => s.id === id);
                     if (!slot) return;

@@ -451,8 +451,10 @@ export function isKnownNearTwin(a: number, b: number): boolean {
 }
 
 /**
- * Soft-lock gate for GoldChain (#33) over Coin (#29).
- * Field #33 often ~93 vs ~91 (2pt); true #29 self-locks with a clearer ≥5pt lead.
+ * Soft-lock / force-lock gate for GoldChain (#33) over Coin (#29).
+ * Field #33 often ~93 vs ~91 (2.2pt) — PR #35’s 2pt margin still showed
+ * “need ≥3pt” on some Pages builds / spike averages near 88–93. True #29
+ * self-locks with a clearer ≥5pt lead (top ≠ 33), so force-lock is safe.
  */
 export function isGoldChainVsCoinSoftLock(
   topSoundId: number,
@@ -462,7 +464,7 @@ export function isGoldChainVsCoinSoftLock(
   return (
     topSoundId === 33 &&
     runnerSoundId === 29 &&
-    topConfidence >= 92
+    topConfidence >= 88
   );
 }
 
@@ -1077,15 +1079,15 @@ export class AudioMatcher {
       /** Field #10 electronics residual — skip margin after promote. */
       field10Residual?: boolean;
       /**
-       * GoldChain #33 vs Coin #29: field #33 often ~93 vs ~91 (2pt) while true #29
-       * self-locks with ≥5pt — allow 2pt when #33 is clearly on top (≥92).
+       * GoldChain #33 vs Coin #29: field #33 often ~93 vs ~91 while true #29
+       * self-locks with ≥5pt — skip margin (force-lock) when #33 tops #29 ≥88.
        */
       goldChainVsCoin?: boolean;
     },
   ): number {
-    // Residual #19 / field #10: margin skipped (force-lock path).
+    // Residual #19 / field #10 / GoldChain#33→Coin#29: margin skipped (force-lock).
     if (opts?.quiet19Residual || opts?.field10Residual) return 0;
-    if (opts?.goldChainVsCoin) return 2;
+    if (opts?.goldChainVsCoin) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -2049,15 +2051,21 @@ export class AudioMatcher {
       });
     }
 
-    // Quiet #19 / field #10 residual always locks once ranked top (conf boosted above runner).
+    // Quiet #19 / field #10 residual / GoldChain#33 vs Coin#29 always lock once ranked top.
     const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
     const residual10Lock = top.field10Residual === true && top.soundId === 10;
+    const goldChainLock = isGoldChainVsCoinSoftLock(
+      top.soundId,
+      runner?.soundId,
+      top.confidence,
+    );
     if (
       margin < needGap &&
       !streakOk &&
       !pitchLock &&
       !residual19Lock &&
-      !residual10Lock
+      !residual10Lock &&
+      !goldChainLock
     ) {
       this.lastBurstTopId = top.soundId;
       const tip =
@@ -2083,7 +2091,9 @@ export class AudioMatcher {
       ? ' · quiet19-residual'
       : residual10Lock
         ? ' · field10-residual'
-        : '';
+        : goldChainLock
+          ? ' · goldchain-soft'
+          : '';
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
@@ -2528,17 +2538,23 @@ export class AudioMatcher {
       runner != null && isKnownNearTwin(top.soundId, runner.soundId);
     const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
     const residual10Lock = top.field10Residual === true && top.soundId === 10;
+    const goldChainLock = isGoldChainVsCoinSoftLock(
+      top.soundId,
+      runner?.soundId,
+      top.confidence,
+    );
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
       field10Residual: residual10Lock,
-      goldChainVsCoin: isGoldChainVsCoinSoftLock(
-        top.soundId,
-        runner?.soundId,
-        top.confidence,
-      ),
+      goldChainVsCoin: goldChainLock,
     });
-    if (margin < needGap && !residual19Lock && !residual10Lock) {
+    if (
+      margin < needGap &&
+      !residual19Lock &&
+      !residual10Lock &&
+      !goldChainLock
+    ) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
       );
@@ -2548,7 +2564,7 @@ export class AudioMatcher {
     this.shopPhase = 'locked';
     this.setStatus(
       'done',
-      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : residual10Lock ? ' · field10-residual' : ''})`,
+      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : residual10Lock ? ' · field10-residual' : goldChainLock ? ' · goldchain-soft' : ''})`,
     );
     this.onMatch?.({
       matches,

@@ -99,6 +99,11 @@ export interface MatchResult {
    * Field #10 often lands ~3.4 kHz vs FP ~4.6 kHz and gets buried under #32/#21.
    */
   field10Residual?: boolean;
+  /**
+   * Set when {@link resolveGlass30VsFuel4} restored deep glass (#30) over fuel (#4)
+   * after mic-dulled pitch stole the lock.
+   */
+  glass30Residual?: boolean;
 }
 
 export interface MatchPayload {
@@ -651,12 +656,82 @@ export function promotePitchCloserRunner(
   const top = matches[0];
   const runner = matches[1];
   if (!(top.spectralCentroid > 0) || !(runner.spectralCentroid > 0)) return matches;
+  // Never pitch-demote deep glass (#30) → fuel (#4). Field glass is often mic-dulled
+  // onto #4's FP centroid (~2.8k) while shape still clearly prefers #30 (30-glass-c).
+  // True #4 self-locks ~98%+ and does not need this demotion. Pitch may still promote
+  // #4 → #30 when live pitch is brighter (historical #30 help path).
+  if (top.soundId === 30 && runner.soundId === 4) return matches;
   const gap = top.confidence - runner.confidence;
   if (gap < 0 || gap > maxGapPts) return matches;
   const dTop = Math.abs(capturedCentroid - top.spectralCentroid);
   const dRun = Math.abs(capturedCentroid - runner.spectralCentroid);
   if (!(dRun + 80 < dTop)) return matches;
   return [runner, top, ...matches.slice(2)];
+}
+
+/**
+ * Soft/force-lock gate: deep glass (#30) over fuel (#4).
+ * After pitch/shape restore, field #30 often sits ~93 vs ~91 (need ≥3 blocked).
+ * True #4 self-locks ~98%+ with #30 well behind — top ≠ 30, gate inert.
+ */
+export function isGlass30VsFuel4SoftLock(
+  topSoundId: number,
+  runnerSoundId: number | undefined,
+  topConfidence: number,
+): boolean {
+  return topSoundId === 30 && runnerSoundId === 4 && topConfidence >= 88;
+}
+
+/**
+ * Restore deep glass (#30) when fuel (#4) stole via mic-dulled pitch.
+ * Shape/centered cosine owns this pair — live centroid alone is unreliable.
+ * True #4 @ ≥96% (field fuel-c @98.7) is left alone.
+ */
+export function resolveGlass30VsFuel4(
+  matches: MatchResult[],
+  spectrumVector: number[],
+  fingerprints: FingerprintsFile,
+): MatchResult[] {
+  if (matches.length < 2) return matches;
+  const top = matches[0];
+  const m30 = matches.find((m) => m.soundId === 30);
+  const m4 = matches.find((m) => m.soundId === 4);
+  if (!m30 || !m4) return matches;
+
+  // Already glass on top — mark soft residual when fuel is the runner.
+  if (top.soundId === 30 && matches[1]?.soundId === 4) {
+    if (top.glass30Residual) return matches;
+    return [{ ...top, glass30Residual: true }, ...matches.slice(1)];
+  }
+
+  if (top.soundId !== 4) return matches;
+  // Hard fuel self-lock — do not steal true #4.
+  if (m4.confidence >= 96) return matches;
+
+  const fp30 = fingerprints.fingerprints['30']?.pickup;
+  const fp4 = fingerprints.fingerprints['4']?.pickup;
+  if (!fp30?.spectrumVector || !fp4?.spectrumVector) return matches;
+
+  const c30 = centeredCosine(spectrumVector, fp30.spectrumVector);
+  const c4 = centeredCosine(spectrumVector, fp4.spectrumVector);
+  const s30 = cosineSimilarity(spectrumVector, fp30.spectrumVector);
+  const s4 = cosineSimilarity(spectrumVector, fp4.spectrumVector);
+  const shapePrefers30 = c30 >= c4 + 0.1 && s30 >= s4 + 0.04;
+  const confPrefers30 = m30.confidence >= m4.confidence - 0.5;
+
+  if (!shapePrefers30 && !(confPrefers30 && c30 > c4 + 0.05)) return matches;
+
+  const others = matches.filter((m) => m.soundId !== 30);
+  const bestOther =
+    others.length > 0
+      ? others.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+      : undefined;
+  const promoted: MatchResult = {
+    ...m30,
+    confidence: Math.max(m30.confidence, (bestOther ?? 0) + 1),
+    glass30Residual: true,
+  };
+  return [promoted, ...others];
 }
 
 /** Match → pitch prior → directed sinks → near-tie pitch runner (burst + Self-Test). */
@@ -1083,11 +1158,13 @@ export class AudioMatcher {
        * self-locks with ≥5pt — skip margin (force-lock) when #33 tops #29 ≥88.
        */
       goldChainVsCoin?: boolean;
+      /** Deep glass #30 vs fuel #4 — skip margin after shape restore / soft gate. */
+      glass30VsFuel4?: boolean;
     },
   ): number {
-    // Residual #19 / field #10 / GoldChain#33→Coin#29: margin skipped (force-lock).
+    // Residual #19 / field #10 / GoldChain / Glass#30→Fuel#4: margin skipped (force-lock).
     if (opts?.quiet19Residual || opts?.field10Residual) return 0;
-    if (opts?.goldChainVsCoin) return 0;
+    if (opts?.goldChainVsCoin || opts?.glass30VsFuel4) return 0;
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -1917,6 +1994,16 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    // Deep glass (#30) vs fuel (#4) — undo mic-dulled pitch steal; shape owns the pair.
+    allMatches = resolveGlass30VsFuel4(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
@@ -1975,6 +2062,9 @@ export class AudioMatcher {
         runner?.soundId,
         top.confidence,
       ),
+      glass30VsFuel4:
+        top.glass30Residual === true ||
+        isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence),
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -2015,6 +2105,15 @@ export class AudioMatcher {
           spectrumVector,
           capturedCentroid: centroid,
         }));
+        allMatches = resolveGlass30VsFuel4(
+          allMatches,
+          spectrumVector,
+          this.fingerprints,
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
         top = allMatches[0];
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
@@ -2031,6 +2130,13 @@ export class AudioMatcher {
             runner?.soundId,
             top.confidence,
           ),
+          glass30VsFuel4:
+            top.glass30Residual === true ||
+            isGlass30VsFuel4SoftLock(
+              top.soundId,
+              runner?.soundId,
+              top.confidence,
+            ),
         });
       }
     }
@@ -2051,7 +2157,7 @@ export class AudioMatcher {
       });
     }
 
-    // Quiet #19 / field #10 residual / GoldChain#33 vs Coin#29 always lock once ranked top.
+    // Quiet #19 / field #10 / GoldChain / Glass#30 residual always lock once ranked top.
     const residual19Lock = top.quiet19Residual === true && top.soundId === 19;
     const residual10Lock = top.field10Residual === true && top.soundId === 10;
     const goldChainLock = isGoldChainVsCoinSoftLock(
@@ -2059,13 +2165,17 @@ export class AudioMatcher {
       runner?.soundId,
       top.confidence,
     );
+    const glass30Lock =
+      top.glass30Residual === true ||
+      isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence);
     if (
       margin < needGap &&
       !streakOk &&
       !pitchLock &&
       !residual19Lock &&
       !residual10Lock &&
-      !goldChainLock
+      !goldChainLock &&
+      !glass30Lock
     ) {
       this.lastBurstTopId = top.soundId;
       const tip =
@@ -2093,7 +2203,9 @@ export class AudioMatcher {
         ? ' · field10-residual'
         : goldChainLock
           ? ' · goldchain-soft'
-          : '';
+          : glass30Lock
+            ? ' · glass30-soft'
+            : '';
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
     this.onMatch?.({
@@ -2510,6 +2622,15 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    allMatches = resolveGlass30VsFuel4(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
     // Auto path: stricter floor + require clear winner vs runner-up (heal/ambient often ties ~95%).
     const autoFloor = Math.max(this.minConfidence, 68);
@@ -2543,17 +2664,22 @@ export class AudioMatcher {
       runner?.soundId,
       top.confidence,
     );
+    const glass30Lock =
+      top.glass30Residual === true ||
+      isGlass30VsFuel4SoftLock(top.soundId, runner?.soundId, top.confidence);
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
       field10Residual: residual10Lock,
       goldChainVsCoin: goldChainLock,
+      glass30VsFuel4: glass30Lock,
     });
     if (
       margin < needGap &&
       !residual19Lock &&
       !residual10Lock &&
-      !goldChainLock
+      !goldChainLock &&
+      !glass30Lock
     ) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
@@ -2562,9 +2688,18 @@ export class AudioMatcher {
     }
 
     this.shopPhase = 'locked';
+    const autoResidual = residual19Lock
+      ? ' · quiet19-residual'
+      : residual10Lock
+        ? ' · field10-residual'
+        : goldChainLock
+          ? ' · goldchain-soft'
+          : glass30Lock
+            ? ' · glass30-soft'
+            : '';
     this.setStatus(
       'done',
-      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${residual19Lock ? ' · quiet19-residual' : residual10Lock ? ' · field10-residual' : goldChainLock ? ' · goldchain-soft' : ''})`,
+      `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${autoResidual})`,
     );
     this.onMatch?.({
       matches,

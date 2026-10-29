@@ -5,6 +5,7 @@ import {
 } from '../utils/sizeGroups';
 import type { MerchantItem } from '../utils/audioMatcher';
 import {
+  ActiveSessionError,
   BurstCaptureControls,
   SessionErrorHistory,
   type SessionErrorEntry,
@@ -159,8 +160,16 @@ export function ContinuousGrid(props: {
   onDownloadCapture?: () => void;
   sessionErrors?: SessionErrorEntry[];
   onClearSessionErrors?: () => void;
+  /** Multi move counter — shown inside the Start Listening / listening area */
+  multiArmed?: boolean;
+  multiSpikeCount?: number;
+  multiTargetN?: number;
+  multiPhase?: string;
 }) {
   const latest = props.slots[0] ?? null;
+  const activeError = props.sessionErrors?.[0] ?? null;
+  const targetN = props.multiTargetN ?? 3;
+  const spikeN = props.multiSpikeCount ?? 0;
 
   return (
     <section className="flex flex-col gap-3">
@@ -194,31 +203,77 @@ export function ContinuousGrid(props: {
         </div>
       </div>
 
-      {!props.listening && (
-        <div className="rounded border border-[var(--accent)] bg-[var(--accent-dim)]/20 px-4 py-8 text-center">
-          <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
-            Style B · Multiple Items
-          </p>
-          <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
-            Start Listening to scan the merchant
-          </h2>
-          <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
-            Dual monitor recommended. After Start Listening: At Shop → Arm Multi scan → drag each
-            cargo 3 times. Locks show item images and value.
-          </p>
-          {props.onStartListening && (
-            <button
-              type="button"
-              onClick={props.onStartListening}
-              className="mt-4 rounded px-4 py-2 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
-            >
-              Start Listening
-            </button>
-          )}
-        </div>
-      )}
+      {/* Start Listening / listening circle — move counter lives here for Multi */}
+      <div
+        className={[
+          'rounded-full sm:rounded-[2rem] border px-4 py-8 text-center mx-auto w-full max-w-xl',
+          props.listening
+            ? 'border-[var(--accent)] bg-[var(--accent-dim)]/20'
+            : 'border-[var(--accent)] bg-[var(--accent-dim)]/20',
+        ].join(' ')}
+      >
+        <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
+          Style B · Multiple Items
+        </p>
+        {!props.listening ? (
+          <>
+            <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
+              Start Listening to scan the merchant
+            </h2>
+            <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
+              Dual monitor recommended. After Start Listening: At Shop → Arm Multi scan → drag each
+              cargo 3 times. Locks show item images and value.
+            </p>
+            {props.onStartListening && (
+              <button
+                type="button"
+                onClick={props.onStartListening}
+                className="mt-4 rounded px-4 py-2 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
+              >
+                Start Listening
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <h2 className="m-0 mt-2 text-lg font-semibold text-[var(--text)]">
+              {props.multiArmed ? 'Listening · Multi armed' : 'Listening · At Shop → Arm Multi'}
+            </h2>
+            {props.multiArmed ? (
+              <div className="mt-4 inline-flex flex-col items-center gap-1">
+                <span
+                  className="rounded-full px-5 py-2 text-2xl font-bold tabular-nums border-2 border-[var(--accent)] bg-[var(--bg)] text-[var(--text)]"
+                  title="Cargo moves this item — always waits for full count"
+                >
+                  {spikeN}/{targetN}
+                </span>
+                <span className="text-[11px] text-[var(--muted)]">
+                  moves
+                  {props.multiPhase === 'cooldown'
+                    ? ' · cooldown'
+                    : props.multiPhase === 'matching'
+                      ? ' · matching…'
+                      : ''}
+                </span>
+              </div>
+            ) : (
+              <p className="m-0 mt-3 text-xs text-[var(--muted)] max-w-md mx-auto">
+                At Shop → Arm Multi scan in Shop capture, then drag each cargo{' '}
+                <strong className="text-[var(--text)]">{targetN} times</strong>. Move counter
+                appears here.
+              </p>
+            )}
+          </>
+        )}
 
-      {/* Under Start Listening / listening area: playback → errors → Latest Lock */}
+        {activeError && (
+          <div className="mt-4 text-left max-w-lg mx-auto">
+            <ActiveSessionError entry={activeError} label="Active detect error" />
+          </div>
+        )}
+      </div>
+
+      {/* Under listening area: playback → session history → Latest Lock */}
       <BurstCaptureControls
         captureUrl={props.captureUrl}
         captureDurationMs={props.captureDurationMs}
@@ -228,6 +283,7 @@ export function ContinuousGrid(props: {
       <SessionErrorHistory
         entries={props.sessionErrors ?? []}
         onClear={props.onClearSessionErrors}
+        hideActiveBanner
       />
 
       {latest && (
@@ -302,13 +358,6 @@ export function ContinuousGrid(props: {
           </p>
         </div>
       )}
-
-      {props.listening && !props.slots.length ? (
-        <div className="rounded border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs text-[var(--muted)]">
-          Listening. At Shop → Arm Multi scan → drag each cargo <strong>3 times</strong>. Each lock
-          shows item images and value here.
-        </div>
-      ) : null}
 
       {props.slots.length > 1 ? (
         <div>

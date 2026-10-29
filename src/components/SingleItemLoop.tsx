@@ -1,6 +1,7 @@
 import { SizeGroupedResults } from './SizeGroupedResults';
 import type { MatchResult, MerchantItem } from '../utils/audioMatcher';
 import {
+  ActiveSessionError,
   BurstCaptureControls,
   SessionErrorHistory,
   type SessionErrorEntry,
@@ -27,6 +28,7 @@ export function SingleItemLoop(props: {
   sessionErrors?: SessionErrorEntry[];
   onClearSessionErrors?: () => void;
 }) {
+  const activeError = props.sessionErrors?.[0] ?? null;
   const captureAndErrors = (
     <>
       <BurstCaptureControls
@@ -38,6 +40,7 @@ export function SingleItemLoop(props: {
       <SessionErrorHistory
         entries={props.sessionErrors ?? []}
         onClear={props.onClearSessionErrors}
+        hideActiveBanner
       />
     </>
   );
@@ -47,7 +50,7 @@ export function SingleItemLoop(props: {
       <div className="flex flex-col gap-3">
         <div
           className={[
-            'rounded border px-4 py-8 text-center',
+            'rounded-full sm:rounded-[2rem] border px-4 py-8 text-center mx-auto w-full max-w-xl',
             props.capturing
               ? 'border-[var(--accent)] bg-[var(--accent-dim)]/20 animate-pulse'
               : 'border-[var(--accent)] bg-[var(--accent-dim)]/20',
@@ -75,6 +78,11 @@ export function SingleItemLoop(props: {
               Start Listening
             </button>
           )}
+          {activeError && (
+            <div className="mt-4 text-left max-w-lg mx-auto">
+              <ActiveSessionError entry={activeError} label="Active detect error" />
+            </div>
+          )}
         </div>
         {/* Under Start Listening box: playback → session errors */}
         {captureAndErrors}
@@ -86,6 +94,7 @@ export function SingleItemLoop(props: {
 
   return (
     <div className="flex flex-col gap-3">
+      {activeError && <ActiveSessionError entry={activeError} label="Active detect error" />}
       {captureAndErrors}
       <div className="rounded border border-[var(--accent)] bg-[var(--bg-elevated)] px-3 py-3 flex flex-wrap items-center justify-between gap-3">
         <div>

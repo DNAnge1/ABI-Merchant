@@ -1317,6 +1317,10 @@ export default function App() {
                   onDownloadCapture={downloadBurstCapture}
                   sessionErrors={sessionErrors}
                   onClearSessionErrors={() => setSessionErrors([])}
+                  multiArmed={multiArmed}
+                  multiSpikeCount={multiProgress.spikeCount}
+                  multiTargetN={multiProgress.targetN}
+                  multiPhase={multiProgress.phase}
                   onThumbsUp={(id) => {
                     const slot = slots.find((s) => s.id === id);
                     if (!slot) return;

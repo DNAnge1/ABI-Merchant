@@ -105,11 +105,8 @@ export function ShopCaptureBar(props: {
               </button>
             ) : (
               <>
-                <span
-                  className="rounded px-3 py-1.5 text-[12px] font-bold tabular-nums border border-[var(--accent)] bg-[var(--accent-dim)]/40 text-[var(--text)]"
-                  title="Cargo moves detected this item — always waits for full count"
-                >
-                  {spikeN}/{targetN} moves
+                <span className="text-[11px] text-[var(--muted)] tabular-nums" title="Move counter is in the Start Listening area">
+                  Counting in listen area · {spikeN}/{targetN}
                   {props.multiPhase === 'cooldown'
                     ? ' · cooldown'
                     : props.multiPhase === 'matching'

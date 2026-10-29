@@ -17,11 +17,13 @@ import {
   analyserFftSize,
   AudioMatcher,
   filterItemsByCargo,
+  MULTI_SPIKE_TARGET_N,
   type FingerprintsFile,
   type MatcherStatus,
   type MatchPayload,
   type MatchResult,
   type MerchantItem,
+  type MultiScanProgress,
 } from './utils/audioMatcher';
 import {
   runBrowserAnalyserSelftest,
@@ -99,6 +101,14 @@ export default function App() {
   const [recordingMove, setRecordingMove] = useState(false);
   const [shopCalibrating, setShopCalibrating] = useState(false);
   const [autoArmed, setAutoArmed] = useState(false);
+  const [multiArmed, setMultiArmed] = useState(false);
+  const [multiProgress, setMultiProgress] = useState<MultiScanProgress>({
+    spikeCount: 0,
+    targetN: MULTI_SPIKE_TARGET_N,
+    phase: 'idle',
+  });
+  const multiProgressRef = useRef(multiProgress);
+  multiProgressRef.current = multiProgress;
   const [shopToast, setShopToast] = useState<string | null>(null);
   const [burstCaptureUrl, setBurstCaptureUrl] = useState<string | null>(null);
   const [burstCaptureMs, setBurstCaptureMs] = useState(0);
@@ -246,7 +256,13 @@ export default function App() {
         return;
       }
       setShopToast(null);
-      setRecordingMove(false);
+      if (payload.captureBlob) {
+        adoptBurstCapture(payload.captureBlob, payload.captureDurationMs ?? 0);
+      }
+      // Multi keeps recordingMove true (re-arms after cooldown); single stops.
+      if (!(scanStyleRef.current === 'continuous' && monitorRef.current === 'dual')) {
+        setRecordingMove(false);
+      }
       const resultItems = itemsForSound(top.soundId);
       const redPct = redLikelihoodPercent(resultItems);
 
@@ -314,6 +330,11 @@ export default function App() {
         setStatusDetail(detail);
       },
       onMatch: (payload) => matchHandlerRef.current(payload),
+      onMultiProgress: (p) => {
+        setMultiProgress(p);
+        setMultiArmed(p.phase !== 'idle');
+        if (p.detail) setShopToast(p.detail);
+      },
     });
     matcher.setCandidates(ALL_SOUND_IDS);
     matcherRef.current = matcher;
@@ -451,6 +472,20 @@ export default function App() {
       setScanStyle('single');
     }
   }, [monitorSetup, scanStyle]);
+
+  // Leaving Dual+Multi disarms continuous spike session.
+  useEffect(() => {
+    if (scanStyle === 'continuous' && monitorSetup === 'dual') return;
+    if (!multiArmed) return;
+    void matcherRef.current?.stopMultiContinuous({ match: false });
+    setMultiArmed(false);
+    setRecordingMove(false);
+    setMultiProgress({
+      spikeCount: 0,
+      targetN: MULTI_SPIKE_TARGET_N,
+      phase: 'idle',
+    });
+  }, [scanStyle, monitorSetup, multiArmed]);
 
   useEffect(() => {
     return () => {
@@ -790,6 +825,13 @@ export default function App() {
         await matcherRef.current.setAtShop(false);
         setAtShop(false);
         setAutoArmed(false);
+        setMultiArmed(false);
+        setRecordingMove(false);
+        setMultiProgress({
+          spikeCount: 0,
+          targetN: MULTI_SPIKE_TARGET_N,
+          phase: 'idle',
+        });
         setShopToast('Left At Shop — listening paused (raid muted).');
         return;
       }
@@ -798,7 +840,11 @@ export default function App() {
       await matcherRef.current.setAtShop(true);
       setAtShop(true);
       setAutoArmed(false);
-      setShopToast('At Shop ready — use Start Moving Item → Stop & Match (auto-detect off).');
+      setShopToast(
+        scanStyleRef.current === 'continuous' && monitorRef.current === 'dual'
+          ? 'At Shop ready — Arm Multi scan (counts 2–3 moves → grid).'
+          : 'At Shop ready — use Start Moving Item → Stop & Match (auto-detect off).',
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
@@ -884,7 +930,8 @@ export default function App() {
       setShopToast('Stop & Match: matcher not ready — Start Listening first.');
       return;
     }
-    setRecordingMove(false);
+    const keepMulti = matcherRef.current.isMultiContinuousArmed();
+    setRecordingMove(keepMulti);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
       setAutoArmed(false);
@@ -894,14 +941,18 @@ export default function App() {
       setStatusDetail(result.reason);
       if (!result.ok) {
         setStatus('listening');
-        return;
       }
-      // onMatch locks UI when confidence clears the floor; keep toast + Play available.
+      // Dual+Multi Force Stop & Match: cooldown then wait for next cargo.
+      if (keepMulti && matcherRef.current.isMultiContinuousArmed()) {
+        await matcherRef.current.rearmMultiAfterMatch(result.reason);
+        setRecordingMove(true);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
       setStatusDetail(msg);
       setShopToast(`Stop & Match error: ${msg}`);
+      setRecordingMove(false);
     }
   }
 
@@ -915,6 +966,47 @@ export default function App() {
         ? 'Auto-detect armed (stricter floor + margin). Burst Move scan is still recommended.'
         : 'Auto-detect off — burst-only.',
     );
+  }
+
+  async function handleArmMulti() {
+    if (!matcherRef.current || !capturing) return;
+    try {
+      setShopCalibrating(!atShop);
+      setShopToast(null);
+      clearBurstCapture();
+      await matcherRef.current.startMultiContinuous();
+      setAtShop(true);
+      setMultiArmed(true);
+      setRecordingMove(true);
+      setAutoArmed(false);
+      setLocked(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus('error');
+      setStatusDetail(msg);
+      setShopToast(msg);
+      setMultiArmed(false);
+    } finally {
+      setShopCalibrating(false);
+    }
+  }
+
+  async function handleStopMulti() {
+    if (!matcherRef.current) return;
+    try {
+      await matcherRef.current.stopMultiContinuous({ match: false });
+      setMultiArmed(false);
+      setRecordingMove(false);
+      setMultiProgress({
+        spikeCount: 0,
+        targetN: MULTI_SPIKE_TARGET_N,
+        phase: 'idle',
+      });
+      setShopToast('Multi stopped — still At Shop.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setShopToast(`Stop Multi: ${msg}`);
+    }
   }
 
   function switchToManual() {
@@ -1110,12 +1202,19 @@ export default function App() {
                   autoArmed={autoArmed}
                   calibrating={shopCalibrating}
                   toast={shopToast}
+                  multiMode={scanStyle === 'continuous' && monitorSetup === 'dual'}
+                  multiArmed={multiArmed}
+                  multiSpikeCount={multiProgress.spikeCount}
+                  multiTargetN={multiProgress.targetN}
+                  multiPhase={multiProgress.phase}
                   captureUrl={burstCaptureUrl}
                   captureDurationMs={burstCaptureMs}
                   onToggleAtShop={() => void handleToggleAtShop()}
                   onStartMove={() => void handleStartMoveBurst()}
                   onStopMatch={() => void handleStopMoveBurst()}
                   onToggleAuto={handleToggleAutoDetect}
+                  onArmMulti={() => void handleArmMulti()}
+                  onStopMulti={() => void handleStopMulti()}
                   onDismissToast={() => setShopToast(null)}
                   onPlayCapture={playBurstCapture}
                   onDownloadCapture={downloadBurstCapture}

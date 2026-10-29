@@ -170,12 +170,13 @@ export type ShopPhase =
 
 /** Dual + Multiple Items: auto-count cargo moves then lock. */
 export const MULTI_SPIKE_TARGET_N = 3;
-/** Early lock after this many spikes when majority vote + high conf. */
-export const MULTI_SPIKE_EARLY_N = 2;
-export const MULTI_EARLY_CONF = 90;
 /** Silence / refractory after a Multi lock before counting the next cargo. */
 export const MULTI_COOLDOWN_MS = 1100;
-const MULTI_SPIKE_SEP_MS = 140;
+/**
+ * Min gap between counted Multi moves. Long cargo (#31 clock) has multi-lobe
+ * envelopes — a short sep counted 2–3 spikes inside one drag and mixed items.
+ */
+const MULTI_SPIKE_SEP_MS = 520;
 
 export type MultiScanPhase =
   | 'idle'
@@ -664,8 +665,13 @@ export function hardRejectDullSink(top: MatchResult): string | null {
   return null;
 }
 
-/** Dull sinks that steal quiet toolbox (#19) when it lands soft in-game. */
-const QUIET19_DULL_SINKS = new Set([28, 2, 7, 31]);
+/**
+ * Dull sinks that steal quiet toolbox (#19) when it lands soft in-game.
+ * Do **not** include #31 (Desk Clock) — long clock clicks score mid-dull and
+ * were getting residual-promoted to #19 when a lobe was windowed alone.
+ * True #31↔#6 confusion stays on {@link DIRECTED_SINK_OVERRIDES}.
+ */
+const QUIET19_DULL_SINKS = new Set([28, 2, 7]);
 /** Mid wood/blunt cluster that quiet #19 drifts into (#14/#2 field, #20 WAV). */
 const QUIET19_WOOD_CLUSTER = new Set([2, 8, 14, 17, 20, 30]);
 
@@ -721,6 +727,23 @@ export function resolveQuiet19Residual(
   }
   // Never override a hard self-lock (pristine #28/#2/#6/#20 stay put).
   if (top.confidence >= 92) return matches;
+
+  // Desk Clock (#31) is long/multi-lobe. A decay window often tops as wood/#2 then
+  // quiet-19 steals — while #31 is still close in rank on the clock centroid band.
+  const m31 = matches.find((m) => m.soundId === 31);
+  if (
+    m31 &&
+    m31.confidence >= 82 &&
+    top.confidence - m31.confidence <= 10 &&
+    capturedCentroid != null &&
+    capturedCentroid >= 1900 &&
+    capturedCentroid <= 2700
+  ) {
+    if (top.soundId !== 31 && top.confidence - m31.confidence <= 5) {
+      return [m31, ...matches.filter((m) => m.soundId !== 31)];
+    }
+    return matches;
+  }
 
   const bestOther = matches.reduce((a, b) =>
     a.soundId === 19 ? b : b.soundId === 19 ? a : a.confidence >= b.confidence ? a : b,
@@ -1067,7 +1090,6 @@ export class AudioMatcher {
   private multiPrevRms = 0;
   private multiFinalizing = false;
   private multiCooldownUntil = 0;
-  private multiSpikeVotes: { soundId: number; confidence: number }[] = [];
   private onStatus?: (s: MatcherStatus, detail?: string) => void;
   private onMatch?: (payload: MatchPayload) => void;
   private onMultiProgress?: (p: MultiScanProgress) => void;
@@ -1123,7 +1145,6 @@ export class AudioMatcher {
   private clearMultiState() {
     this.multiContinuousArmed = false;
     this.multiSpikeCount = 0;
-    this.multiSpikeVotes = [];
     this.multiLastSpikeAt = 0;
     this.multiPrevRms = 0;
     this.multiFinalizing = false;
@@ -1465,7 +1486,6 @@ export class AudioMatcher {
   async startMultiContinuous(): Promise<void> {
     this.multiContinuousArmed = true;
     this.multiSpikeCount = 0;
-    this.multiSpikeVotes = [];
     this.multiLastSpikeAt = 0;
     this.multiPrevRms = 0;
     this.multiFinalizing = false;
@@ -1474,11 +1494,11 @@ export class AudioMatcher {
     await this.startItemMoveBurst();
     this.emitMultiProgress(
       'armed',
-      `Multi armed — move cargo ${MULTI_SPIKE_TARGET_N}× (early lock at ${MULTI_SPIKE_EARLY_N} if clear)`,
+      `Multi armed — move each cargo ${MULTI_SPIKE_TARGET_N}× (always waits for ${MULTI_SPIKE_TARGET_N})`,
     );
     this.setStatus(
       'capturing',
-      `Multi scan 0/${MULTI_SPIKE_TARGET_N} — drag cargo; locks into grid automatically`,
+      `Multi scan 0/${MULTI_SPIKE_TARGET_N} — drag cargo ${MULTI_SPIKE_TARGET_N} clean times`,
     );
   }
 
@@ -1505,81 +1525,11 @@ export class AudioMatcher {
     return null;
   }
 
-  private multiEarlyLockReady(): boolean {
-    if (this.multiSpikeCount < MULTI_SPIKE_EARLY_N) return false;
-    if (this.multiSpikeVotes.length < MULTI_SPIKE_EARLY_N) return false;
-    const voteCount = new Map<number, { n: number; confSum: number }>();
-    for (const v of this.multiSpikeVotes) {
-      const prev = voteCount.get(v.soundId) ?? { n: 0, confSum: 0 };
-      prev.n += 1;
-      prev.confSum += v.confidence;
-      voteCount.set(v.soundId, prev);
-    }
-    let bestN = 0;
-    let bestConf = 0;
-    for (const info of voteCount.values()) {
-      const avg = info.confSum / info.n;
-      if (info.n > bestN || (info.n === bestN && avg > bestConf)) {
-        bestN = info.n;
-        bestConf = avg;
-      }
-    }
-    return (
-      bestN >= 2 &&
-      bestN > this.multiSpikeVotes.length / 2 &&
-      bestConf >= MULTI_EARLY_CONF
-    );
-  }
-
-  private noteMultiSpikeVoteFromLatestFrame(): void {
-    const frames = this.burstFrames;
-    if (frames.length === 0) return;
-    const c = frames[frames.length - 1];
-    const LIVE300_PRE_MS = 16;
-    const LIVE300_POST_MS = 280;
-    const win = frames.filter(
-      (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
-    );
-    const slice = win.length > 0 ? win : [c];
-    const bands = c.spectrum.length;
-    const local = new Array(bands).fill(0);
-    let localCentroid = 0;
-    for (const f of slice) {
-      for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
-      localCentroid += f.centroid;
-    }
-    for (let i = 0; i < bands; i++) local[i] /= slice.length;
-    const localMax = Math.max(...local, 1e-9);
-    const spikeSpectrum = local.map((v) => v / localMax);
-    const spikeCentroid = localCentroid / slice.length;
-    const candidates =
-      this.candidateSoundIds.length > 0
-        ? this.candidateSoundIds
-        : Object.keys(this.fingerprints.fingerprints).map(Number);
-    const spikeRank = rankMatchesWithPriors(
-      matchSpectrumAgainstFingerprints(
-        spikeSpectrum,
-        this.fingerprints,
-        candidates,
-        this.kind,
-        spikeCentroid,
-      ),
-      spikeCentroid,
-    );
-    if (spikeRank[0]) {
-      this.multiSpikeVotes.push({
-        soundId: spikeRank[0].soundId,
-        confidence: spikeRank[0].confidence,
-      });
-    }
-  }
-
   /** After a Multi lock (or Force Stop & Match), cooldown then listen for the next cargo. */
   async rearmMultiAfterMatch(detail?: string): Promise<void> {
     if (!this.multiContinuousArmed) return;
     this.multiCooldownUntil = performance.now() + MULTI_COOLDOWN_MS;
     this.multiSpikeCount = 0;
-    this.multiSpikeVotes = [];
     this.multiLastSpikeAt = 0;
     this.multiPrevRms = 0;
     this.emitMultiProgress('cooldown', detail ?? 'Cooldown…');
@@ -1599,7 +1549,7 @@ export class AudioMatcher {
     this.shopPhase = 'recording';
     this.emitMultiProgress(
       'armed',
-      'Ready for next cargo — move it 2–3 times',
+      `Ready for next cargo — move it ${MULTI_SPIKE_TARGET_N}×`,
     );
     this.setStatus(
       'capturing',
@@ -2317,7 +2267,6 @@ export class AudioMatcher {
         if (rising) {
           this.multiLastSpikeAt = now;
           this.multiSpikeCount += 1;
-          this.noteMultiSpikeVoteFromLatestFrame();
           this.emitMultiProgress(
             'counting',
             `Move ${this.multiSpikeCount}/${MULTI_SPIKE_TARGET_N}`,
@@ -2326,11 +2275,8 @@ export class AudioMatcher {
             'capturing',
             `Multi scan ${this.multiSpikeCount}/${MULTI_SPIKE_TARGET_N}`,
           );
-          if (
-            this.multiSpikeCount >= MULTI_SPIKE_TARGET_N ||
-            (this.multiSpikeCount >= MULTI_SPIKE_EARLY_N &&
-              this.multiEarlyLockReady())
-          ) {
+          // Always wait for N=3 — early lock at 2 mixed the next cargo into the buffer.
+          if (this.multiSpikeCount >= MULTI_SPIKE_TARGET_N) {
             void this.commitMultiBurst();
           }
         }

@@ -100,7 +100,6 @@ export default function App() {
   const [atShop, setAtShop] = useState(false);
   const [recordingMove, setRecordingMove] = useState(false);
   const [shopCalibrating, setShopCalibrating] = useState(false);
-  const [autoArmed, setAutoArmed] = useState(false);
   const [multiArmed, setMultiArmed] = useState(false);
   const [multiProgress, setMultiProgress] = useState<MultiScanProgress>({
     spikeCount: 0,
@@ -514,7 +513,6 @@ export default function App() {
     setMissTarget(null);
     // Stay burst-only after feedback — don't leave auto-onset hot for heals.
     matcherRef.current?.setAutoDetectArmed(false);
-    setAutoArmed(false);
     matcherRef.current?.setListeningPaused(false);
     updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Ready' });
   }
@@ -705,7 +703,6 @@ export default function App() {
     setAtShop(false);
     setRecordingMove(false);
     setShopCalibrating(false);
-    setAutoArmed(false);
     setShopToast(null);
     matcherRef.current?.setSensitivity(sensitivity);
     matcherRef.current?.setFocusGraceMs(monitorSetup === 'single' ? 1500 : 0);
@@ -812,7 +809,6 @@ export default function App() {
     setAtShop(false);
     setRecordingMove(false);
     setShopCalibrating(false);
-    setAutoArmed(false);
     setShopToast(null);
     clearBurstCapture();
     setSinglePhase('ready');
@@ -824,7 +820,6 @@ export default function App() {
       if (atShop) {
         await matcherRef.current.setAtShop(false);
         setAtShop(false);
-        setAutoArmed(false);
         setMultiArmed(false);
         setRecordingMove(false);
         setMultiProgress({
@@ -839,7 +834,6 @@ export default function App() {
       setShopToast(null);
       await matcherRef.current.setAtShop(true);
       setAtShop(true);
-      setAutoArmed(false);
       setShopToast(
         scanStyleRef.current === 'continuous' && monitorRef.current === 'dual'
           ? 'At Shop ready — Arm Multi scan (counts 2–3 moves → grid).'
@@ -934,7 +928,6 @@ export default function App() {
     setRecordingMove(keepMulti);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
-      setAutoArmed(false);
       adoptBurstCapture(result.captureBlob, result.captureDurationMs);
       // Always toast diagnostics (peak/floor/frames) — never a silent no-op.
       setShopToast(result.reason);
@@ -956,18 +949,6 @@ export default function App() {
     }
   }
 
-  function handleToggleAutoDetect() {
-    if (!matcherRef.current || !atShop) return;
-    const next = !autoArmed;
-    matcherRef.current.setAutoDetectArmed(next);
-    setAutoArmed(next);
-    setShopToast(
-      next
-        ? 'Auto-detect armed (stricter floor + margin). Burst Move scan is still recommended.'
-        : 'Auto-detect off — burst-only.',
-    );
-  }
-
   async function handleArmMulti() {
     if (!matcherRef.current || !capturing) return;
     try {
@@ -978,7 +959,6 @@ export default function App() {
       setAtShop(true);
       setMultiArmed(true);
       setRecordingMove(true);
-      setAutoArmed(false);
       setLocked(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1199,7 +1179,6 @@ export default function App() {
                 <ShopCaptureBar
                   atShop={atShop}
                   recordingMove={recordingMove}
-                  autoArmed={autoArmed}
                   calibrating={shopCalibrating}
                   toast={shopToast}
                   multiMode={scanStyle === 'continuous' && monitorSetup === 'dual'}
@@ -1212,7 +1191,6 @@ export default function App() {
                   onToggleAtShop={() => void handleToggleAtShop()}
                   onStartMove={() => void handleStartMoveBurst()}
                   onStopMatch={() => void handleStopMoveBurst()}
-                  onToggleAuto={handleToggleAutoDetect}
                   onArmMulti={() => void handleArmMulti()}
                   onStopMulti={() => void handleStopMulti()}
                   onDismissToast={() => setShopToast(null)}

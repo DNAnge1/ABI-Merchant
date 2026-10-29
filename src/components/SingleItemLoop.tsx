@@ -34,7 +34,7 @@ export function SingleItemLoop(props: {
         </h2>
         <p className="m-0 mt-2 text-xs text-[var(--muted)] max-w-md mx-auto">
           {props.capturing
-            ? 'Raid noise is gated off. At the Field Merchant click At Shop (or Start Moving Item), move cargo a few times, then Stop & Match. Optional auto-onset only after At Shop.'
+            ? 'Raid noise is gated off. At the Field Merchant click At Shop, Start Moving Item, drag cargo a few times, then Stop & Match.'
             : 'Share game audio anytime. Silence / travel is fine — click At Shop only when you reach the merchant.'}
         </p>
       </div>

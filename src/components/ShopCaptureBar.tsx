@@ -1,15 +1,13 @@
 /**
  * Primary Field Merchant workflow while audio is capturing:
- * 1) At Shop — calibrate idle baseline (burst-ready; auto off)
- * 2) Single: Move Item → Stop & Match — manual burst capture
- * 3) Dual+Multi: Arm Multi scan — auto-count moves → lock → grid → next cargo
- * Optional: Arm auto-detect (stricter margin) after At Shop (Single)
+ * 1) At Shop — calibrate idle baseline
+ * 2) Single: Move Item → Stop & Match
+ * 3) Dual+Multi: Arm Multi scan — always 3 moves → lock → grid → next cargo
  */
 
 export function ShopCaptureBar(props: {
   atShop: boolean;
   recordingMove: boolean;
-  autoArmed?: boolean;
   calibrating?: boolean;
   busy?: boolean;
   toast?: string | null;
@@ -25,7 +23,6 @@ export function ShopCaptureBar(props: {
   onToggleAtShop: () => void;
   onStartMove: () => void;
   onStopMatch: () => void;
-  onToggleAuto?: () => void;
   onArmMulti?: () => void;
   onStopMulti?: () => void;
   onDismissToast?: () => void;
@@ -44,8 +41,8 @@ export function ShopCaptureBar(props: {
         </h2>
         <p className="m-0 text-[10px] text-[var(--muted)]">
           {multi
-            ? 'Multi · auto-count moves → grid'
-            : 'Burst-only by default · auto-detect optional'}
+            ? `Multi · always ${targetN} moves per cargo → grid`
+            : 'Single · Start Moving → Stop & Match'}
         </p>
       </div>
 
@@ -127,7 +124,7 @@ export function ShopCaptureBar(props: {
               <>
                 <span
                   className="rounded px-3 py-1.5 text-[12px] font-bold tabular-nums border border-[var(--accent)] bg-[var(--accent-dim)]/40 text-[var(--text)]"
-                  title="Cargo moves detected this item"
+                  title="Cargo moves detected this item — always waits for full count"
                 >
                   {spikeN}/{targetN} moves
                   {props.multiPhase === 'cooldown'
@@ -175,22 +172,6 @@ export function ShopCaptureBar(props: {
             ■ Stop & Match Item
           </button>
         )}
-
-        {!multi && props.atShop && props.onToggleAuto && (
-          <button
-            type="button"
-            disabled={props.busy || props.recordingMove || props.calibrating}
-            onClick={props.onToggleAuto}
-            className={[
-              'rounded px-2.5 py-1.5 text-[11px] font-medium border',
-              props.autoArmed
-                ? 'border-[var(--warn)] text-[var(--warn)] bg-[#2a2208]'
-                : 'border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]',
-            ].join(' ')}
-          >
-            {props.autoArmed ? 'Auto-detect ON' : 'Arm auto-detect'}
-          </button>
-        )}
       </div>
 
       <p className="m-0 text-[11px] leading-relaxed text-[var(--muted)]">
@@ -199,14 +180,14 @@ export function ShopCaptureBar(props: {
             <strong className="text-[var(--text)]">In Raid (gate closed)</strong> — listening paused;
             footsteps/heals ignored. At the Field Merchant click{' '}
             <strong className="text-[var(--text)]">At Shop</strong>
-            {multi ? ', then Arm Multi scan.' : ', then use Move Item → Stop & Match.'}
+            {multi ? ', then Arm Multi scan.' : ', then Start Moving Item → Stop & Match.'}
           </>
         )}
         {multi && props.atShop && !props.multiArmed && (
           <>
             <strong className="text-[var(--text)]">At Shop · Multi ready</strong> — Arm Multi scan,
-            then drag each cargo {targetN}× (early lock at 2 if the vote is clear). Locks append to
-            the continuous grid; cooldown then waits for the next cargo.
+            then drag each cargo <strong className="text-[var(--text)]">{targetN} times</strong>{' '}
+            (never locks early). Locks append to the grid; cooldown then waits for the next cargo.
           </>
         )}
         {multi && props.multiArmed && (
@@ -218,17 +199,10 @@ export function ShopCaptureBar(props: {
             . Same pcm300 matcher as Stop & Match. After lock, wait for the next cargo sound.
           </>
         )}
-        {!multi && props.atShop && !props.recordingMove && !props.autoArmed && (
+        {!multi && props.atShop && !props.recordingMove && (
           <>
-            <strong className="text-[var(--text)]">At Shop · burst-only</strong> — baseline locked;
-            auto-onset is <strong className="text-[var(--text)]">off</strong> (heals won’t lock). Prefer
-            Start Moving Item → drag cargo → Stop &amp; Match. Optional: Arm auto-detect.
-          </>
-        )}
-        {!multi && props.atShop && !props.recordingMove && props.autoArmed && (
-          <>
-            <strong className="text-[var(--warn)]">At Shop · auto-detect armed</strong> — stricter
-            floor + margin. Heal/ambient with tied scores is rejected; burst Move scan is still safer.
+            <strong className="text-[var(--text)]">At Shop · burst-only</strong> — baseline locked.
+            Use Start Moving Item → drag cargo a few times → Stop &amp; Match.
           </>
         )}
         {!multi && props.recordingMove && (

@@ -179,11 +179,74 @@ function cosineSimilarity(a: number[], b: number[]): number {
 /**
  * Web Audio getByteFrequencyData maps minDecibels=-100 … maxDecibels=-30 → 0..255.
  * Fingerprints are built from linear FFT magnitudes — convert dB bytes back to linear.
+ * Prefer {@link fftLinearMagnitudes} from time-domain for fingerprint-aligned capture.
  */
 function byteToLinearMag(byteVal: number): number {
   if (byteVal <= 0) return 0;
   const db = -100 + (byteVal / 255) * 70;
   return Math.pow(10, db / 20);
+}
+
+/** In-place radix-2 FFT (real/imag). n must be power of 2. */
+function fftRadix2(re: Float64Array, im: Float64Array): void {
+  const n = re.length;
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    if (i < j) {
+      const tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      const ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
+    }
+    let m = n >> 1;
+    while (m >= 1 && j >= m) {
+      j -= m;
+      m >>= 1;
+    }
+    j += m;
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1;
+    const step = Math.PI / half;
+    for (let i = 0; i < n; i += size) {
+      for (let k = 0; k < half; k++) {
+        const ang = -step * k;
+        const wr = Math.cos(ang);
+        const wi = Math.sin(ang);
+        const evenRe = re[i + k];
+        const evenIm = im[i + k];
+        const oddRe = re[i + k + half];
+        const oddIm = im[i + k + half];
+        const tr = wr * oddRe - wi * oddIm;
+        const ti = wr * oddIm + wi * oddRe;
+        re[i + k] = evenRe + tr;
+        im[i + k] = evenIm + ti;
+        re[i + k + half] = evenRe - tr;
+        im[i + k + half] = evenIm - ti;
+      }
+    }
+  }
+}
+
+/**
+ * Linear FFT magnitudes from Analyser time-domain floats (Hann window).
+ * Matches fingerprint extract path better than getByteFrequencyData (dB/byte).
+ */
+export function fftLinearMagnitudes(timeDomain: Float32Array): Float32Array {
+  const n = timeDomain.length;
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const hann = 0.5 * (1 - Math.cos((2 * Math.PI * i) / Math.max(n - 1, 1)));
+    re[i] = timeDomain[i] * hann;
+  }
+  fftRadix2(re, im);
+  const half = n >> 1;
+  const mag = new Float32Array(half);
+  for (let i = 0; i < half; i++) mag[i] = Math.hypot(re[i], im[i]);
+  return mag;
 }
 
 /** Pearson / mean-centered cosine mapped to [0, 1] — kills flat broadband DC bias. */
@@ -338,11 +401,12 @@ export function matchSpectrumAgainstFingerprints(
 
       let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
 
-      // Tighter centroid prior (2200Hz scale vs old 4000Hz).
+      // Tight centroid prior — separates dull rubber/plastic (#7 ~2.9k) from
+      // brighter statue/metal clusters (#36 ~4.0k, #22 ~6.2k).
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 2200);
-        score = score * 0.78 + prior * 0.22;
+        const prior = Math.max(0, 1 - delta / 1500);
+        score = score * 0.75 + prior * 0.25;
       }
 
       results.push({
@@ -396,8 +460,11 @@ export class AudioMatcher {
   private atShopGate = false;
   /** Explicit opt-in; heal/ambient must not lock while merely “At Shop”. */
   private autoDetectArmed = false;
-  /** Auto matches: top confidence must beat runner-up by this many points. */
-  private autoMarginPts = 4;
+  /**
+   * Top confidence must beat runner-up by this many points before lock
+   * (auto + burst). Was 4 — too easy for near-ties (#36↔#7, #22↔#21).
+   */
+  private autoMarginPts = 8;
   private shopPhase: ShopPhase = 'in-raid';
   private shopCalibrating = false;
   private burstRecording = false;
@@ -917,6 +984,7 @@ export class AudioMatcher {
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);
     const top = matches[0];
+    const runner = matches[1] ?? allMatches[1];
     const weak = allMatches[0];
     const stats = diagFor(peakRms, chosen.length);
 
@@ -935,6 +1003,20 @@ export class AudioMatcher {
         reason: weak
           ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats})`
           : `Stop & Match: no fingerprint match.${quietNote} (${stats})`,
+      });
+    }
+
+    const margin = runner ? top.confidence - runner.confidence : 99;
+    if (margin < this.autoMarginPts) {
+      return this.failBurst({
+        matches: allMatches.slice(0, 3),
+        frameCount: frames.length,
+        spikeCount: chosen.length,
+        peakRms,
+        baseline: effectiveBaseline,
+        threshold,
+        ...captureBase,
+        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${this.autoMarginPts}pt gap). Move the same cargo again.`,
       });
     }
 
@@ -1110,16 +1192,17 @@ export class AudioMatcher {
 
     // Manual move burst: buffer spectra continuously until Stop & Match.
     if (this.burstRecording && !this.shopCalibrating) {
-      const freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
-      this.analyser.getByteFrequencyData(freqBuf);
+      const timeFloat = new Float32Array(this.analyser.fftSize);
+      this.analyser.getFloatTimeDomainData(timeFloat);
+      const linMag = fftLinearMagnitudes(timeFloat);
       const spectrum = magnitudeToBands(
-        freqBuf,
+        linMag,
         this.ctx.sampleRate,
         this.analyser.fftSize,
         this.fingerprints.vectorBands || 32,
       );
       const centroid = spectralCentroidHz(
-        freqBuf,
+        linMag,
         this.ctx.sampleRate,
         this.analyser.fftSize,
       );
@@ -1180,15 +1263,18 @@ export class AudioMatcher {
     const centroids: number[] = [];
     const envelope: number[] = [];
     const start = performance.now();
-    const freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
-    const timeBuf = new Uint8Array(this.analyser.fftSize);
+    const timeFloat = new Float32Array(this.analyser.fftSize);
+    const timeByte = new Uint8Array(this.analyser.fftSize);
     let peakRms = 0;
     let peakAtMs = 0;
 
     while (performance.now() - start < this.sliceMs) {
-      this.analyser.getByteFrequencyData(freqBuf);
-      this.analyser.getByteTimeDomainData(timeBuf);
-      const frameRms = this.timeDomainRms(timeBuf);
+      // Linear FFT from time domain — fingerprint-aligned (avoids dB/byte collapse
+      // that flips #36→#7 / #22→#21 on late windows).
+      this.analyser.getFloatTimeDomainData(timeFloat);
+      this.analyser.getByteTimeDomainData(timeByte);
+      const linMag = fftLinearMagnitudes(timeFloat);
+      const frameRms = this.timeDomainRms(timeByte);
       const elapsed = performance.now() - start;
       envelope.push(frameRms);
       if (frameRms > peakRms) {
@@ -1197,14 +1283,14 @@ export class AudioMatcher {
       }
       frames.push(
         magnitudeToBands(
-          freqBuf,
+          linMag,
           this.ctx.sampleRate,
           this.analyser.fftSize,
           this.fingerprints.vectorBands || 32,
         ),
       );
       centroids.push(
-        spectralCentroidHz(freqBuf, this.ctx.sampleRate, this.analyser.fftSize),
+        spectralCentroidHz(linMag, this.ctx.sampleRate, this.analyser.fftSize),
       );
       await new Promise((r) => requestAnimationFrame(() => r(undefined)));
     }
@@ -1222,28 +1308,43 @@ export class AudioMatcher {
     const meanEnv =
       envelope.reduce((a, b) => a + b, 0) / Math.max(envelope.length, 1);
     const crest = peakRms / Math.max(meanEnv, 1e-6);
-    if (crest < 1.3) {
+    if (crest < 1.45) {
       this.resumeListening(
-        `Listening… ignored sustained noise (crest ${crest.toFixed(2)} < 1.3)`,
+        `Listening… ignored sustained noise (crest ${crest.toFixed(2)} < 1.45)`,
       );
       return [];
     }
 
     // Early energy should dominate the tail (decay after attack).
-    const cut = Math.max(1, Math.floor(envelope.length * 0.45));
+    const cut = Math.max(1, Math.floor(envelope.length * 0.4));
     const earlyMax = Math.max(...envelope.slice(0, cut), 0);
     const tail =
       envelope.slice(cut).reduce((a, b) => a + b, 0) /
       Math.max(envelope.length - cut, 1);
-    if (earlyMax < tail * 1.15) {
+    if (earlyMax < tail * 1.4) {
       this.resumeListening(
         'Listening… ignored rising/sustained ambient (no attack–decay shape)',
       );
       return [];
     }
 
+    // Centroid drift: decay windows collapse brightness and flip near-neighbors.
+    const earlyCentN = Math.max(1, Math.floor(centroids.length * 0.4));
+    const earlyCentroid =
+      centroids.slice(0, earlyCentN).reduce((a, b) => a + b, 0) / earlyCentN;
+    const fullCentroid =
+      centroids.reduce((a, b) => a + b, 0) / Math.max(centroids.length, 1);
+    if (Math.abs(earlyCentroid - fullCentroid) > 800) {
+      this.resumeListening(
+        `Listening… ignored centroid drift (${Math.round(earlyCentroid)}→${Math.round(fullCentroid)} Hz) — late/decay window`,
+      );
+      return [];
+    }
+
     this.setStatus('matching', 'Matching…');
 
+    // Equal-average over the live300 slice (linear FFT). Attack/decay shape is
+    // gated above; extra front-weighting hurt #36 vs near-neighbors on real clips.
     const bands = frames[0]?.length || 32;
     const avg = new Array(bands).fill(0);
     for (const f of frames) {
@@ -1252,7 +1353,8 @@ export class AudioMatcher {
     for (let i = 0; i < bands; i++) avg[i] /= Math.max(frames.length, 1);
     const max = Math.max(...avg, 1e-9);
     const spectrumVector = avg.map((v) => v / max);
-    const centroid = centroids.reduce((a, b) => a + b, 0) / Math.max(centroids.length, 1);
+    const centroid =
+      centroids.reduce((a, b) => a + b, 0) / Math.max(centroids.length, 1);
 
     const candidates =
       this.candidateSoundIds.length > 0

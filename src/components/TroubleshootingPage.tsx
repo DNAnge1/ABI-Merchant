@@ -54,6 +54,8 @@ export function TroubleshootingPage(props: {
   onStartListening: () => void;
   onStopListening: () => void;
   onMicFallback: () => void;
+  onRetest?: () => void;
+  onStartOver?: () => void;
 }) {
   const browser = detectBrowser();
   const tabs: { id: TroubleSection; label: string }[] = [
@@ -73,16 +75,42 @@ export function TroubleshootingPage(props: {
             One-stop: Windows fixes, known errors, browsers, Verify Audio & Self-test.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={props.onBack}
-          className="rounded-full px-3 py-1 text-[12px] font-medium border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--muted)] hover:text-[var(--text)]"
-        >
-          ← Back
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {props.onRetest && (
+            <button
+              type="button"
+              onClick={props.onRetest}
+              className="rounded-full px-3 py-1 text-[12px] font-semibold bg-[var(--accent)] text-[#041412]"
+            >
+              Retest
+            </button>
+          )}
+          {props.onStartOver && (
+            <button
+              type="button"
+              onClick={props.onStartOver}
+              className="rounded-full px-3 py-1 text-[12px] font-medium border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--muted)] hover:text-[var(--text)]"
+            >
+              Start over
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onBack}
+            className="rounded-full px-3 py-1 text-[12px] font-medium border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--muted)] hover:text-[var(--text)]"
+          >
+            ← Back
+          </button>
+        </div>
       </div>
 
       <WipAccuracyBanner />
+
+      <div className="rounded-lg border border-[var(--accent)]/35 bg-[var(--accent-dim)]/15 px-3 py-2.5 text-[12px] text-[var(--text)] leading-relaxed">
+        Switched headphones ↔ speakers and capture died? That often ends the audio track (G560 /
+        exclusive mode). Use <strong>Retest</strong> or Mic / loopback — you should never be stuck
+        without recovery.
+      </div>
 
       <div className="flex flex-wrap gap-1.5">
         {tabs.map((t) => (

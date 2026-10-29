@@ -389,6 +389,23 @@ export default function App() {
       onStatus: (s, detail) => {
         setStatus(s);
         setStatusDetail(detail);
+        // Track ended / capture death: matcher already stopped — sync UI so Retest works.
+        if (s === 'error') {
+          setCapturing(false);
+          setCaptureSource(null);
+          setRecordingMove(false);
+          setMultiArmed(false);
+          setAtShop(false);
+          if (detail) pushSessionErrorRef.current(detail);
+          if (
+            detail &&
+            /track ended|headphones|speakers|G560|output device|Capture window closed/i.test(
+              detail,
+            )
+          ) {
+            setSuggestMicFallback(true);
+          }
+        }
       },
       onMatch: (payload) => matchHandlerRef.current(payload),
       onMultiProgress: (p) => {
@@ -895,16 +912,51 @@ export default function App() {
     }
   }
 
-  async function stopCapture() {
-    await matcherRef.current?.stop();
+  async function stopCapture(opts?: { keepError?: boolean }) {
+    await matcherRef.current?.stop({ skipStatus: opts?.keepError === true });
     setCapturing(false);
     setCaptureSource(null);
     setAtShop(false);
     setRecordingMove(false);
     setShopCalibrating(false);
+    setMultiArmed(false);
     setShopToast(null);
     clearBurstCapture();
     setSinglePhase('ready');
+    if (!opts?.keepError) {
+      setStatus('idle');
+      setStatusDetail(undefined);
+    }
+  }
+
+  /** Close verify overlay + reset error status so chrome / Start over / Retest work. */
+  function clearAudioErrorState() {
+    stopVerifySession();
+    setVerifyOpen(false);
+    setSuggestMicFallback(false);
+    setVerifyState(IDLE_VERIFY);
+    setMicBusy(false);
+    setStatus('idle');
+    setStatusDetail(undefined);
+  }
+
+  async function retestListening() {
+    clearAudioErrorState();
+    await stopCapture();
+    setStatus('idle');
+    if (shellScreen === 'entry' || shellScreen === 'troubleshooting') {
+      if (monitorSetup) {
+        setShellScreen('listen');
+        setWizardStep('listen');
+        setMode('automatic');
+      } else {
+        setShellScreen('wizard');
+        setWizardStep('monitors');
+        setMode('automatic');
+        return;
+      }
+    }
+    await startCapture();
   }
 
   async function handleToggleAtShop() {
@@ -1156,7 +1208,11 @@ export default function App() {
   };
 
   function startOver() {
-    void stopCapture();
+    clearAudioErrorState();
+    void stopCapture().then(() => {
+      setStatus('idle');
+      setStatusDetail(undefined);
+    });
     setShellScreen('entry');
     setWizardStep('monitors');
     setMonitorSetup(null);
@@ -1166,9 +1222,15 @@ export default function App() {
     setSlots([]);
     setSinglePhase('ready');
     setSelectedSizes([]);
+    setShopToast(null);
+    setShopToastSticky(false);
   }
 
   function openTroubleshooting(section: TroubleSection = 'overview') {
+    // Close verify overlay so Troubleshooting doesn't hide Start over / options.
+    stopVerifySession();
+    setVerifyOpen(false);
+    setSuggestMicFallback(false);
     if (shellScreen !== 'troubleshooting') {
       setTroubleReturn(
         shellScreen === 'entry' ||
@@ -1274,6 +1336,12 @@ export default function App() {
         : null;
 
   const activeError = sessionErrors[0] ?? null;
+  const hasAudioError =
+    verifyOpen ||
+    status === 'error' ||
+    suggestMicFallback ||
+    (!!statusDetail &&
+      /NotReadableError|Could not start audio source|track ended|G560/i.test(statusDetail));
   const chromeScreen =
     shellScreen === 'troubleshooting'
       ? 'troubleshooting'
@@ -1284,19 +1352,22 @@ export default function App() {
           : shellScreen === 'wizard'
             ? 'wizard'
             : 'entry';
+  const showChrome = shellScreen !== 'entry' || hasAudioError;
 
   return (
     <div className="min-h-full flex flex-col">
-      {shellScreen !== 'entry' && (
+      {showChrome && (
         <ChromeBar
           mode={mode}
           screen={chromeScreen}
           capturing={capturing}
+          hasAudioError={hasAudioError}
           onStartOver={startOver}
           onModeChange={handleModeChange}
           onOpenTrouble={() => openTroubleshooting('overview')}
           onStartListening={() => void startCapture()}
           onStopListening={() => void stopCapture()}
+          onRetest={() => void retestListening()}
         />
       )}
 
@@ -1315,18 +1386,17 @@ export default function App() {
         suggestMicFallback={suggestMicFallback}
         micBusy={micBusy}
         onClose={() => {
-          stopVerifySession();
-          setSuggestMicFallback(false);
-          setVerifyOpen(false);
+          clearAudioErrorState();
         }}
         onRetry={() => void runVerify()}
         onSwitchManual={switchToManual}
         onPlayTone={() => void playTestTone()}
         onStartListening={() => {
-          stopVerifySession();
-          setVerifyOpen(false);
+          clearAudioErrorState();
           void startCapture();
         }}
+        onRetestListening={() => void retestListening()}
+        onStartOver={startOver}
         onUseMicLoopback={(deviceId) => {
           if (suggestMicFallback || verifyState.phase === 'error' || verifyState.phase === 'no-audio') {
             void startCaptureFromMic(deviceId);
@@ -1409,6 +1479,54 @@ export default function App() {
             </div>
 
             <WipAccuracyBanner />
+
+            {(status === 'error' || suggestMicFallback) && !verifyOpen && (
+              <div
+                role="alert"
+                className="rounded-lg border border-[var(--warn)]/50 bg-[#2a2208] px-3 py-3 space-y-2"
+              >
+                <p className="m-0 text-[12px] font-semibold text-[var(--warn)]">
+                  Audio capture interrupted
+                </p>
+                <p className="m-0 text-[12px] text-[var(--text)] leading-relaxed whitespace-pre-wrap">
+                  {statusDetail ||
+                    'Capture stopped — often after switching headphones ↔ speakers (G560). Retest to reconnect, or open Troubleshooting for Mic / loopback.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void retestListening()}
+                    className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412]"
+                  >
+                    Retest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAudioErrorState();
+                      openTroubleshooting('windows');
+                    }}
+                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--text)]"
+                  >
+                    Troubleshooting
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => clearAudioErrorState()}
+                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+                  >
+                    Clear error
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startOver}
+                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+                  >
+                    Start over
+                  </button>
+                </div>
+              </div>
+            )}
 
             <ListenCircle
               capturing={capturing}
@@ -1663,6 +1781,8 @@ export default function App() {
             }}
             onStartListening={() => void startCapture()}
             onStopListening={() => void stopCapture()}
+            onRetest={() => void retestListening()}
+            onStartOver={startOver}
             onMicFallback={() => {
               stopVerifySession();
               setSuggestMicFallback(true);

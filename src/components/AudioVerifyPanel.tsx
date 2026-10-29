@@ -28,6 +28,10 @@ export function AudioVerifyPanel(props: {
   micBusy?: boolean;
   /** Force showing mic fallback (e.g. after Live Start NotReadableError) */
   suggestMicFallback?: boolean;
+  /** Clear error + retry live Start Listening (recover from G560 / device switch). */
+  onRetestListening?: () => void;
+  /** Return to Entry and wipe error UI. */
+  onStartOver?: () => void;
 }) {
   if (!props.open) return null;
   const browser = detectBrowser();
@@ -66,14 +70,82 @@ export function AudioVerifyPanel(props: {
             Browser: <span className="text-[var(--text)]">{browser.label}</span>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={props.onClose}
-          className="text-[11px] text-[var(--muted)] hover:text-[var(--text)]"
-        >
-          Close
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {failed && props.onRetestListening && (
+            <button
+              type="button"
+              onClick={props.onRetestListening}
+              className="rounded px-2.5 py-1 text-[11px] font-semibold bg-[var(--accent)] text-[#041412]"
+            >
+              Retest
+            </button>
+          )}
+          {props.onStartOver && (
+            <button
+              type="button"
+              onClick={props.onStartOver}
+              className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--text)]"
+            >
+              Start over
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded px-2.5 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--text)] border border-transparent hover:border-[var(--border)]"
+          >
+            Clear & close
+          </button>
+        </div>
       </div>
+
+      {failed && (
+        <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-dim)]/20 px-3 py-2.5">
+          <p className="m-0 w-full text-[11px] text-[var(--text)] leading-relaxed">
+            Capture failed — you can recover without getting stuck. Prefer Mic / loopback if you
+            switched headphones ↔ speakers (G560 often breaks screen-share loopback).
+          </p>
+          {props.onRetestListening && (
+            <button
+              type="button"
+              onClick={props.onRetestListening}
+              className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412]"
+            >
+              Retest · Start Listening again
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onRetry}
+            className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--text)]"
+          >
+            Retry screen-share verify
+          </button>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+          >
+            Clear error & continue
+          </button>
+          {props.onStartOver && (
+            <button
+              type="button"
+              onClick={props.onStartOver}
+              className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+            >
+              Start over
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onSwitchManual}
+            className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--mythic)]/50 text-[var(--mythic-gold)]"
+          >
+            Switch to Manual
+          </button>
+        </div>
+      )}
 
       <ol className="m-0 mt-3 grid gap-2 list-none p-0 sm:grid-cols-3">
         <Step n={1} title="Mic / loopback first">

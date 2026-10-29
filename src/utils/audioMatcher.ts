@@ -462,15 +462,17 @@ export class AudioMatcher {
   private autoDetectArmed = false;
   /**
    * Base lock margin for weak tops. Strong tops use a lower bar via
-   * {@link lockMarginRequired} so #1 @ 96% vs #5 @ 92% can lock (4.5pt gap)
-   * while dull-sink near-ties at ~80% still need a wider gap.
+   * {@link lockMarginRequired}. Field: #1 often lands ~94–97% with a runner
+   * ~4–5pts behind (#5/#25) — flat 5–8pt rules refused correct locks.
    */
   private autoMarginPts = 8;
+  /** Last burst top ID — second consecutive same top with ≥3pt gap can lock. */
+  private lastBurstTopId: number | null = null;
 
   /** Adaptive gap: high confidence → smaller required margin. */
   private lockMarginRequired(topConfidence: number): number {
-    if (topConfidence >= 95) return 3;
-    if (topConfidence >= 90) return 5;
+    if (topConfidence >= 94) return 3;
+    if (topConfidence >= 88) return 4;
     return this.autoMarginPts;
   }
   private shopPhase: ShopPhase = 'in-raid';
@@ -676,6 +678,7 @@ export class AudioMatcher {
       this.shopCalibrating = false;
       this.burstRecording = false;
       this.burstFrames = [];
+      this.lastBurstTopId = null;
       this.stopBurstPcmCapture();
       this.listeningPaused = true;
       this.shopPhase = 'in-raid';
@@ -1016,7 +1019,11 @@ export class AudioMatcher {
 
     const margin = runner ? top.confidence - runner.confidence : 99;
     const needGap = this.lockMarginRequired(top.confidence);
-    if (margin < needGap) {
+    // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
+    const streakOk =
+      this.lastBurstTopId === top.soundId && margin >= 3 && top.confidence >= 90;
+    if (margin < needGap && !streakOk) {
+      this.lastBurstTopId = top.soundId;
       return this.failBurst({
         matches: allMatches.slice(0, 3),
         frameCount: frames.length,
@@ -1029,6 +1036,7 @@ export class AudioMatcher {
       });
     }
 
+    this.lastBurstTopId = null;
     this.shopPhase = 'locked';
     this.listeningPaused = true;
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${chosen.length} spikes (${stats})`;
@@ -1165,6 +1173,7 @@ export class AudioMatcher {
     this.shopCalibrating = false;
     this.burstRecording = false;
     this.burstFrames = [];
+    this.lastBurstTopId = null;
     this.stopBurstPcmCapture();
     this.shopPhase = 'in-raid';
     this.rmsBaseline = 0;

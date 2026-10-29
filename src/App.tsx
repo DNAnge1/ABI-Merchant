@@ -265,6 +265,8 @@ export default function App() {
       sensitivity: 'med',
       cooldownMs: 800,
       focusGraceMs: 0,
+      // Field Merchant only plays pickup when dragging cargo.
+      kind: 'pickup',
     });
     matcher.setCallbacks({
       onStatus: (s, detail) => {

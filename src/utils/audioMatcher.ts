@@ -30,6 +30,10 @@ export interface FingerprintSide {
   dominantPeaks: { frequencyHz: number; magnitude: number }[];
   durationEnvelope: number[];
   spectrumVector: number[];
+  /** Present on live300-aligned fingerprints */
+  windowMs?: number;
+  onsetMs?: number;
+  frames?: number;
 }
 
 export interface SoundFingerprint {
@@ -44,6 +48,11 @@ export interface FingerprintsFile {
   fftSize: number;
   sampleRate: number;
   vectorBands: number;
+  /** Live-aligned analysis window (ms). Pickup-only fingerprints use ~300. */
+  windowMs?: number;
+  /** Which side the matcher should prefer. Field Merchant = pickup only. */
+  matchSide?: SoundKind | 'auto';
+  analysis?: string;
   fingerprints: Record<string, SoundFingerprint>;
 }
 
@@ -105,7 +114,11 @@ export interface MatcherOptions {
   sliceMs?: number;
   /** Cooldown between detections in ms. Default 800; continuous ~600 */
   cooldownMs?: number;
-  /** Prefer pickup, drop, or auto (try both, take best). Default auto */
+  /**
+   * Prefer pickup, drop, or auto.
+   * Default pickup — Field Merchant only plays pickup when dragging cargo.
+   * `auto` also resolves to pickup-only (drop vectors ignored for matching).
+   */
   kind?: SoundKind | 'auto';
   /**
    * After the browser window regains focus, ignore onsets for this many ms
@@ -213,12 +226,13 @@ export function matchSpectrumAgainstFingerprints(
   spectrumVector: number[],
   fingerprints: FingerprintsFile,
   candidateSoundIds: number[],
-  kind: SoundKind | 'auto' = 'auto',
+  kind: SoundKind | 'auto' = 'pickup',
   capturedCentroid?: number,
 ): MatchResult[] {
   const results: MatchResult[] = [];
+  // Field Merchant: players only hear pickup. Default / 'auto' → pickup only.
   const kinds: SoundKind[] =
-    kind === 'auto' ? ['pickup', 'drop'] : [kind];
+    kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -316,7 +330,7 @@ export class AudioMatcher {
     this.peakWindowMs = preset.peakWindowMs;
     this.sliceMs = opts.sliceMs ?? 300;
     this.cooldownMs = opts.cooldownMs ?? 800;
-    this.kind = opts.kind ?? 'auto';
+    this.kind = opts.kind ?? fingerprints.matchSide ?? 'pickup';
     this.focusGraceMs = opts.focusGraceMs ?? 0;
   }
 

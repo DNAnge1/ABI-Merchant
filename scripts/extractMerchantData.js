@@ -367,9 +367,15 @@ function fft(re, im) {
   }
 }
 
-function analyzePcm(samples, sampleRate = 22050, fftSize = 2048) {
+const LIVE_SLICE_MS = 300;
+
+/**
+ * Live-aligned analysis: find first energetic onset, then average ~300ms of
+ * FFT frames (mirrors AudioMatcher.captureAndMatch / offlineSelftest live300).
+ * Field Merchant players only hear pickup — fingerprints are built from that window.
+ */
+function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   const window = hannWindow(fftSize);
-  // Duration envelope: RMS per 10ms hop
   const hopEnv = Math.max(1, Math.floor(sampleRate * 0.01));
   const envelope = [];
   for (let i = 0; i + hopEnv <= samples.length; i += hopEnv) {
@@ -380,64 +386,90 @@ function analyzePcm(samples, sampleRate = 22050, fftSize = 2048) {
     }
     envelope.push(Math.sqrt(sum / hopEnv));
   }
-  // Peak-normalize envelope
   const maxEnv = Math.max(...envelope, 1e-9);
   const durationEnvelope = envelope.map((v) => Number((v / maxEnv).toFixed(4)));
 
-  // Average magnitude spectrum over frames with energy
+  let maxRms = 0;
+  for (const r of envelope) maxRms = Math.max(maxRms, r);
+  const floor = Math.max(0.02, maxRms * 0.25);
+  let onset = 0;
+  for (let i = 0; i < envelope.length; i++) {
+    if (envelope[i] >= floor) {
+      onset = i * hopEnv;
+      break;
+    }
+  }
+
+  const sliceSamples = Math.floor((LIVE_SLICE_MS / 1000) * sampleRate);
+  const end = Math.min(samples.length, onset + sliceSamples);
   const half = fftSize / 2;
-  const magAccum = new Float64Array(half);
-  let frames = 0;
-  const hop = fftSize / 2;
+  const hop = Math.floor(fftSize / 4); // denser hops like rAF analyser polls
   const re = new Float64Array(fftSize);
   const im = new Float64Array(fftSize);
+  const bandAccum = new Array(32).fill(0);
+  const centroids = [];
+  let frames = 0;
 
-  for (let start = 0; start + fftSize <= samples.length; start += hop) {
-    let energy = 0;
+  const frameBandsAndCentroid = (start) => {
+    re.fill(0);
+    im.fill(0);
     for (let i = 0; i < fftSize; i++) {
-      const v = samples[start + i] * window[i];
-      re[i] = v;
-      im[i] = 0;
-      energy += v * v;
+      re[i] = (samples[start + i] || 0) * window[i];
     }
-    if (energy < 1e-8) continue;
     fft(re, im);
-    for (let i = 0; i < half; i++) {
-      magAccum[i] += Math.hypot(re[i], im[i]);
+    const mag = new Float64Array(half);
+    for (let i = 0; i < half; i++) mag[i] = Math.hypot(re[i], im[i]);
+    const bands = 32;
+    const bandVec = new Array(bands).fill(0);
+    const minF = 80;
+    const maxF = Math.min(sampleRate / 2, 8000);
+    for (let i = 1; i < half; i++) {
+      const freq = (i * sampleRate) / fftSize;
+      if (freq < minF || freq > maxF) continue;
+      const t = Math.log(freq / minF) / Math.log(maxF / minF);
+      const bi = Math.min(bands - 1, Math.floor(t * bands));
+      bandVec[bi] += mag[i];
     }
+    const bandMax = Math.max(...bandVec, 1e-9);
+    const normalized = bandVec.map((v) => v / bandMax);
+    let num = 0;
+    let den = 0;
+    for (let i = 1; i < half; i++) {
+      const freq = (i * sampleRate) / fftSize;
+      num += freq * mag[i];
+      den += mag[i];
+    }
+    return { normalized, centroid: den > 0 ? num / den : 0, mag };
+  };
+
+  let lastMag = null;
+  for (let start = onset; start + fftSize <= end; start += hop) {
+    const { normalized, centroid, mag } = frameBandsAndCentroid(start);
+    for (let i = 0; i < 32; i++) bandAccum[i] += normalized[i];
+    centroids.push(centroid);
+    lastMag = mag;
     frames++;
   }
 
   if (frames === 0) {
-    // Single frame padded
-    re.fill(0);
-    im.fill(0);
-    for (let i = 0; i < Math.min(fftSize, samples.length); i++) {
-      re[i] = samples[i] * window[i];
-    }
-    fft(re, im);
-    for (let i = 0; i < half; i++) magAccum[i] = Math.hypot(re[i], im[i]);
+    const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
+    const { normalized, centroid, mag } = frameBandsAndCentroid(start);
+    for (let i = 0; i < 32; i++) bandAccum[i] = normalized[i];
+    centroids.push(centroid);
+    lastMag = mag;
     frames = 1;
   }
 
-  const magnitudes = Array.from(magAccum, (v) => v / frames);
+  for (let i = 0; i < 32; i++) bandAccum[i] /= frames;
+  const bandMax = Math.max(...bandAccum, 1e-9);
+  const spectrumVector = bandAccum.map((v) => Number((v / bandMax).toFixed(5)));
+  const spectralCentroid = centroids.reduce((a, b) => a + b, 0) / centroids.length;
 
-  // Spectral centroid (Hz)
-  let num = 0;
-  let den = 0;
-  for (let i = 0; i < half; i++) {
-    const freq = (i * sampleRate) / fftSize;
-    num += freq * magnitudes[i];
-    den += magnitudes[i];
-  }
-  const spectralCentroid = den > 0 ? num / den : 0;
-
-  // Dominant peaks (top 8 bins by magnitude, excluding DC)
+  const magnitudes = lastMag || new Float64Array(half);
   const peakCandidates = [];
   for (let i = 1; i < half - 1; i++) {
     if (magnitudes[i] >= magnitudes[i - 1] && magnitudes[i] >= magnitudes[i + 1]) {
       peakCandidates.push({
-        bin: i,
         frequencyHz: (i * sampleRate) / fftSize,
         magnitude: magnitudes[i],
       });
@@ -450,26 +482,13 @@ function analyzePcm(samples, sampleRate = 22050, fftSize = 2048) {
     magnitude: Number((p.magnitude / maxMag).toFixed(4)),
   }));
 
-  // Compact fingerprint vector for cosine similarity (log-mel-ish bands)
-  const bands = 32;
-  const bandVec = new Array(bands).fill(0);
-  for (let i = 1; i < half; i++) {
-    const freq = (i * sampleRate) / fftSize;
-    // Map 80Hz–8kHz onto bands logarithmically
-    const minF = 80;
-    const maxF = Math.min(sampleRate / 2, 8000);
-    if (freq < minF || freq > maxF) continue;
-    const t = Math.log(freq / minF) / Math.log(maxF / minF);
-    const bi = Math.min(bands - 1, Math.floor(t * bands));
-    bandVec[bi] += magnitudes[i];
-  }
-  const bandMax = Math.max(...bandVec, 1e-9);
-  const spectrumVector = bandVec.map((v) => Number((v / bandMax).toFixed(5)));
-
   return {
     durationMs: Number(((samples.length / sampleRate) * 1000).toFixed(1)),
     sampleRate,
     fftSize,
+    windowMs: LIVE_SLICE_MS,
+    onsetMs: Number(((onset / sampleRate) * 1000).toFixed(1)),
+    frames,
     spectralCentroid: Number(spectralCentroid.toFixed(2)),
     dominantPeaks,
     durationEnvelope,
@@ -477,28 +496,39 @@ function analyzePcm(samples, sampleRate = 22050, fftSize = 2048) {
   };
 }
 
+/** @deprecated kept for offline tooling that wants full-file vectors */
+function analyzePcm(samples, sampleRate = 22050, fftSize = 2048) {
+  return analyzePcmLive300(samples, sampleRate, fftSize);
+}
+
+/**
+ * Field Merchant: players only hear pickup. Build pickup-only fingerprints from
+ * the same ~300ms post-onset window the live matcher captures.
+ */
 function generateFingerprints(merchant) {
-  console.log('[fingerprint] analyzing reference audio…');
+  console.log('[fingerprint] pickup-only · ~300ms post-onset windows…');
   const fingerprints = {};
   for (const sound of merchant.soundIds) {
     const entry = {
       soundId: sound.soundId,
       pickup: null,
-      drop: null,
+      drop: null, // retained for schema; matching ignores drop
       itemNames: sound.itemNames,
     };
-    for (const kind of ['pickup', 'drop']) {
-      const base = kind === 'pickup' ? sound.pickupSound : sound.dropSound;
-      const file = join(SOUNDS_DIR, `${base}.ogg`);
-      if (!existsSync(file)) {
-        console.warn(`  missing ${base}.ogg`);
-        continue;
-      }
+    const base = sound.pickupSound;
+    const file = join(SOUNDS_DIR, `${base}.ogg`);
+    if (!existsSync(file)) {
+      console.warn(`  missing pickup ${base}.ogg`);
+    } else {
       try {
         const pcm = decodeOggToPcm(file);
-        entry[kind] = { file: `/sounds/${base}.ogg`, name: base, ...analyzePcm(pcm) };
+        entry.pickup = {
+          file: `/sounds/${base}.ogg`,
+          name: base,
+          ...analyzePcmLive300(pcm),
+        };
         console.log(
-          `  ✓ sound ${sound.soundId} ${kind} centroid=${entry[kind].spectralCentroid}Hz peaks=${entry[kind].dominantPeaks.length}`,
+          `  ✓ sound ${sound.soundId} pickup onset=${entry.pickup.onsetMs}ms centroid=${entry.pickup.spectralCentroid}Hz frames=${entry.pickup.frames}`,
         );
       } catch (err) {
         console.warn(`  ✗ ${base}: ${err.message}`);
@@ -511,46 +541,62 @@ function generateFingerprints(merchant) {
     fftSize: 2048,
     sampleRate: 22050,
     vectorBands: 32,
+    windowMs: LIVE_SLICE_MS,
+    matchSide: 'pickup',
+    analysis: 'live300-post-onset',
     fingerprints,
   };
 }
 
 async function main() {
   ensureDirs();
-  let html = null;
-  let sourceLabel = LIVE_URL;
+  const fingerprintsOnly = process.argv.includes('--fingerprints-only');
 
-  try {
-    html = await scrapeWithPlaywright(LIVE_URL);
-  } catch (err) {
-    console.warn(`[scrape] Playwright live failed: ${err.message}`);
-  }
-
-  if (!html) {
-    console.log('[scrape] falling back to Wayback Machine snapshot');
-    sourceLabel = WAYBACK_URL;
-    try {
-      html = await scrapeWithPlaywright(WAYBACK_URL);
-    } catch (err) {
-      console.warn(`[scrape] Playwright Wayback failed: ${err.message}`);
+  let merchant;
+  if (fingerprintsOnly) {
+    if (!existsSync(OUT_DATA)) {
+      throw new Error(`Missing ${OUT_DATA} — run full extract first`);
     }
+    merchant = JSON.parse(readFileSync(OUT_DATA, 'utf8'));
+    console.log(
+      `[fingerprints-only] reusing merchantData sounds=${merchant.soundIds.length}`,
+    );
+  } else {
+    let html = null;
+    let sourceLabel = LIVE_URL;
+
+    try {
+      html = await scrapeWithPlaywright(LIVE_URL);
+    } catch (err) {
+      console.warn(`[scrape] Playwright live failed: ${err.message}`);
+    }
+
+    if (!html) {
+      console.log('[scrape] falling back to Wayback Machine snapshot');
+      sourceLabel = WAYBACK_URL;
+      try {
+        html = await scrapeWithPlaywright(WAYBACK_URL);
+      } catch (err) {
+        console.warn(`[scrape] Playwright Wayback failed: ${err.message}`);
+      }
+    }
+
+    if (!html) {
+      console.log('[scrape] fetching Wayback HTML via HTTP');
+      html = await fetchText(WAYBACK_URL);
+      sourceLabel = WAYBACK_URL + ' (HTTP)';
+    }
+
+    merchant = parseMerchantHtml(html, sourceLabel);
+    console.log(
+      `[data] items=${merchant.items.length} sounds=${merchant.soundIds.length} cargoTypes=${merchant.cargoTypes.length}`,
+    );
+
+    writeFileSync(OUT_DATA, JSON.stringify(merchant, null, 2));
+    console.log(`[data] wrote ${OUT_DATA}`);
+
+    await downloadAudio(merchant.soundIds);
   }
-
-  if (!html) {
-    console.log('[scrape] fetching Wayback HTML via HTTP');
-    html = await fetchText(WAYBACK_URL);
-    sourceLabel = WAYBACK_URL + ' (HTTP)';
-  }
-
-  const merchant = parseMerchantHtml(html, sourceLabel);
-  console.log(
-    `[data] items=${merchant.items.length} sounds=${merchant.soundIds.length} cargoTypes=${merchant.cargoTypes.length}`,
-  );
-
-  writeFileSync(OUT_DATA, JSON.stringify(merchant, null, 2));
-  console.log(`[data] wrote ${OUT_DATA}`);
-
-  await downloadAudio(merchant.soundIds);
 
   const fp = generateFingerprints(merchant);
   writeFileSync(OUT_FP, JSON.stringify(fp, null, 2));

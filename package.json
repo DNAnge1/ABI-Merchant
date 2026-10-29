@@ -1,11 +1,7 @@
 {
   "name": "abi-merchant",
   "private": true,
-<<<<<<< HEAD
-  "version": "0.9.39",
-=======
   "version": "0.9.40",
->>>>>>> 8bf7087 (Fix Single listen circle fake 0/3 counter (v0.9.40))
   "type": "module",
   "scripts": {
     "dev": "vite",

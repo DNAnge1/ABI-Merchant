@@ -4,9 +4,9 @@ export type AppMode = 'automatic' | 'manual';
 
 const STEPS = [
   { id: 1, label: 'Select / Ready' },
-  { id: 2, label: 'Listening' },
-  { id: 3, label: 'Drag Cargo' },
-  { id: 4, label: 'Match Ready' },
+  { id: 2, label: 'At Shop' },
+  { id: 3, label: 'Move / Match' },
+  { id: 4, label: 'Locked' },
 ] as const;
 
 function stepFromStatus(
@@ -21,12 +21,12 @@ function stepFromStatus(
   switch (status) {
     case 'listening':
       return {
-        step: 2,
-        detail: detail || 'Listening… waiting for merchant sounds (silence is OK)',
+        step: /At Shop/i.test(detail || '') ? 2 : 2,
+        detail: detail || 'In Raid (gate closed) — click At Shop at the merchant',
       };
     case 'capturing':
     case 'matching':
-      return { step: 3, detail: detail || 'Checking sound…' };
+      return { step: 3, detail: detail || 'Recording moves / matching…' };
     case 'error':
       return { step: 1, detail: detail || 'Error' };
     default:

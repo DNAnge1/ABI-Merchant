@@ -277,7 +277,7 @@ export function TacticalResultCard(props: {
               className="inline-block rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border border-[var(--listening)]/55 bg-[var(--listening)]/15 text-[var(--listening)]"
               data-badge="live-preview"
             >
-              Live · updating
+              Live peek · not final
             </span>
           )}
           {props.lowConfidence && !props.livePreview && (
@@ -294,7 +294,7 @@ export function TacticalResultCard(props: {
             </span>
           )}
           <div className="text-[10px] text-[var(--muted)]">
-            Group #{props.soundId}
+            {props.livePreview ? 'Live Group' : 'Predicted Group'} #{props.soundId}
           </div>
           {props.meta && (
             <div className="text-[10px] text-[var(--muted)]">{props.meta}</div>

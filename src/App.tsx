@@ -77,7 +77,6 @@ import {
 } from './utils/calibrationStore';
 import {
   buildMissReport,
-  isCalibrationDebugEnabledFromUrl,
   readCalibrationDebugPref,
   summarizeConfusion,
   writeCalibrationDebugPref,
@@ -256,9 +255,8 @@ export default function App() {
   const [calibrationDebug, setCalibrationDebug] = useState(() =>
     readCalibrationDebugPref(),
   );
-  const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(() =>
-    isCalibrationDebugEnabledFromUrl() || readCalibrationDebugPref(),
-  );
+  /** Advanced onset log stays collapsed by default — expand only on demand. */
+  const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(false);
   const [expectedSoundId, setExpectedSoundId] = useState<number | null>(null);
   const [confusionEvents, setConfusionEvents] = useState<MissReportPayload[]>([]);
   const [confusionClips, setConfusionClips] = useState<Record<string, Blob>>({});
@@ -540,7 +538,20 @@ export default function App() {
         return;
       }
 
+      const sizedRaw = applySizeConstrainedFallback(
+        peek.matches,
+        items,
+        selectedSizesRef.current,
+      );
+      const next = applyLiveConsensus(liveConsensusRef.current, {
+        matches: sizedRaw,
+        onsetMs: peek.onsetMs,
+      });
+      liveConsensusRef.current = next;
+
       // Calibration / Confusion: log each new clean onset when ground-truth is set.
+      // predictedId must follow HUD consensus (not a flickering raw peek top) so
+      // Report / Debug JSON stay aligned with what Live narrowing showed.
       const expectedId = expectedSoundIdRef.current;
       if (
         calibrationDebugRef.current &&
@@ -564,6 +575,8 @@ export default function App() {
           clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
           setConfusionClips((prev) => ({ ...prev, [clipId!]: wav }));
         }
+        const hudPredicted =
+          next.soundId ?? ranked[0]?.soundId ?? undefined;
         const event = buildMissReport({
           expectedId,
           matches: ranked,
@@ -582,6 +595,8 @@ export default function App() {
           appVersion: __APP_VERSION__,
           raid: raidSnapshot(),
           clipId,
+          // Bind Pred column to consensus HUD id; top5 stays raw peek ranking.
+          predictedIdOverride: hudPredicted,
         });
         setConfusionEvents((prev) => [...prev, event].slice(-200));
         if (calibrationAutoSaveRef.current) {
@@ -592,16 +607,6 @@ export default function App() {
         }
       }
 
-      const sizedRaw = applySizeConstrainedFallback(
-        peek.matches,
-        items,
-        selectedSizesRef.current,
-      );
-      const next = applyLiveConsensus(liveConsensusRef.current, {
-        matches: sizedRaw,
-        onsetMs: peek.onsetMs,
-      });
-      liveConsensusRef.current = next;
       const sized = next.matches;
       if (!sized.length || next.soundId == null) return;
       const pool = buildBestGuessPool(sized, items, {
@@ -1096,10 +1101,10 @@ export default function App() {
       setConfusionEvents((prev) => [...prev, event].slice(-200));
       // Always POST numbers-only diagnostics for community confusion stats.
       uploadMissReport(event, true);
-      // Surface panel so player can Copy JSON / Download Clip WAV (local).
+      // Enable Advanced logger quietly — keep accordion collapsed (Report issue
+      // is the happy path; power users expand on demand for Copy / WAV).
       setCalibrationDebug(true);
       writeCalibrationDebugPref(true);
-      setCalibrationPanelOpen(true);
     },
     [raidSnapshot, sessionId, uploadMissReport],
   );
@@ -1913,6 +1918,9 @@ export default function App() {
       return;
     }
     const keepMulti = matcherRef.current.isMultiContinuousArmed();
+    // Drop live peek immediately so Report / HUD bind only to Stop & Match lock.
+    setLivePreview(null);
+    liveConsensusRef.current = emptyLiveConsensus();
     setRecordingMove(keepMulti);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
@@ -2074,7 +2082,8 @@ export default function App() {
   function setCalibrationDebugPref(on: boolean) {
     setCalibrationDebug(on);
     writeCalibrationDebugPref(on);
-    if (on) setCalibrationPanelOpen(true);
+    // Stay collapsed by default when enabling — Brent/power users expand on demand.
+    if (!on) setCalibrationPanelOpen(false);
   }
 
   function startOver() {

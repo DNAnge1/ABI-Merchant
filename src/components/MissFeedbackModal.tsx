@@ -11,13 +11,14 @@ export function MissFeedbackModal(props: {
   onDownloadWav?: () => void;
   hasCaptureWav?: boolean;
 }) {
-  const [soundId, setSoundId] = useState(props.predictedSoundId);
+  /** Actual pick starts empty so it is not confused with Predicted lock. */
+  const [soundId, setSoundId] = useState<number | ''>('');
   const [itemId, setItemId] = useState<number | ''>('');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!props.open) return;
-    setSoundId(props.predictedSoundId);
+    setSoundId('');
     setItemId('');
     setSending(false);
   }, [props.open, props.predictedSoundId]);
@@ -28,7 +29,10 @@ export function MissFeedbackModal(props: {
   }, [props.items]);
 
   const itemsForSound = useMemo(
-    () => props.items.filter((i) => i.soundId === soundId),
+    () =>
+      soundId === ''
+        ? []
+        : props.items.filter((i) => i.soundId === soundId),
     [props.items, soundId],
   );
 
@@ -45,8 +49,21 @@ export function MissFeedbackModal(props: {
       <div className="w-full max-w-md rounded border border-[var(--border)] bg-[var(--bg-elevated)] p-4 shadow-xl">
         <h3 className="m-0 text-sm font-semibold text-[var(--text)]">Report issue</h3>
         <p className="m-0 mt-1 text-[11px] text-[var(--muted)] leading-snug">
-          We guessed Group #{props.predictedSoundId}. Pick what you actually got, then Send.
-          We upload diagnostics only (top 5, expected rank, onset/RMS, map/mode) —{' '}
+          Bound to the <strong className="text-[var(--text)]">final Stop &amp; Match lock</strong>
+          — not the live narrowing peek.
+        </p>
+        <div
+          className="mt-2 rounded border border-[var(--accent)]/40 bg-[var(--accent-dim)]/15 px-2.5 py-1.5 text-[12px] text-[var(--text)]"
+          data-predicted-lock
+        >
+          <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+            Predicted lock
+          </span>
+          <div className="font-semibold tabular-nums">Group #{props.predictedSoundId}</div>
+        </div>
+        <p className="m-0 mt-2 text-[11px] text-[var(--muted)] leading-snug">
+          Pick what you actually got, then Send. We upload diagnostics only (top 5, expected
+          rank, onset/RMS, map/mode) —{' '}
           <strong className="text-[var(--text)]">no audio leaves your device</strong>.
         </p>
 
@@ -61,15 +78,16 @@ export function MissFeedbackModal(props: {
         )}
 
         <label className="mt-3 flex flex-col gap-1 text-[11px] text-[var(--muted)]">
-          Actual Group #
+          Actual Group # (what you really got)
           <select
-            value={soundId}
+            value={soundId === '' ? '' : String(soundId)}
             onChange={(e) => {
-              setSoundId(Number(e.target.value));
+              setSoundId(e.target.value === '' ? '' : Number(e.target.value));
               setItemId('');
             }}
             className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-xs text-[var(--text)]"
           >
+            <option value="">— pick actual —</option>
             {soundOptions.map((id) => (
               <option key={id} value={id}>
                 Group {id}
@@ -104,8 +122,9 @@ export function MissFeedbackModal(props: {
           </button>
           <button
             type="button"
-            disabled={sending}
+            disabled={sending || soundId === ''}
             onClick={() => {
+              if (soundId === '') return;
               const item = itemsForSound.find((i) => i.id === itemId);
               setSending(true);
               props.onSubmit({

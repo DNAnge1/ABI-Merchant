@@ -63,7 +63,7 @@ After a lock (or best guess):
 
 Size checkboxes only list sizes in the locked sound group. Wrong size → 0% / excluded; remaining % are redistributed.
 
-👍 / 👎 / Skip help calibration (optional).
+👍 / 👎 / Skip help calibration (optional). Votes also sync in the background to a Cloudflare Worker for community accuracy stats; localStorage still works if the Worker is offline.
 
 ---
 
@@ -91,6 +91,7 @@ Shipped **in this repo** for GitHub Pages — **no live CDN calls required** for
 | Thing | Why |
 |---|---|
 | Maintainer `npm run extract` against abibuilder / Wayback | Refresh pools when the season changes — **not** used by the live Pages site |
+| Community 👍/👎 Worker (`abi-merchant-counter`) | Fire-and-forget tallies; UI never depends on it |
 | External links in the footer / README | Attribution only |
 
 If hexaov91 or abibuilder move or go down, **players are fine** until the next data refresh; only maintainers re-running extract need those hosts.
@@ -129,4 +130,8 @@ Footer shows `v{package.json}`. Pre-publish: `0.9.<PR#>`.
 
 ### Pages deploy
 
-`.github/workflows/deploy-pages.yml` on `main`: verifies committed JSON + 76 OGGs + 189 icons → `GITHUB_PAGES=1 npm run build` → deploy `dist/`.
+`.github/workflows/deploy-pages.yml` on `main`: verifies committed JSON + 76 OGGs + 189 icons → `GITHUB_PAGES=1 npm run build` → deploy `dist/`. The `/worker` folder is ignored by Vite (not part of Pages).
+
+### Cloudflare Worker (community votes)
+
+See [`worker/README.md`](worker/README.md). Brent deploys with `wrangler` (login + D1 migrate + deploy); no tokens live in this repo.

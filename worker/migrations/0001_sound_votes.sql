@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS sound_votes (
+  sound_id INTEGER PRIMARY KEY,
+  up_count INTEGER NOT NULL DEFAULT 0,
+  down_count INTEGER NOT NULL DEFAULT 0
+);

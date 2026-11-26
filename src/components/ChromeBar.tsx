@@ -10,6 +10,8 @@ export function ChromeBar(props: {
   onStartListening: () => void;
   onStopListening: () => void;
   onRetest?: () => void;
+  /** Open Suggestions board (not Catch HUD) */
+  onOpenSuggestions?: () => void;
 }) {
   const autoActive = props.mode === 'automatic' && props.screen !== 'manual';
   const showListenToggle =
@@ -68,6 +70,17 @@ export function ChromeBar(props: {
               Manual
             </button>
           </div>
+
+          {props.onOpenSuggestions && (
+            <button
+              type="button"
+              onClick={props.onOpenSuggestions}
+              className="rounded px-2.5 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+              title="Suggestions board"
+            >
+              💡 Suggestions
+            </button>
+          )}
 
           <button
             type="button"

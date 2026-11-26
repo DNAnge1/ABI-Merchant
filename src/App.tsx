@@ -29,6 +29,7 @@ import {
   type TroubleSection,
 } from './components/TroubleshootingPage';
 import { WipAccuracyBanner } from './components/WipAccuracyBanner';
+import { SuggestionsModal } from './components/SuggestionsModal';
 import type { SingleLoopPhase } from './components/SingleItemLoop';
 import {
   analyserFftSize,
@@ -186,6 +187,7 @@ export default function App() {
   const [micBusy, setMicBusy] = useState(false);
   const [selftestOpen, setSelftestOpen] = useState(false);
   const [selftestRunning, setSelftestRunning] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [selftestProgress, setSelftestProgress] = useState<{
     done: number;
     total: number;
@@ -1602,8 +1604,11 @@ export default function App() {
           onStartListening={() => void startCapture()}
           onStopListening={() => void stopCapture()}
           onRetest={() => void retestListening()}
+          onOpenSuggestions={() => setSuggestionsOpen(true)}
         />
       )}
+
+      <SuggestionsModal open={suggestionsOpen} onClose={() => setSuggestionsOpen(false)} />
 
       <SelftestPanel
         open={selftestOpen}
@@ -2175,8 +2180,17 @@ export default function App() {
         }}
       />
 
-      <footer className="mt-auto border-t border-[var(--border)] px-3 py-3 text-center space-y-1">
+      <footer className="mt-auto border-t border-[var(--border)] px-3 py-3 text-center space-y-1.5">
         <div className="text-[11px] tabular-nums text-[var(--muted)]">v{__APP_VERSION__}</div>
+        <div>
+          <button
+            type="button"
+            onClick={() => setSuggestionsOpen(true)}
+            className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
+          >
+            💡 Suggestions
+          </button>
+        </div>
         <p className="m-0 mx-auto max-w-xl text-[10px] leading-snug text-[var(--muted)]">
           Independent fan companion — not affiliated with Morefun Studios, Tencent Games, or ABI
           Builder. Catalog courtesy of the public explorer at{' '}

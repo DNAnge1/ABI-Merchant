@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { browserFixSteps, detectBrowser, type VerifyState } from '../utils/browserAudio';
 import { EXCLUSIVE_MODE_STEPS } from '../utils/micCapture';
 import { MicLoopbackFallback } from './MicLoopbackFallback';
@@ -101,8 +102,20 @@ export function AudioVerifyPanel(props: {
   onRetestListening?: () => void;
   /** Return to Entry and wipe error UI. */
   onStartOver?: () => void;
+  /** Wipe error state (chip goes away). Close alone keeps the reopen chip. */
+  onClear?: () => void;
 }) {
-  if (!props.open) return null;
+  const { open, onClose } = props;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!props.open || typeof document === 'undefined') return null;
   const browser = detectBrowser();
   const steps = browserFixSteps(browser);
   const failed =
@@ -124,13 +137,30 @@ export function AudioVerifyPanel(props: {
     if (props.onRetestListening) props.onRetestListening();
     else props.onRetry();
   };
+  const clearAndClose = () => {
+    (props.onClear ?? props.onClose)();
+  };
 
-  return (
-    <div className="border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 py-3">
+  // Centered modal — never a sticky top red/verify strip.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[55] flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={failed ? 'Audio setup error' : 'Verify audio access'}
+      data-verify-modal
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/65 border-none cursor-pointer"
+        aria-label="Close"
+        onClick={props.onClose}
+      />
+      <div className="relative w-full max-w-lg max-h-[85vh] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-xl px-3 py-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="m-0 text-sm font-semibold tracking-wide text-[var(--accent)]">
-            Verify audio access
+            {failed ? 'Audio setup error' : 'Verify audio access'}
           </h2>
           {!failed && (
             <p className="m-0 mt-1 text-[12px] text-[var(--muted)] max-w-2xl leading-relaxed">
@@ -142,13 +172,24 @@ export function AudioVerifyPanel(props: {
             Browser: <span className="text-[var(--text)]">{browser.label}</span>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={props.onClose}
-          className="rounded px-2.5 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--text)] border border-transparent hover:border-[var(--border)] shrink-0"
-        >
-          Clear & close
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {failed && props.onClear && (
+            <button
+              type="button"
+              onClick={clearAndClose}
+              className="rounded px-2.5 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--text)] border border-[var(--border)]"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded px-2.5 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--text)] border border-[var(--border)]"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {failed && (
@@ -348,7 +389,7 @@ export function AudioVerifyPanel(props: {
             )}
             <button
               type="button"
-              onClick={props.onClose}
+              onClick={clearAndClose}
               className="rounded px-2.5 py-1 text-[11px] border border-[var(--border)] text-[var(--muted)]"
             >
               Done with verify
@@ -378,7 +419,9 @@ export function AudioVerifyPanel(props: {
             </ol>
           </details>
         )}
-    </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

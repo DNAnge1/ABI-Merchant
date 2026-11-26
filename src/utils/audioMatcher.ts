@@ -1709,14 +1709,15 @@ export class AudioMatcher {
    * Scores the current analyser buffer without stopping or clearing it
    * (PCM live300 tee keeps filling until Stop & Match).
    *
-   * Silence / no real onset → [] so the UI freezes the last solid match
+   * Silence / no real onset → null so the UI freezes the last solid match
    * (never invent from quiet floor noise). Rapid clicks: only the latest
    * clean onset window is scored (sliding window; no multi-spike smear).
+   * `onsetMs` lets the UI reset sticky Group ID only on a new clean onset.
    */
-  peekBurstMatches(): MatchResult[] {
-    if (!this.burstRecording || !this.analyser || !this.ctx) return [];
+  peekBurstMatches(): { matches: MatchResult[]; onsetMs: number } | null {
+    if (!this.burstRecording || !this.analyser || !this.ctx) return null;
     const frames = this.burstFrames.slice();
-    if (frames.length < 12) return [];
+    if (frames.length < 12) return null;
 
     const sortedRms = frames.map((f) => f.rms).sort((a, b) => a - b);
     const p20 =
@@ -1756,7 +1757,7 @@ export class AudioMatcher {
         break;
       }
     }
-    if (!chosen.length) return [];
+    if (!chosen.length) return null;
 
     const LIVE300_PRE_MS = 16;
     const LIVE300_POST_MS = 280;
@@ -1781,7 +1782,7 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    return rankMatchesWithPriors(
+    const matches = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
@@ -1797,6 +1798,8 @@ export class AudioMatcher {
         capturedCentroid: centroid,
       }))
       .slice(0, 5);
+
+    return { matches, onsetMs: c.t };
   }
 
   getShopPhase() {

@@ -225,6 +225,7 @@ export function TacticalResultCard(props: {
         props.compact ? 'p-2.5' : 'p-3 sm:p-4',
       ].join(' ')}
       data-tactical-result="catch-hud"
+      data-live-primary-sound={props.livePreview ? String(props.soundId) : undefined}
       aria-live="polite"
     >
       {/* Metric hierarchy: Match Confidence · Red Chance · EV */}

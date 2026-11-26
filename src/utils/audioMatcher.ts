@@ -1645,6 +1645,113 @@ export class AudioMatcher {
     return this.burstRecording;
   }
 
+  /**
+   * Live rolling preview while a move burst is recording.
+   * Scores the current analyser buffer without stopping or clearing it
+   * (PCM live300 tee keeps filling until Stop & Match).
+   * Returns [] when not recording or the buffer is still too thin.
+   */
+  peekBurstMatches(): MatchResult[] {
+    if (!this.burstRecording || !this.analyser || !this.ctx) return [];
+    const frames = this.burstFrames.slice();
+    if (frames.length < 12) return [];
+
+    const sortedRms = frames.map((f) => f.rms).sort((a, b) => a - b);
+    const p20 =
+      sortedRms[Math.min(sortedRms.length - 1, Math.floor(sortedRms.length * 0.2))] ??
+      0;
+    const p90 =
+      sortedRms[Math.min(sortedRms.length - 1, Math.floor(sortedRms.length * 0.9))] ??
+      0;
+    const effectiveBaseline = Math.min(this.rmsBaseline || p20, p20 * 1.1);
+    const threshold = Math.max(
+      effectiveBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
+      effectiveBaseline * 1.12 + 0.003,
+      Math.min(p90 * 0.65, effectiveBaseline + 0.04),
+    );
+
+    const peaks: BurstFrame[] = [];
+    for (let i = 1; i < frames.length - 1; i++) {
+      const f = frames[i];
+      if (f.rms >= threshold && f.rms >= frames[i - 1].rms && f.rms >= frames[i + 1].rms) {
+        peaks.push(f);
+      }
+    }
+    peaks.sort((a, b) => b.rms - a.rms);
+    const MAX_SPIKES = 3;
+    const chosen: BurstFrame[] = [];
+    for (const p of peaks) {
+      if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
+      chosen.push(p);
+      if (chosen.length >= MAX_SPIKES) break;
+    }
+    if (!chosen.length) {
+      const loud = [...frames].sort((a, b) => b.rms - a.rms);
+      for (const f of loud) {
+        if (f.rms < threshold * 0.85) break;
+        if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
+        chosen.push(f);
+        if (chosen.length >= MAX_SPIKES) break;
+      }
+    }
+    if (!chosen.length) {
+      chosen.push(...[...frames].sort((a, b) => b.rms - a.rms).slice(0, MAX_SPIKES));
+    }
+    if (!chosen.length) return [];
+
+    const LIVE300_PRE_MS = 16;
+    const LIVE300_POST_MS = 280;
+    const bands = chosen[0].spectrum.length;
+    const avg = new Array(bands).fill(0);
+    let centroidSum = 0;
+    let windowsUsed = 0;
+    const candidates =
+      this.candidateSoundIds.length > 0
+        ? this.candidateSoundIds
+        : Object.keys(this.fingerprints.fingerprints).map(Number);
+
+    for (const c of chosen) {
+      const win = frames.filter(
+        (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+      );
+      const slice = win.length > 0 ? win : [c];
+      const local = new Array(bands).fill(0);
+      let localCentroid = 0;
+      for (const f of slice) {
+        for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
+        localCentroid += f.centroid;
+      }
+      for (let i = 0; i < bands; i++) {
+        local[i] /= slice.length;
+        avg[i] += local[i];
+      }
+      centroidSum += localCentroid / slice.length;
+      windowsUsed += 1;
+    }
+    const denom = Math.max(windowsUsed, 1);
+    for (let i = 0; i < bands; i++) avg[i] /= denom;
+    const max = Math.max(...avg, 1e-9);
+    const spectrumVector = avg.map((v) => v / max);
+    const centroid = centroidSum / denom;
+
+    return rankMatchesWithPriors(
+      matchSpectrumAgainstFingerprints(
+        spectrumVector,
+        this.fingerprints,
+        candidates,
+        this.kind,
+        centroid,
+      ),
+      centroid,
+    )
+      .map((m) => ({
+        ...m,
+        spectrumVector,
+        capturedCentroid: centroid,
+      }))
+      .slice(0, 5);
+  }
+
   getShopPhase() {
     return this.shopPhase;
   }

@@ -259,6 +259,53 @@ export default function App() {
     if (mapModeId) trackCommunityMapMode(mapModeId);
   }, [mapModeId]);
 
+  // Hidden screenshot/demo seed: ?catchDemo=1 jumps to Catch with a Group #8 best-guess card.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('catchDemo') !== '1') return;
+    setMode('automatic');
+    setMonitorSetup('single');
+    setScanStyle('single');
+    setShellScreen('listen');
+    setWizardStep('listen');
+    const demoIds = [8, 14, 2];
+    const matches: MatchResult[] = demoIds.map((soundId, i) => {
+      const groupItems = items.filter((it) => it.soundId === soundId);
+      return {
+        soundId,
+        confidence: [98.4, 96.4, 92.2][i] ?? 80,
+        kind: 'pickup' as const,
+        items: groupItems,
+        spectralCentroid: 3200,
+      };
+    });
+    const pool = buildBestGuessPool(matches, items, {
+      topN: DEFAULT_TOP_N,
+      lowConfidence: true,
+    });
+    if (!pool) return;
+    const top = matches[0];
+    setLocked({
+      match: {
+        ...top,
+        soundId: pool.primary.soundId,
+        confidence: pool.primary.confidence,
+        kind: pool.primary.kind,
+        items: pool.primary.items,
+      },
+      alt: matches,
+      spectrumVector: [],
+      capturedCentroid: 3200,
+      redPct: redLikelihoodPercent(pool.primary.items),
+      redChancePercent: pool.redChancePercent,
+      resultItems: pool.primary.items,
+      lowConfidence: true,
+      rankedCandidates: pool.candidates,
+      isolatedItem: pool.isolatedItem,
+    });
+  }, []);
+
   // Live rolling match while burst is recording — no blind Stop.
   useEffect(() => {
     if (!recordingMove) {

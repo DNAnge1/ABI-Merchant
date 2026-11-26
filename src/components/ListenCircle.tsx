@@ -1,7 +1,16 @@
 /**
- * Premium mid-screen teal-ring CTA.
- * Multi: always-visible moveCount/3. Single: no fake 0/3 — burst via Stop & Match.
+ * Premium mid-screen state circle for Catch.
+ * States: Start Listening → At Shop → Start Moving (red pulse) → Recording/live.
+ * Multi: always-visible moveCount/3. Single: burst via Stop & Match.
  */
+
+export type CatchCircleState =
+  | 'idle'
+  | 'listening'
+  | 'at-shop'
+  | 'moving'
+  | 'matching';
+
 export function ListenCircle(props: {
   capturing: boolean;
   multiMode: boolean;
@@ -20,12 +29,75 @@ export function ListenCircle(props: {
   onStopMulti?: () => void;
   recordingMove?: boolean;
   calibrating?: boolean;
+  /** Live rolling preview is updating */
+  liveNarrowing?: boolean;
 }) {
   const targetN = props.targetN ?? 3;
   const moveCount = props.capturing ? props.moveCount : 0;
 
+  const circleState: CatchCircleState = !props.capturing
+    ? 'idle'
+    : props.multiMode && props.multiPhase === 'matching'
+      ? 'matching'
+      : props.recordingMove
+        ? 'moving'
+        : props.atShop
+          ? 'at-shop'
+          : 'listening';
+
+  const ringClass =
+    circleState === 'moving'
+      ? 'border-[var(--mythic)] bg-[var(--mythic)]/10 catch-pulse-red'
+      : circleState === 'matching'
+        ? 'border-[var(--warn)] bg-[var(--warn)]/10'
+        : circleState === 'at-shop'
+          ? 'border-[var(--ok)] bg-[var(--ok)]/10'
+          : circleState === 'listening'
+            ? 'border-[var(--listening)] bg-[var(--listening)]/10'
+            : 'border-[var(--accent)] bg-[var(--accent)]/10 hover:bg-[var(--accent)]/15';
+
+  const titleClass =
+    circleState === 'moving'
+      ? 'text-[var(--mythic)]'
+      : circleState === 'matching'
+        ? 'text-[var(--warn)]'
+        : circleState === 'at-shop'
+          ? 'text-[var(--ok)]'
+          : circleState === 'listening'
+            ? 'text-[var(--listening)]'
+            : 'text-[var(--accent)]';
+
+  const headline = !props.capturing
+    ? 'Start Listening'
+    : circleState === 'moving'
+      ? props.liveNarrowing
+        ? 'Live narrowing…'
+        : 'Moving item…'
+      : circleState === 'matching'
+        ? 'Matching…'
+        : circleState === 'at-shop'
+          ? 'At Shop'
+          : 'Listening';
+
+  const sub =
+    !props.capturing
+      ? 'Ready at Field Merchant'
+      : props.multiMode
+        ? props.multiArmed
+          ? props.multiPhase === 'matching'
+            ? 'Matching…'
+            : props.multiPhase === 'cooldown'
+              ? 'Cooldown'
+              : 'Multi waits for 3'
+          : 'Arm Multi, then move 3×'
+        : circleState === 'moving'
+          ? 'Drag cargo — results update live'
+          : circleState === 'at-shop'
+            ? 'Start Moving Item when ready'
+            : 'At Shop when you reach the merchant';
+
   return (
-    <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] px-5 py-7 text-center">
+    <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-panel)] px-5 py-5 text-center">
       <div className="flex flex-col items-center gap-3">
         <button
           type="button"
@@ -33,18 +105,12 @@ export function ListenCircle(props: {
             props.capturing ? props.onStopListening() : props.onStartListening()
           }
           className={[
-            'w-[196px] h-[196px] rounded-full border-[2.5px] flex flex-col items-center justify-center gap-1.5 p-4',
-            props.capturing
-              ? 'border-[var(--listening)] bg-[var(--listening)]/10'
-              : 'border-[var(--accent)] bg-[var(--accent)]/10 hover:bg-[var(--accent)]/15',
+            'w-[180px] h-[180px] rounded-full border-[2.5px] flex flex-col items-center justify-center gap-1.5 p-4',
+            ringClass,
           ].join(' ')}
+          data-catch-state={circleState}
         >
-          <span
-            className={[
-              'text-[15px] font-semibold tracking-tight',
-              props.capturing ? 'text-[var(--listening)]' : 'text-[var(--accent)]',
-            ].join(' ')}
-          >
+          <span className={['text-[13px] font-semibold tracking-tight', titleClass].join(' ')}>
             {props.capturing ? 'Stop listening' : 'Start Listening'}
           </span>
           {props.multiMode ? (
@@ -52,26 +118,39 @@ export function ListenCircle(props: {
               {moveCount}/{targetN}
             </span>
           ) : (
-            <span className="text-[18px] font-semibold tracking-tight text-[var(--text)]">
-              {props.recordingMove ? 'Recording…' : 'Single · burst'}
+            <span className="text-[17px] font-semibold tracking-tight text-[var(--text)]">
+              {headline}
             </span>
           )}
           <span className="text-[10px] font-medium text-[var(--muted)] leading-snug max-w-[140px]">
-            {props.capturing
-              ? props.multiMode
-                ? props.multiArmed
-                  ? props.multiPhase === 'matching'
-                    ? 'Matching…'
-                    : props.multiPhase === 'cooldown'
-                      ? 'Cooldown'
-                      : 'Multi waits for 3'
-                  : 'Arm Multi, then move 3×'
-                : props.recordingMove
-                  ? 'Drag cargo, then Stop & Match'
-                  : 'At Shop → Start Moving → Stop & Match'
-              : 'Ready at Field Merchant'}
+            {sub}
           </span>
         </button>
+
+        {/* State strip: Burst → At Shop → Start Moving */}
+        {props.capturing && !props.multiMode && (
+          <ol
+            className="m-0 p-0 list-none flex flex-wrap justify-center gap-1.5 text-[10px]"
+            aria-label="Catch progress"
+          >
+            <StateChip active={circleState !== 'idle'} done={circleState !== 'listening' || props.atShop}>
+              1 · Burst
+            </StateChip>
+            <StateChip
+              active={circleState === 'at-shop' || circleState === 'moving' || circleState === 'matching'}
+              done={circleState === 'moving' || circleState === 'matching'}
+            >
+              2 · At Shop
+            </StateChip>
+            <StateChip
+              active={circleState === 'moving' || circleState === 'matching'}
+              done={circleState === 'matching'}
+              hot={circleState === 'moving'}
+            >
+              3 · Moving
+            </StateChip>
+          </ol>
+        )}
 
         {props.capturing && (
           <div className="flex flex-wrap justify-center gap-2">
@@ -129,7 +208,12 @@ export function ListenCircle(props: {
                 type="button"
                 disabled={props.calibrating}
                 onClick={props.onStartMove}
-                className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)] disabled:opacity-50"
+                className={[
+                  'rounded px-3 py-1.5 text-[11px] font-semibold border',
+                  props.atShop
+                    ? 'bg-[var(--mythic)] text-white border-transparent catch-pulse-red-btn'
+                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]',
+                ].join(' ')}
               >
                 2. Start Moving Item
               </button>
@@ -146,5 +230,29 @@ export function ListenCircle(props: {
         )}
       </div>
     </div>
+  );
+}
+
+function StateChip(props: {
+  children: string;
+  active?: boolean;
+  done?: boolean;
+  hot?: boolean;
+}) {
+  return (
+    <li
+      className={[
+        'rounded-full px-2 py-0.5 border',
+        props.hot
+          ? 'border-[var(--mythic)]/60 bg-[var(--mythic)]/15 text-[var(--mythic)]'
+          : props.done
+            ? 'border-[var(--ok)]/40 bg-[var(--ok)]/10 text-[var(--ok)]'
+            : props.active
+              ? 'border-[var(--accent)]/50 text-[var(--accent)]'
+              : 'border-[var(--border)] text-[var(--muted)]',
+      ].join(' ')}
+    >
+      {props.children}
+    </li>
   );
 }

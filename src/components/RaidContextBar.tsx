@@ -2,8 +2,7 @@ import type { MapModeOption } from '../utils/raidPools';
 import { formatKoen } from '../utils/raidPools';
 
 /**
- * Sticky raid context: map/mode + cargo type/price while listening or in Manual.
- * Keeps teal shell; compact so it doesn't fight the tactical HUD.
+ * Sticky raid context. Catch HUD uses map/mode only; Manual keeps cargo type/price.
  */
 export function RaidContextBar(props: {
   mapModes: MapModeOption[];
@@ -13,6 +12,8 @@ export function RaidContextBar(props: {
   cargoType: string;
   cargoPrice: number | '';
   sticky?: boolean;
+  /** Catch HUD: map/mode only (cargo price lives as pills in the result card). */
+  mapModeOnly?: boolean;
   onChange: (patch: {
     mapModeId?: string;
     cargoType?: string;
@@ -20,6 +21,7 @@ export function RaidContextBar(props: {
   }) => void;
 }) {
   const profileHint = props.mapModes.find((m) => m.id === props.mapModeId);
+  const mapModeOnly = props.mapModeOnly === true;
 
   return (
     <section
@@ -28,6 +30,7 @@ export function RaidContextBar(props: {
         props.sticky ? 'sticky top-0 z-20 backdrop-blur-sm shadow-sm' : '',
       ].join(' ')}
       data-raid-context
+      data-map-mode-only={mapModeOnly ? '1' : undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <h2 className="m-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -40,7 +43,12 @@ export function RaidContextBar(props: {
         )}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div
+        className={[
+          'grid gap-2',
+          mapModeOnly ? 'sm:grid-cols-1 max-w-md' : 'sm:grid-cols-3',
+        ].join(' ')}
+      >
         <label className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
             Map / mode
@@ -59,50 +67,55 @@ export function RaidContextBar(props: {
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            Cargo type
-          </span>
-          <select
-            value={props.cargoType}
-            onChange={(e) => props.onChange({ cargoType: e.target.value })}
-            className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)]"
-          >
-            <option value="">Any type</option>
-            {props.cargoTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!mapModeOnly && (
+          <>
+            <label className="flex flex-col gap-1 min-w-0">
+              <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                Cargo type
+              </span>
+              <select
+                value={props.cargoType}
+                onChange={(e) => props.onChange({ cargoType: e.target.value })}
+                className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)]"
+              >
+                <option value="">Any type</option>
+                {props.cargoTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label className="flex flex-col gap-1 min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            Cargo price
-          </span>
-          <select
-            value={props.cargoPrice === '' ? '' : String(props.cargoPrice)}
-            onChange={(e) =>
-              props.onChange({
-                cargoPrice: e.target.value === '' ? '' : Number(e.target.value),
-              })
-            }
-            className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)]"
-          >
-            <option value="">Any price</option>
-            {props.cargoPrices.map((p) => (
-              <option key={p} value={p}>
-                {formatKoen(p)}
-              </option>
-            ))}
-          </select>
-        </label>
+            <label className="flex flex-col gap-1 min-w-0">
+              <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                Cargo price
+              </span>
+              <select
+                value={props.cargoPrice === '' ? '' : String(props.cargoPrice)}
+                onChange={(e) =>
+                  props.onChange({
+                    cargoPrice: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+                className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)]"
+              >
+                <option value="">Any price</option>
+                {props.cargoPrices.map((p) => (
+                  <option key={p} value={p}>
+                    {formatKoen(p)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
       </div>
 
       <p className="m-0 mt-2 text-[10px] text-[var(--muted)] leading-snug">
-        Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure —
-        results still work from sound + size.
+        {mapModeOnly
+          ? 'Map/mode sets pool weights for Red Chance and EV. Size and cargo price pills live on the result card.'
+          : 'Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure — results still work from sound + size.'}
       </p>
     </section>
   );

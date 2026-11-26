@@ -1,6 +1,6 @@
 /**
- * Phase 3 — dark tactical probability HUD for the active scan result card.
- * EZ Red–style: Red Chance header, rarity-border thumbnail grid, % + size badges.
+ * Dark tactical probability HUD for the Catch result card.
+ * Hierarchy: Match Confidence · Red Chance · EV — then tiles + size/price pills.
  */
 
 import type { ReactNode } from 'react';
@@ -46,7 +46,9 @@ function HudTile(props: {
   const src = props.hideImages ? null : itemImage(props.item);
   const border = rarityHueBorderClass(hue);
   const pct = props.item.displayPct;
-  const box = props.compact ? 'w-[4.5rem] h-[4.5rem]' : 'w-[5.75rem] h-[5.75rem] sm:w-[6.5rem] sm:h-[6.5rem]';
+  const box = props.compact
+    ? 'w-[4.5rem] h-[4.5rem]'
+    : 'w-[5.75rem] h-[5.75rem] sm:w-[6.5rem] sm:h-[6.5rem]';
 
   return (
     <article
@@ -59,7 +61,7 @@ function HudTile(props: {
           : '',
         hue === 'red' ? 'bg-[#1a0c10]/80' : '',
       ].join(' ')}
-      title={`${props.item.name} · ${formatPct(pct)}`}
+      title={`${props.item.name} · ${formatPct(pct)} · ${formatPrice(props.item.contactPrice)}`}
       data-hud-tile
       data-rarity={hue}
     >
@@ -82,12 +84,10 @@ function HudTile(props: {
         </div>
       )}
 
-      {/* Size badge — top-left */}
       <span className="absolute top-0.5 left-0.5 rounded px-1 py-[1px] text-[8px] font-bold tabular-nums bg-black/75 text-[var(--text)] border border-white/10 leading-none">
         {props.item.size}
       </span>
 
-      {/* Probability — top-right */}
       <span
         className={[
           'absolute top-0.5 right-0.5 rounded px-1 py-[1px] text-[9px] font-bold tabular-nums bg-black/80 leading-none',
@@ -101,11 +101,15 @@ function HudTile(props: {
         {formatPct(pct)}
       </span>
 
-      {/* Name overlay — bottom */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-1 pb-1 pt-4">
         <div className="text-[9px] font-semibold leading-tight text-white line-clamp-2 drop-shadow">
           {props.item.name}
         </div>
+        {props.item.contactPrice > 0 && (
+          <div className="text-[8px] tabular-nums text-[var(--accent)]/90">
+            {formatPrice(props.item.contactPrice)}
+          </div>
+        )}
       </div>
     </article>
   );
@@ -144,6 +148,37 @@ function SideRow(props: { item: ScoredItem; lockedHighlight?: boolean }) {
   );
 }
 
+function MetricBlock(props: {
+  value: string;
+  label: string;
+  valueClass?: string;
+  labelClass?: string;
+  large?: boolean;
+  title?: string;
+}) {
+  return (
+    <div title={props.title}>
+      <div
+        className={[
+          'font-bold tabular-nums leading-none tracking-tight',
+          props.large ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl',
+          props.valueClass ?? 'text-white',
+        ].join(' ')}
+      >
+        {props.value}
+      </div>
+      <div
+        className={[
+          'mt-1 font-semibold uppercase tracking-[0.12em] text-[10px] sm:text-[11px]',
+          props.labelClass ?? 'text-[var(--muted)]',
+        ].join(' ')}
+      >
+        {props.label}
+      </div>
+    </div>
+  );
+}
+
 export function TacticalResultCard(props: {
   items: ScoredItem[];
   redChancePercent: number;
@@ -154,18 +189,23 @@ export function TacticalResultCard(props: {
   hideImages?: boolean;
   /** Compact grid for earlier Multi slots */
   compact?: boolean;
-  /** Optional subtitle under Red Chance */
+  /** Optional subtitle under metrics */
   meta?: string;
   /** Expected Koen value of remaining candidates */
   expectedValue?: number | null;
   /** Payback % vs cargo price (100 = break-even) */
   paybackPercent?: number | null;
+  /** Live rolling preview (not a firm lock) */
+  livePreview?: boolean;
+  /** Size / price filter pills rendered inside the card */
+  pills?: ReactNode;
   children?: ReactNode;
 }) {
   const sorted = sortHudItems(props.items);
   const isolatedLock = props.isolatedItem === true && !props.lowConfidence;
   const alone = isolatedLock && sorted.length === 1;
   const redChance = props.redChancePercent;
+  const matchConf = props.audioConfidence;
   const showGrid = sorted.length > 0;
   const showEv =
     props.expectedValue != null && props.expectedValue >= 0 && !props.compact;
@@ -175,43 +215,71 @@ export function TacticalResultCard(props: {
       className={[
         'rounded-xl border overflow-hidden',
         'bg-[rgba(8,10,14,0.92)] backdrop-blur-sm',
-        props.lowConfidence
-          ? 'border-[var(--warn)]/45'
-          : redChance > 0
-            ? 'border-[var(--mythic)]/40'
-            : 'border-[var(--border)]',
+        props.livePreview
+          ? 'border-[var(--listening)]/50'
+          : props.lowConfidence
+            ? 'border-[var(--warn)]/45'
+            : redChance > 0
+              ? 'border-[var(--mythic)]/40'
+              : 'border-[var(--border)]',
         props.compact ? 'p-2.5' : 'p-3 sm:p-4',
       ].join(' ')}
-      data-tactical-result="phase3"
+      data-tactical-result="catch-hud"
       aria-live="polite"
     >
-      {/* Red Chance header — TL;DR */}
+      {/* Metric hierarchy: Match Confidence · Red Chance · EV */}
       <header
-        className="flex flex-wrap items-end justify-between gap-2 mb-3"
-        data-metric="red-chance"
+        className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-3"
+        data-metric="hierarchy"
       >
-        <div>
-          <div
-            className={[
-              'font-bold tabular-nums leading-none tracking-tight',
-              props.compact ? 'text-2xl' : 'text-4xl sm:text-5xl',
-              redChance > 0 ? 'text-white' : 'text-[var(--muted)]',
-            ].join(' ')}
-          >
-            {formatPct(redChance)}
-          </div>
-          <div
-            className={[
-              'mt-1 font-semibold uppercase tracking-[0.14em]',
-              props.compact ? 'text-[9px]' : 'text-[11px]',
-              redChance > 0 ? 'text-[var(--mythic)]' : 'text-[var(--muted)]',
-            ].join(' ')}
-          >
-            Red Chance
-          </div>
-        </div>
-        <div className="text-right space-y-1">
-          {props.lowConfidence && (
+        <MetricBlock
+          value={formatPct(matchConf)}
+          label="Match Confidence"
+          large={!props.compact}
+          valueClass={
+            matchConf >= 90
+              ? 'text-[var(--ok)]'
+              : matchConf >= 70
+                ? 'text-white'
+                : 'text-[var(--warn)]'
+          }
+          labelClass="text-[var(--accent)]"
+          title="Audio match confidence for this sound group (not Red Chance)"
+        />
+        <MetricBlock
+          value={formatPct(redChance)}
+          label="Red Chance"
+          valueClass={redChance > 0 ? 'text-white' : 'text-[var(--muted)]'}
+          labelClass={redChance > 0 ? 'text-[var(--mythic)]' : 'text-[var(--muted)]'}
+          title="Probability a Mythic/red item is in the remaining pool — not match confidence"
+        />
+        {showEv && (
+          <MetricBlock
+            value={formatPrice(props.expectedValue!)}
+            label="Expected Value"
+            valueClass="text-[var(--accent)]"
+          />
+        )}
+        {showEv && props.paybackPercent != null && (
+          <MetricBlock
+            value={formatPct(props.paybackPercent)}
+            label="Payback"
+            valueClass={
+              props.paybackPercent >= 100 ? 'text-[var(--ok)]' : 'text-[var(--warn)]'
+            }
+          />
+        )}
+
+        <div className="ml-auto text-right space-y-1 self-start">
+          {props.livePreview && (
+            <span
+              className="inline-block rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border border-[var(--listening)]/55 bg-[var(--listening)]/15 text-[var(--listening)]"
+              data-badge="live-preview"
+            >
+              Live · updating
+            </span>
+          )}
+          {props.lowConfidence && !props.livePreview && (
             <span
               className="inline-block rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border border-[var(--warn)]/55 bg-[var(--warn)]/15 text-[var(--warn)]"
               data-badge="low-confidence"
@@ -225,7 +293,7 @@ export function TacticalResultCard(props: {
             </span>
           )}
           <div className="text-[10px] text-[var(--muted)]">
-            Group #{props.soundId} · {props.audioConfidence}% audio
+            Group #{props.soundId}
           </div>
           {props.meta && (
             <div className="text-[10px] text-[var(--muted)]">{props.meta}</div>
@@ -233,43 +301,15 @@ export function TacticalResultCard(props: {
         </div>
       </header>
 
-      {showEv && (
-        <div
-          className="mb-3 flex flex-wrap gap-3 items-end border-b border-white/8 pb-3"
-          data-metric="ev-payback"
-        >
-          <div>
-            <div className="text-xl sm:text-2xl font-bold tabular-nums text-[var(--accent)] leading-none">
-              {formatPrice(props.expectedValue!)}
-            </div>
-            <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-              Expected value
-            </div>
-          </div>
-          {props.paybackPercent != null && (
-            <div>
-              <div
-                className={[
-                  'text-xl sm:text-2xl font-bold tabular-nums leading-none',
-                  props.paybackPercent >= 100
-                    ? 'text-[var(--ok)]'
-                    : 'text-[var(--warn)]',
-                ].join(' ')}
-              >
-                {formatPct(props.paybackPercent)}
-              </div>
-              <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                Payback
-              </div>
-            </div>
-          )}
+      {props.pills && (
+        <div className="mb-3 pb-3 border-b border-white/8" data-card-pills>
+          {props.pills}
         </div>
       )}
 
       {!showGrid ? (
         <p className="m-0 text-xs text-[var(--muted)]">No candidates in current filters.</p>
       ) : alone ? (
-        /* Confirmed / isolated — single dominant tile */
         <div className="flex justify-center py-2">
           <HudTile
             item={{ ...sorted[0], displayPct: 100 }}
@@ -318,7 +358,6 @@ export function TacticalResultCard(props: {
         </div>
       )}
 
-      {/* Mobile / compact side list under grid */}
       {showGrid && !alone && !props.compact && (
         <ul className="m-0 mt-3 p-0 list-none lg:hidden border-t border-white/8 pt-2">
           {sorted.slice(0, 6).map((item) => (
@@ -352,13 +391,7 @@ export function TacticalSlotChip(props: {
       className="rounded-lg border border-[var(--border)] bg-[rgba(8,10,14,0.88)] p-2 flex gap-2 items-center min-w-0"
       data-tactical-slot="earlier"
     >
-      {top && (
-        <HudTile
-          item={top}
-          hideImages={props.hideImages}
-          compact
-        />
-      )}
+      {top && <HudTile item={top} hideImages={props.hideImages} compact />}
       <div className="min-w-0 flex-1">
         <div
           className={[
@@ -369,7 +402,7 @@ export function TacticalSlotChip(props: {
           {top?.name ?? `Group #${props.soundId}`}
         </div>
         <div className="text-[10px] text-[var(--muted)]">
-          #{props.soundId} · {props.confidence}% audio
+          #{props.soundId} · {props.confidence}% match
           {props.lowConfidence ? ' · guess' : ''}
         </div>
         {red != null && (

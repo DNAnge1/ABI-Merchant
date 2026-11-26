@@ -195,6 +195,8 @@ export default function App() {
   const [selftestReport, setSelftestReport] = useState<SelftestReport | null>(null);
   const [singlePhase, setSinglePhase] = useState<SingleLoopPhase>('ready');
   const [locked, setLocked] = useState<LockedScan | null>(null);
+  /** Live rolling peek while Start Moving / Multi burst (~450ms). */
+  const [livePreview, setLivePreview] = useState<LockedScan | null>(null);
   const [slots, setSlots] = useState<SessionSlot[]>([]);
   const [missOpen, setMissOpen] = useState(false);
   const [missTarget, setMissTarget] = useState<'locked' | string | null>(null);
@@ -256,6 +258,100 @@ export default function App() {
   useEffect(() => {
     if (mapModeId) trackCommunityMapMode(mapModeId);
   }, [mapModeId]);
+
+  // Hidden screenshot/demo seed: ?catchDemo=1 jumps to Catch with a Group #8 best-guess card.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('catchDemo') !== '1') return;
+    setMode('automatic');
+    setMonitorSetup('single');
+    setScanStyle('single');
+    setShellScreen('listen');
+    setWizardStep('listen');
+    const demoIds = [8, 14, 2];
+    const matches: MatchResult[] = demoIds.map((soundId, i) => {
+      const groupItems = items.filter((it) => it.soundId === soundId);
+      return {
+        soundId,
+        confidence: [98.4, 96.4, 92.2][i] ?? 80,
+        kind: 'pickup' as const,
+        items: groupItems,
+        spectralCentroid: 3200,
+      };
+    });
+    const pool = buildBestGuessPool(matches, items, {
+      topN: DEFAULT_TOP_N,
+      lowConfidence: true,
+    });
+    if (!pool) return;
+    const top = matches[0];
+    setLocked({
+      match: {
+        ...top,
+        soundId: pool.primary.soundId,
+        confidence: pool.primary.confidence,
+        kind: pool.primary.kind,
+        items: pool.primary.items,
+      },
+      alt: matches,
+      spectrumVector: [],
+      capturedCentroid: 3200,
+      redPct: redLikelihoodPercent(pool.primary.items),
+      redChancePercent: pool.redChancePercent,
+      resultItems: pool.primary.items,
+      lowConfidence: true,
+      rankedCandidates: pool.candidates,
+      isolatedItem: pool.isolatedItem,
+    });
+  }, []);
+
+  // Live rolling match while burst is recording — no blind Stop.
+  useEffect(() => {
+    if (!recordingMove) {
+      return;
+    }
+    const LIVE_MS = 450;
+    const tick = () => {
+      const matcher = matcherRef.current;
+      if (!matcher?.isBurstRecording()) return;
+      const matches = matcher.peekBurstMatches();
+      if (matches.length === 0) return;
+      const sized = applySizeConstrainedFallback(
+        matches,
+        items,
+        selectedSizesRef.current,
+      );
+      const pool = buildBestGuessPool(sized, items, {
+        topN: DEFAULT_TOP_N,
+        lowConfidence: true,
+      });
+      if (!pool) return;
+      const top = sized[0];
+      const resultItems = pool.primary.items;
+      setLivePreview({
+        match: {
+          ...top,
+          soundId: pool.primary.soundId,
+          confidence: pool.primary.confidence,
+          kind: pool.primary.kind,
+          items: resultItems,
+        },
+        alt: sized.slice(0, DEFAULT_TOP_N),
+        spectrumVector: top.spectrumVector ?? [],
+        capturedCentroid: top.capturedCentroid ?? 0,
+        redPct: redLikelihoodPercent(resultItems),
+        redChancePercent: pool.redChancePercent,
+        resultItems,
+        lowConfidence: true,
+        rankedCandidates: pool.candidates,
+        isolatedItem: pool.isolatedItem,
+      });
+    };
+    tick();
+    const id = window.setInterval(tick, LIVE_MS);
+    return () => window.clearInterval(id);
+  }, [recordingMove]);
 
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
@@ -479,6 +575,7 @@ export default function App() {
       const applied = applyBestGuess(matches, meta);
       if (!applied) return;
       const { lockedScan, pool } = applied;
+      setLivePreview(null);
 
       trackCommunityScan({
         soundId: lockedScan.match.soundId,
@@ -1127,6 +1224,7 @@ export default function App() {
 
   async function stopCapture(opts?: { keepError?: boolean }) {
     await matcherRef.current?.stop({ skipStatus: opts?.keepError === true });
+    setLivePreview(null);
     setCapturing(false);
     setCaptureSource(null);
     setAtShop(false);
@@ -1267,6 +1365,7 @@ export default function App() {
       setAtShop(true);
       setRecordingMove(true);
       setLocked(null);
+      setLivePreview(null);
       setSinglePhase('ready');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1338,6 +1437,7 @@ export default function App() {
       setMultiArmed(true);
       setRecordingMove(true);
       setLocked(null);
+      setLivePreview(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus('error');
@@ -1548,7 +1648,7 @@ export default function App() {
     }
   }
 
-  const latestLock =
+  const firmLock =
     multiMode && slots[0]
       ? {
           soundId: slots[0].soundId,
@@ -1558,6 +1658,7 @@ export default function App() {
           redChancePercent: slots[0].redChancePercent,
           rankedCandidates: slots[0].rankedCandidates,
           isolatedItem: slots[0].isolatedItem === true,
+          livePreview: false as boolean,
         }
       : locked
         ? {
@@ -1568,8 +1669,24 @@ export default function App() {
             redChancePercent: locked.redChancePercent,
             rankedCandidates: locked.rankedCandidates,
             isolatedItem: locked.isolatedItem,
+            livePreview: false as boolean,
           }
         : null;
+
+  const latestLock =
+    firmLock ??
+    (livePreview
+      ? {
+          soundId: livePreview.match.soundId,
+          confidence: livePreview.match.confidence,
+          items: livePreview.resultItems,
+          lowConfidence: true,
+          redChancePercent: livePreview.redChancePercent,
+          rankedCandidates: livePreview.rankedCandidates,
+          isolatedItem: livePreview.isolatedItem,
+          livePreview: true,
+        }
+      : null);
 
   const activeError = sessionErrors[0] ?? null;
   const hasAudioError =
@@ -1674,7 +1791,7 @@ export default function App() {
         )}
 
         {shellScreen === 'listen' && (
-          <div className="max-w-[820px] mx-auto flex flex-col gap-5">
+          <div className="max-w-[820px] mx-auto flex flex-col gap-3.5" data-catch-hud="v2">
             <StepRow
               step="listen"
               onJump={jumpWizard}
@@ -1682,44 +1799,40 @@ export default function App() {
               backLabel="← Settings"
             />
 
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="m-0 text-2xl font-medium tracking-tight">Catch</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="m-0 text-xl font-medium tracking-tight">Catch</h2>
+              <span
+                className={[
+                  'rounded-full px-2.5 py-0.5 text-[11px] font-semibold border',
+                  capturing
+                    ? 'border-[var(--listening)]/50 text-[var(--text)] bg-[var(--listening)]/20'
+                    : 'border-[var(--border)] text-[var(--muted)]',
+                ].join(' ')}
+              >
+                {capturing ? 'Live' : 'Stopped'}
+              </span>
+              <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border border-[var(--accent)]/40 text-[var(--text)] bg-[var(--accent-dim)]/30">
+                {monitorSetup === 'dual' ? 'Multi monitors' : 'Single monitor'}
+              </span>
+              {displayRed != null && hasResult && (
                 <span
                   className={[
-                    'rounded-full px-2.5 py-0.5 text-[11px] font-semibold border',
-                    capturing
-                      ? 'border-[var(--listening)]/50 text-[var(--text)] bg-[var(--listening)]/20'
-                      : 'border-[var(--border)] text-[var(--muted)]',
+                    'rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums',
+                    displayRed > 0
+                      ? 'bg-[var(--mythic)] text-white'
+                      : 'border border-[var(--border)] text-[var(--muted)]',
                   ].join(' ')}
                 >
-                  {capturing ? 'Live' : 'Stopped'}
+                  RED {displayRed}%
                 </span>
-                <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold border border-[var(--accent)]/40 text-[var(--text)] bg-[var(--accent-dim)]/30">
-                  {monitorSetup === 'dual' ? 'Multi monitors' : 'Single monitor'}
-                </span>
-                {displayRed != null && hasResult && (
-                  <span
-                    className={[
-                      'rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums',
-                      displayRed > 0
-                        ? 'bg-[var(--mythic)] text-white'
-                        : 'border border-[var(--border)] text-[var(--muted)]',
-                    ].join(' ')}
-                  >
-                    RED {displayRed}%
-                  </span>
-                )}
-              </div>
-              <p className="m-0 text-[13px] text-[var(--muted)]">
-                Set map/mode, then Start Listening. Multi waits for 3 moves.
-              </p>
+              )}
             </div>
 
             <WipAccuracyBanner />
 
             <RaidContextBar
               sticky
+              mapModeOnly
               mapModes={mapModes}
               cargoTypes={merchantData.cargoTypes}
               cargoPrices={merchantData.cargoPrices}
@@ -1733,138 +1846,16 @@ export default function App() {
               }}
             />
 
-            <RecommendedAudioSettings compact />
-
-            {(status === 'error' || suggestMicFallback) && !verifyOpen && (
-              <div
-                role="alert"
-                className="rounded-lg border border-[var(--warn)]/50 bg-[#2a2208] px-3 py-3 space-y-2.5"
-              >
-                <button
-                  type="button"
-                  onClick={() => void retestListening()}
-                  className="rounded-lg px-4 py-2 text-[13px] font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
-                >
-                  Retest
-                </button>
-                <div>
-                  <p className="m-0 text-[13px] font-semibold text-[var(--warn)]">
-                    Audio capture interrupted
-                  </p>
-                  <p className="m-0 mt-1 text-[12px] text-[var(--text)] leading-relaxed">
-                    {/NotAllowedError|Permission denied|AbortError/i.test(statusDetail ?? '')
-                      ? 'Share was canceled or denied. Retest and enable Share audio.'
-                      : /NotReadableError|Could not start|audioTracks=0|G560/i.test(
-                            statusDetail ?? '',
-                          ) || suggestMicFallback
-                        ? 'Loopback failed (often headphones ↔ speakers / G560). Retest, or use Mic / loopback in Troubleshooting.'
-                        : 'Capture stopped. Retest to reconnect, or open Troubleshooting.'}
-                  </p>
-                  {statusDetail && (
-                    <details className="mt-2 rounded border border-[var(--border)]/60 bg-black/20 px-2.5 py-1.5">
-                      <summary className="cursor-pointer text-[11px] text-[var(--muted)]">
-                        Details ▾
-                      </summary>
-                      <pre className="m-0 mt-1.5 max-h-28 overflow-auto text-[10px] text-[var(--muted)] whitespace-pre-wrap font-mono">
-                        {statusDetail}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearAudioErrorState();
-                      openTroubleshooting('windows');
-                    }}
-                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
-                  >
-                    Troubleshooting
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => clearAudioErrorState()}
-                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
-                  >
-                    Clear error
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startOver}
-                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
-                  >
-                    Start over
-                  </button>
-                </div>
+            <details className="rounded border border-[var(--border)] bg-[var(--bg-panel)]/80 px-3 py-1.5">
+              <summary className="cursor-pointer text-[11px] text-[var(--muted)]">
+                Recommended audio ▾
+              </summary>
+              <div className="mt-2">
+                <RecommendedAudioSettings compact />
               </div>
-            )}
+            </details>
 
-            <ListenCircle
-              capturing={capturing}
-              multiMode={multiMode}
-              multiArmed={multiArmed}
-              moveCount={capturing ? (multiMode ? multiProgress.spikeCount : recordingMove ? 1 : 0) : 0}
-              targetN={multiProgress.targetN}
-              multiPhase={multiProgress.phase}
-              atShop={atShop}
-              recordingMove={recordingMove}
-              calibrating={shopCalibrating}
-              onStartListening={() => void startCapture()}
-              onStopListening={() => void stopCapture()}
-              onAtShop={() => void handleToggleAtShop()}
-              onStartMove={() => void handleStartMoveBurst()}
-              onStopMatch={() => void handleStopMoveBurst()}
-              onArmMulti={() => void handleArmMulti()}
-              onStopMulti={() => void handleStopMulti()}
-            />
-
-            <BurstCaptureControls
-              captureUrl={burstCaptureUrl}
-              captureDurationMs={burstCaptureMs}
-              onPlayCapture={playBurstCapture}
-              onDownloadCapture={downloadBurstCapture}
-            />
-
-            {activeError && (
-              <ActiveSessionError
-                entry={activeError}
-                onFixInfra={() => openTroubleshooting('windows')}
-              />
-            )}
-            <SessionErrorHistory
-              entries={sessionErrors}
-              onClear={() => setSessionErrors([])}
-              hideActiveBanner
-              onFixInfra={() => openTroubleshooting('windows')}
-            />
-
-            {shopToast && (
-              <div
-                role="status"
-                className={[
-                  'rounded border px-2.5 py-2 text-[11px]',
-                  shopToastSticky
-                    ? 'border-[var(--warn)] bg-[#2a2208] text-[var(--warn)]'
-                    : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--muted)]',
-                ].join(' ')}
-              >
-                <div className="flex justify-between gap-2">
-                  <p className="m-0 whitespace-pre-wrap">{shopToast}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShopToast(null);
-                      setShopToastSticky(false);
-                    }}
-                    className="shrink-0 text-[10px] text-[var(--muted)]"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            )}
-
+            {/* Result card near top — live peek or firm lock */}
             {latestLock ? (
               <LatestLockFeed
                 soundId={latestLock.soundId}
@@ -1878,6 +1869,8 @@ export default function App() {
                 mapModeId={mapModeId}
                 cargoType={cargoType}
                 cargoPrice={cargoPrice}
+                cargoPrices={merchantData.cargoPrices}
+                livePreview={latestLock.livePreview}
                 onToggleSize={toggleSize}
                 onOnlyRed={setOnlyRed}
                 onOnlyYellow={setOnlyYellow}
@@ -1885,6 +1878,7 @@ export default function App() {
                   setOnlyRed(false);
                   setOnlyYellow(false);
                 }}
+                onCargoPrice={setCargoPrice}
                 lowConfidence={latestLock.lowConfidence}
                 redChancePercent={latestLock.redChancePercent}
                 rankedCandidates={latestLock.rankedCandidates}
@@ -1975,16 +1969,151 @@ export default function App() {
                 }}
               />
             ) : (
-              <div className="rounded border border-dashed border-[var(--border)] px-4 py-8 text-center text-xs text-[var(--muted)]">
+              <div className="rounded border border-dashed border-[var(--border)] px-4 py-5 text-center text-xs text-[var(--muted)]">
                 {capturing
                   ? multiMode
-                    ? 'At Shop → Arm Multi → drag each cargo 3 times. Locks appear here with images and value.'
-                    : 'At Shop → Start Moving Item → Stop & Match. Locks appear here with images and value.'
+                    ? 'At Shop → Arm Multi → drag cargo 3×. Live results appear here.'
+                    : 'At Shop → Start Moving Item. Live narrowing updates here (~450ms).'
                   : 'Start Listening, then At Shop when you reach the Field Merchant.'}
               </div>
             )}
 
+            <ListenCircle
+              capturing={capturing}
+              multiMode={multiMode}
+              multiArmed={multiArmed}
+              moveCount={capturing ? (multiMode ? multiProgress.spikeCount : recordingMove ? 1 : 0) : 0}
+              targetN={multiProgress.targetN}
+              multiPhase={multiProgress.phase}
+              atShop={atShop}
+              recordingMove={recordingMove}
+              calibrating={shopCalibrating}
+              liveNarrowing={!!livePreview && recordingMove}
+              onStartListening={() => void startCapture()}
+              onStopListening={() => void stopCapture()}
+              onAtShop={() => void handleToggleAtShop()}
+              onStartMove={() => void handleStartMoveBurst()}
+              onStopMatch={() => void handleStopMoveBurst()}
+              onArmMulti={() => void handleArmMulti()}
+              onStopMulti={() => void handleStopMulti()}
+            />
+
+            <BurstCaptureControls
+              captureUrl={burstCaptureUrl}
+              captureDurationMs={burstCaptureMs}
+              onPlayCapture={playBurstCapture}
+              onDownloadCapture={downloadBurstCapture}
+            />
+
+            {/* One compact error slot under the circle */}
+            {(status === 'error' || suggestMicFallback) && !verifyOpen ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-[var(--warn)]/50 bg-[#2a2208] px-3 py-2.5 space-y-2"
+                data-catch-error="setup"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="m-0 text-[10px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
+                      Audio setup error
+                    </p>
+                    <p className="m-0 mt-1 text-[12px] text-[var(--text)] leading-relaxed">
+                      {/NotAllowedError|Permission denied|AbortError/i.test(statusDetail ?? '')
+                        ? 'Share canceled or denied — Retest and enable Share audio.'
+                        : /NotReadableError|Could not start|audioTracks=0|G560/i.test(
+                              statusDetail ?? '',
+                            ) || suggestMicFallback
+                          ? 'Loopback failed (headphones ↔ speakers / G560). Retest or use Mic / loopback.'
+                          : 'Capture stopped. Retest to reconnect.'}
+                    </p>
+                    {statusDetail && (
+                      <details className="mt-1.5">
+                        <summary className="cursor-pointer text-[10px] text-[var(--muted)]">
+                          Details ▾
+                        </summary>
+                        <pre className="m-0 mt-1 max-h-24 overflow-auto text-[10px] text-[var(--muted)] whitespace-pre-wrap font-mono">
+                          {statusDetail}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void retestListening()}
+                    className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--accent)] text-[#041412] shrink-0"
+                  >
+                    Retest
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAudioErrorState();
+                      openTroubleshooting('windows');
+                    }}
+                    className="bg-transparent border-none p-0 text-[var(--ok)] underline underline-offset-2 cursor-pointer"
+                  >
+                    Fix →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => clearAudioErrorState()}
+                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startOver}
+                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 cursor-pointer"
+                  >
+                    Start over
+                  </button>
+                </div>
+              </div>
+            ) : activeError ? (
+              <ActiveSessionError
+                entry={activeError}
+                onFixInfra={() => openTroubleshooting('windows')}
+              />
+            ) : null}
+
+            <SessionErrorHistory
+              entries={sessionErrors}
+              onClear={() => setSessionErrors([])}
+              hideActiveBanner
+              onFixInfra={() => openTroubleshooting('windows')}
+            />
+
+            {shopToast && (
+              <div
+                role="status"
+                className={[
+                  'rounded border px-2.5 py-2 text-[11px]',
+                  shopToastSticky
+                    ? 'border-[var(--warn)] bg-[#2a2208] text-[var(--warn)]'
+                    : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--muted)]',
+                ].join(' ')}
+              >
+                <div className="flex justify-between gap-2">
+                  <p className="m-0 whitespace-pre-wrap">{shopToast}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShopToast(null);
+                      setShopToastSticky(false);
+                    }}
+                    className="shrink-0 text-[10px] text-[var(--muted)]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             <AccuracyPanel
+              collapsedBar
               stats={stats}
               onExport={() => downloadCalibrationJson(sessionId)}
               onClear={() => {

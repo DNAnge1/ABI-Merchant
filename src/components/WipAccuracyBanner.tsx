@@ -1,7 +1,7 @@
 /**
  * Standing work-in-progress notice — teal/dark, honest, not alarming.
- * Full banner on Entry only; opens a centered modal (portaled to body).
- * Do not mount a WIP chip in ChromeBar / Listen / other screens.
+ * Entry: full banner. Other screens: compact chip centered in ChromeBar.
+ * Both open the same centered modal (portaled to body). Never beside Start Scan.
  */
 
 import { useEffect, useState } from 'react';
@@ -39,7 +39,7 @@ export function WipHeaderChip(props: {
   );
 }
 
-/** Full banner — Entry front page only. */
+/** Full banner — Entry front page only. Prefer {@link WipHeaderChip} in ChromeBar elsewhere. */
 export function WipAccuracyBanner(props: {
   prominent?: boolean;
   onOpenSuggestions?: () => void;

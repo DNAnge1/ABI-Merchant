@@ -203,6 +203,17 @@ export const MULTI_COOLDOWN_MS = 1100;
  */
 const MULTI_SPIKE_SEP_MS = 520;
 
+/**
+ * Live peek: ignore decay / secondary lobes for this long after a rising-edge
+ * onset so a ~75% tail tick cannot re-anchor the analysis window.
+ */
+export const LIVE_ONSET_REFRACTORY_MS = 300;
+
+/** Pre-roll before rising-edge onset for live300-aligned analyser slice. */
+const LIVE300_PRE_MS = 16;
+/** Post-onset window — same ~300ms body as Stop & Match / fingerprints. */
+const LIVE300_POST_MS = 280;
+
 export type MultiScanPhase =
   | 'idle'
   | 'armed'
@@ -1706,13 +1717,15 @@ export class AudioMatcher {
 
   /**
    * Live rolling preview while a move burst is recording.
-   * Scores the current analyser buffer without stopping or clearing it
+   * Scores the analyser buffer without stopping or clearing it
    * (PCM live300 tee keeps filling until Stop & Match).
    *
-   * Silence / no real onset → null so the UI freezes the last solid match
-   * (never invent from quiet floor noise). Rapid clicks: only the latest
-   * clean onset window is scored (sliding window; no multi-spike smear).
-   * `onsetMs` lets the UI reset sticky Group ID only on a new clean onset.
+   * Onset-anchored (not trailing-timer):
+   * - Detect rising-edge onsets with {@link LIVE_ONSET_REFRACTORY_MS} so decay
+   *   lobes (~500ms tail) cannot re-trigger a new analysis window.
+   * - Slice [onset−16ms … onset+280ms] — same live300 body as Stop & Match.
+   * - Re-peeks during the window keep scoring that anchored onset (fills in).
+   * - Silence / no rising-edge yet → null so the UI freezes last consensus.
    */
   peekBurstMatches(): { matches: MatchResult[]; onsetMs: number } | null {
     if (!this.burstRecording || !this.analyser || !this.ctx) return null;
@@ -1733,40 +1746,64 @@ export class AudioMatcher {
       Math.min(p90 * 0.65, effectiveBaseline + 0.04),
     );
 
-    const peaks: BurstFrame[] = [];
-    for (let i = 1; i < frames.length - 1; i++) {
+    // Rising-edge onsets only (refractory blocks decay re-triggers).
+    const risingEdges: BurstFrame[] = [];
+    let lastEdgeT = -Infinity;
+    for (let i = 1; i < frames.length; i++) {
       const f = frames[i];
-      if (f.rms >= threshold && f.rms >= frames[i - 1].rms && f.rms >= frames[i + 1].rms) {
-        peaks.push(f);
+      const prev = frames[i - 1];
+      const rising =
+        f.rms >= threshold &&
+        f.rms > prev.rms * 1.12 &&
+        f.t - lastEdgeT >= LIVE_ONSET_REFRACTORY_MS;
+      if (!rising) continue;
+      // Prefer the foot of the attack: walk back while still rising from quiet.
+      let foot = f;
+      for (let k = i; k > 0; k--) {
+        const cur = frames[k];
+        const before = frames[k - 1];
+        if (before.rms < threshold * 0.85) break;
+        if (cur.rms < before.rms * 0.98) break;
+        foot = before;
       }
+      risingEdges.push(foot);
+      lastEdgeT = foot.t;
     }
-    // Prefer recent peaks (sliding window). No under-threshold invent.
-    peaks.sort((a, b) => b.t - a.t || b.rms - a.rms);
-    const chosen: BurstFrame[] = [];
-    for (const p of peaks) {
-      if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
-      chosen.push(p);
-      if (chosen.length >= 1) break; // live: latest clean onset only
-    }
-    if (!chosen.length) {
-      // Soft pass: still require ≥ threshold — never invent from quiet.
-      const loud = [...frames].sort((a, b) => b.t - a.t);
-      for (const f of loud) {
-        if (f.rms < threshold) continue;
-        chosen.push(f);
-        break;
-      }
-    }
-    if (!chosen.length) return null;
 
-    const LIVE300_PRE_MS = 16;
-    const LIVE300_POST_MS = 280;
-    const c = chosen[0];
-    const bands = c.spectrum.length;
+    // Prefer the loop-tracked clean onset when present (same rising-edge gate).
+    let onsetT: number | null = null;
+    if (
+      this.burstLastCleanOnsetAt > 0 &&
+      frames.some((f) => Math.abs(f.t - this.burstLastCleanOnsetAt) < 40)
+    ) {
+      onsetT = this.burstLastCleanOnsetAt;
+    } else if (risingEdges.length > 0) {
+      onsetT = risingEdges[risingEdges.length - 1].t;
+    }
+
+    if (onsetT == null) return null;
+
+    // Past the anchored window and no fresh edge → freeze (do not trail into decay).
+    const newestT = frames[frames.length - 1]?.t ?? onsetT;
+    if (newestT > onsetT + LIVE300_POST_MS + 40) {
+      // Still allow scoring if a newer rising edge exists inside refractory window.
+      const fresh = risingEdges
+        .filter((e) => newestT - e.t <= LIVE300_POST_MS + 40)
+        .pop();
+      if (!fresh) return null;
+      onsetT = fresh.t;
+    }
+
+    const anchor =
+      frames.find((f) => Math.abs(f.t - onsetT!) < 25) ??
+      frames.reduce((a, b) =>
+        Math.abs(a.t - onsetT!) <= Math.abs(b.t - onsetT!) ? a : b,
+      );
+    const bands = anchor.spectrum.length;
     const win = frames.filter(
-      (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+      (f) => f.t >= onsetT! - LIVE300_PRE_MS && f.t <= onsetT! + LIVE300_POST_MS,
     );
-    const slice = win.length > 0 ? win : [c];
+    const slice = win.length > 0 ? win : [anchor];
     const avg = new Array(bands).fill(0);
     let centroidSum = 0;
     for (const f of slice) {
@@ -1799,7 +1836,8 @@ export class AudioMatcher {
       }))
       .slice(0, 5);
 
-    return { matches, onsetMs: c.t };
+    if (matches.length === 0) return null;
+    return { matches, onsetMs: onsetT };
   }
 
   getShopPhase() {
@@ -3056,7 +3094,7 @@ export class AudioMatcher {
       const cleanOnset =
         rms >= onsetThr &&
         rms > this.burstPrevRms * 1.12 &&
-        tRel - this.burstLastCleanOnsetAt >= 90;
+        tRel - this.burstLastCleanOnsetAt >= LIVE_ONSET_REFRACTORY_MS;
       if (cleanOnset) {
         this.burstLastCleanOnsetAt = tRel;
         const keepFrom = tRel - 40; // small pre-roll for LIVE300_PRE

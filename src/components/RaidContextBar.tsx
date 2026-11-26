@@ -14,6 +14,8 @@ export function RaidContextBar(props: {
   sticky?: boolean;
   /** Catch HUD: map/mode only (cargo price lives as pills in the result card). */
   mapModeOnly?: boolean;
+  /** Open Map Pools explainer (sits next to Map/Mode — saves a floating link). */
+  onOpenPools?: () => void;
   onChange: (patch: {
     mapModeId?: string;
     cargoType?: string;
@@ -50,8 +52,21 @@ export function RaidContextBar(props: {
         ].join(' ')}
       >
         <label className="flex flex-col gap-1 min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            Map / mode
+          <span className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            <span>Map / mode</span>
+            {props.onOpenPools && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  props.onOpenPools?.();
+                }}
+                className="normal-case tracking-normal bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline underline-offset-2 cursor-pointer shrink-0"
+                data-pools-in-raid-context
+              >
+                Pools — map/mode weight explainer →
+              </button>
+            )}
           </span>
           <select
             value={props.mapModeId}
@@ -114,8 +129,8 @@ export function RaidContextBar(props: {
 
       <p className="m-0 mt-2 text-[10px] text-[var(--muted)] leading-snug">
         {mapModeOnly
-          ? 'Map/mode sets pool weights for Red Chance and EV. Size and cargo price pills live on the result card. Footer → Map / Mode for pool weights.'
-          : 'Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure — results still work from sound + size. Footer → Map / Mode to inspect pools.'}
+          ? 'Map/mode sets pool weights for Red Chance and EV. Size and cargo price pills live on the result card.'
+          : 'Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure — results still work from sound + size.'}
       </p>
     </section>
   );

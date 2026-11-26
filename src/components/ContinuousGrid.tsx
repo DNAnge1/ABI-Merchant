@@ -29,6 +29,8 @@ export interface SessionSlot {
   lowConfidence?: boolean;
   rankedCandidates?: RankedSoundCandidate[];
   isolatedItem?: boolean;
+  /** After 👍 Correct — hide votes, keep card, thank-you. */
+  feedbackThanks?: boolean;
 }
 
 export function ContinuousGrid(props: {
@@ -200,29 +202,41 @@ export function ContinuousGrid(props: {
           paybackPercent={ev.paybackPercent}
         >
           <div className="mt-3 flex flex-wrap gap-2 border-t border-white/8 pt-3">
-            <button
-              type="button"
-              onClick={() => props.onThumbsUp(latest.id)}
-              className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--ok)]/40 text-[var(--ok)]"
-            >
-              👍 Correct
-            </button>
-            <button
-              type="button"
-              onClick={() => props.onThumbsDown(latest.id)}
-              className="rounded-lg px-3.5 py-2 text-[12px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)]"
-              data-report-issue
-              title="Wrong — report issue (pick real item, send diagnostics)"
-            >
-              Report issue
-            </button>
-            <button
-              type="button"
-              onClick={() => props.onDismiss(latest.id)}
-              className="rounded px-3 py-1.5 text-[11px] border border-[var(--border)] text-[var(--muted)]"
-            >
-              Dismiss
-            </button>
+            {latest.feedbackThanks ? (
+              <p
+                className="m-0 text-[12px] font-medium text-[var(--ok)]"
+                data-correct-thanks
+                role="status"
+              >
+                Thanks — keep shopping.
+              </p>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => props.onThumbsUp(latest.id)}
+                  className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--ok)]/40 text-[var(--ok)]"
+                >
+                  👍 Correct
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onThumbsDown(latest.id)}
+                  className="rounded-lg px-3.5 py-2 text-[12px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)]"
+                  data-report-issue
+                  title="Wrong — report issue (pick real item, send diagnostics)"
+                >
+                  Report issue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onDismiss(latest.id)}
+                  className="rounded px-3 py-1.5 text-[11px] border border-[var(--border)] text-[var(--muted)]"
+                >
+                  Dismiss
+                </button>
+              </>
+            )}
           </div>
         </TacticalResultCard>
         );

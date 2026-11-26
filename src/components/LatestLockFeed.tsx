@@ -101,7 +101,22 @@ function FeedbackRow(props: {
   onThumbsUp?: () => void;
   onThumbsDown?: () => void;
   onSkip?: () => void;
+  /** After 👍 Correct — hide vote controls, keep the card, short thank-you. */
+  thanks?: boolean;
 }) {
+  if (props.thanks) {
+    return (
+      <div
+        className="mt-3 pt-3 border-t border-white/8"
+        data-correct-thanks
+        role="status"
+      >
+        <p className="m-0 text-[12px] font-medium text-[var(--ok)]">
+          Thanks — keep shopping.
+        </p>
+      </div>
+    );
+  }
   if (!props.onThumbsUp && !props.onThumbsDown && !props.onSkip) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/8">
@@ -254,6 +269,8 @@ export function LatestLockFeed(props: {
   onThumbsUp?: () => void;
   onThumbsDown?: () => void;
   onSkip?: () => void;
+  /** Hide vote row + show thank-you after Correct (card stays). */
+  feedbackThanks?: boolean;
   lowConfidence?: boolean;
   redChancePercent?: number;
   rankedCandidates?: RankedSoundCandidate[];
@@ -477,6 +494,7 @@ export function LatestLockFeed(props: {
               onThumbsUp={props.onThumbsUp}
               onThumbsDown={props.onThumbsDown}
               onSkip={props.onSkip}
+              thanks={props.feedbackThanks === true}
             />
           )}
           <div className="mt-3">

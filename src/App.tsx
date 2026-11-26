@@ -238,6 +238,8 @@ export default function App() {
   const [selftestReport, setSelftestReport] = useState<SelftestReport | null>(null);
   const [singlePhase, setSinglePhase] = useState<SingleLoopPhase>('ready');
   const [locked, setLocked] = useState<LockedScan | null>(null);
+  /** After 👍 Correct on a Final lock — thank-you, keep card, leave capture alone. */
+  const [lockThanks, setLockThanks] = useState(false);
   /** Live rolling peek while Start Moving / Multi burst (~250ms pcm300). */
   const [livePreview, setLivePreview] = useState<LockedScan | null>(null);
   /**
@@ -909,6 +911,7 @@ export default function App() {
 
       if (mode === 'manual') {
         setManualSoundId(lockedScan.match.soundId);
+        setLockThanks(false);
         setLocked(lockedScan);
         return;
       }
@@ -932,6 +935,7 @@ export default function App() {
       // Style A — show result (firm lock or low-confidence best guess)
       matcherRef.current?.setListeningPaused(true);
       setSinglePhase('locked');
+      setLockThanks(false);
       setLocked(lockedScan);
     },
     [applyBestGuess, mode],
@@ -1361,11 +1365,41 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * 👍 Correct: record vote, hide controls, thank-you — keep Final card + capture session.
+   * Do not clear lock, pause/resume listening, or tear down the held stream.
+   */
+  function acknowledgeCorrect() {
+    if (!locked || lockThanks) return;
+    logFeedback({
+      predicted: locked.match,
+      redPct: locked.redPct,
+      feedback: 'up',
+      spectrumVector: locked.spectrumVector,
+      capturedCentroid: locked.capturedCentroid,
+    });
+    setLockThanks(true);
+    setMissOpen(false);
+    setMissTarget(null);
+    updatePip({
+      group: locked.match.soundId,
+      confidence: locked.match.confidence,
+      redPct: locked.redChancePercent,
+      status: 'Thanks',
+    });
+  }
+
+  /** Skip / Report-issue completion: clear lock UI (Correct uses acknowledgeCorrect). */
   function finishLocked(
     feedback: 'up' | 'down' | 'skip',
     actual?: { soundId: number; itemId?: number; itemName?: string },
   ) {
     if (!locked) return;
+    // Correct must keep the card — use acknowledgeCorrect instead.
+    if (feedback === 'up') {
+      acknowledgeCorrect();
+      return;
+    }
     logFeedback({
       predicted: locked.match,
       redPct: locked.redPct,
@@ -1388,10 +1422,11 @@ export default function App() {
       });
     }
     setLocked(null);
+    setLockThanks(false);
     setSinglePhase('ready');
     setMissOpen(false);
     setMissTarget(null);
-    // Stay burst-only after feedback — don't leave auto-onset hot for heals.
+    // Stay burst-only after skip/miss — don't leave auto-onset hot for heals.
     matcherRef.current?.setAutoDetectArmed(false);
     matcherRef.current?.setListeningPaused(false);
     updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Ready' });
@@ -1578,6 +1613,7 @@ export default function App() {
 
   function prepareMatcherSession() {
     setLocked(null);
+    setLockThanks(false);
     setSinglePhase('ready');
     setManualSoundId(null);
     setAtShop(false);
@@ -1871,6 +1907,7 @@ export default function App() {
       await matcherRef.current.startItemMoveBurst();
       setRecordingMove(true);
       setLocked(null);
+      setLockThanks(false);
       setLivePreview(null);
       setSinglePhase('ready');
     } catch (err) {
@@ -2095,6 +2132,7 @@ export default function App() {
     setScanStyle('single');
     setMode('automatic');
     setLocked(null);
+    setLockThanks(false);
     setSlots([]);
     setSinglePhase('ready');
     setSelectedSizes([]);
@@ -2626,7 +2664,7 @@ export default function App() {
                   multiMode
                     ? () => {
                         const slot = slots[0];
-                        if (!slot) return;
+                        if (!slot || slot.feedbackThanks) return;
                         logFeedback({
                           predicted: {
                             soundId: slot.soundId,
@@ -2638,24 +2676,36 @@ export default function App() {
                           redPct: slot.redChancePercent ?? slot.redPct,
                           feedback: 'up',
                         });
-                        setSlots((prev) => prev.filter((s) => s.id !== slot.id));
+                        // Keep slot/card; hide votes + thank-you — do not stop session.
+                        setSlots((prev) =>
+                          prev.map((s) =>
+                            s.id === slot.id ? { ...s, feedbackThanks: true } : s,
+                          ),
+                        );
                       }
-                    : () => finishLocked('up')
+                    : () => acknowledgeCorrect()
                 }
                 onThumbsDown={
                   multiMode
                     ? () => {
-                        if (slots[0]) {
+                        if (slots[0] && !slots[0].feedbackThanks) {
                           setMissTarget(slots[0].id);
                           setMissOpen(true);
                         }
                       }
-                    : () => {
-                        setMissTarget('locked');
-                        setMissOpen(true);
-                      }
+                    : lockThanks
+                      ? undefined
+                      : () => {
+                          setMissTarget('locked');
+                          setMissOpen(true);
+                        }
                 }
-                onSkip={multiMode ? undefined : () => finishLocked('skip')}
+                onSkip={
+                  multiMode || lockThanks ? undefined : () => finishLocked('skip')
+                }
+                feedbackThanks={
+                  multiMode ? slots[0]?.feedbackThanks === true : lockThanks
+                }
                 earlier={
                   multiMode
                     ? slots.slice(1).map((s) => ({

@@ -7,6 +7,7 @@ export function EntryScreen(props: {
   onTrouble: () => void;
   onOpenSuggestions?: () => void;
   onOpenStats?: () => void;
+  onOpenPools?: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -67,6 +68,16 @@ export function EntryScreen(props: {
           >
             Need help? Troubleshooting
           </button>
+
+          {props.onOpenPools && (
+            <button
+              type="button"
+              onClick={props.onOpenPools}
+              className="bg-transparent border-none text-[var(--accent)] text-xs underline underline-offset-2 hover:text-[var(--text)]"
+            >
+              Map / Mode — why pools change Red Chance &amp; EV
+            </button>
+          )}
 
           {/* FAQ button → modal (keeps Entry short); not on the live scan HUD */}
           <EntryTrustFaq />

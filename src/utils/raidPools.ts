@@ -278,3 +278,103 @@ export function formatKoen(n: number): string {
   if (n >= 1_000) return `${Math.round(n / 1000)}k`;
   return String(n);
 }
+
+/** One explorer cargo box (item group) baked into merchantData.pools. */
+export type RaidPoolBox = {
+  id: number;
+  profileId: number;
+  itemGroup: number;
+  cargoTypeId?: number;
+  cargoType: string;
+  cargoPrice: number;
+  /** Slot weight among all boxes in this profile (sums ≈ groupWeightTotal). */
+  weight: number;
+  /** Sum of item weights inside this box (denominator for item %). */
+  weightTotal: number;
+  items: { id: number; weight: number }[];
+};
+
+export type RaidProfileMeta = {
+  id: number;
+  label: string;
+  groupWeightTotal: number;
+};
+
+/** Round to 1 decimal (same drift style as scoreWithinRaidFilter). */
+export function roundPct1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+export function poolsForProfile(
+  pools: RaidPoolBox[],
+  profileId: number,
+): RaidPoolBox[] {
+  return pools.filter((p) => p.profileId === profileId);
+}
+
+/** Box share of the full profile merchant table. */
+export function boxProfilePct(
+  box: RaidPoolBox,
+  groupWeightTotal: number,
+): number {
+  if (groupWeightTotal <= 0) return 0;
+  return roundPct1((box.weight / groupWeightTotal) * 100);
+}
+
+/** Item share inside its cargo box. */
+export function itemInBoxPct(
+  itemWeight: number,
+  box: RaidPoolBox,
+): number {
+  const denom =
+    box.weightTotal > 0
+      ? box.weightTotal
+      : box.items.reduce((a, i) => a + (i.weight > 0 ? i.weight : 0), 0);
+  if (denom <= 0) return 0;
+  return roundPct1((itemWeight / denom) * 100);
+}
+
+/**
+ * Absolute draw chance for an item from a box:
+ * (boxWeight / profileTotal) × (itemWeight / boxItemTotal).
+ */
+export function itemAbsolutePct(
+  itemWeight: number,
+  box: RaidPoolBox,
+  groupWeightTotal: number,
+): number {
+  if (groupWeightTotal <= 0) return 0;
+  const denom =
+    box.weightTotal > 0
+      ? box.weightTotal
+      : box.items.reduce((a, i) => a + (i.weight > 0 ? i.weight : 0), 0);
+  if (denom <= 0 || box.weight <= 0) return 0;
+  return roundPct1(((box.weight / groupWeightTotal) * (itemWeight / denom)) * 100);
+}
+
+/** Unique maps from mapModes, sorted. */
+export function uniqueMapNames(mapModes: MapModeOption[]): string[] {
+  return [...new Set(mapModes.map((m) => m.mapName))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
+
+/** Modes available for a map name. */
+export function modesForMap(
+  mapModes: MapModeOption[],
+  mapName: string,
+): string[] {
+  return [
+    ...new Set(
+      mapModes.filter((m) => m.mapName === mapName).map((m) => m.mode),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+export function findMapMode(
+  mapModes: MapModeOption[],
+  mapName: string,
+  mode: string,
+): MapModeOption | undefined {
+  return mapModes.find((m) => m.mapName === mapName && m.mode === mode);
+}

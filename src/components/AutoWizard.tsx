@@ -54,9 +54,9 @@ const SINGLE_SETTINGS: SettingDef[] = [
   },
   {
     id: 'calibrationDebug',
-    label: 'Calibration / Confusion panel',
+    label: 'Advanced · live onset log',
     definition:
-      'Shows a ground-truth Sound ID logger on Start Scan — expected vs predicted, top scores, and live confusion summary. Open-source transparency for problem IDs we are fixing.',
+      'Optional power-user logger on Start Scan (Actual Sound ID → Start Moving → Copy Debug JSON). Everyday misses: after Stop, use Report issue — no need for this panel.',
   },
 ];
 
@@ -103,9 +103,9 @@ const MULTI_SETTINGS: SettingDef[] = [
   },
   {
     id: 'calibrationDebug',
-    label: 'Calibration / Confusion panel',
+    label: 'Advanced · live onset log',
     definition:
-      'Shows a ground-truth Sound ID logger on Start Scan — expected vs predicted, top scores, and live confusion summary. Open-source transparency for problem IDs we are fixing.',
+      'Optional power-user logger on Start Scan (Actual Sound ID → Start Moving → Copy Debug JSON). Everyday misses: after Stop, use Report issue — no need for this panel.',
   },
 ];
 

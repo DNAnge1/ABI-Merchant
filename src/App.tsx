@@ -272,6 +272,8 @@ export default function App() {
   const expectedSoundIdRef = useRef<number | null>(null);
   const calibrationDebugRef = useRef(calibrationDebug);
   const calibrationAutoSaveRef = useRef(calibrationAutoSave);
+  /** True when we auto-started Start Moving for calibration logging. */
+  const calibrationAutoArmedRef = useRef(false);
   expectedSoundIdRef.current = expectedSoundId;
   calibrationDebugRef.current = calibrationDebug;
   calibrationAutoSaveRef.current = calibrationAutoSave;
@@ -632,6 +634,78 @@ export default function App() {
     const id = window.setInterval(tick, LIVE_MS);
     return () => window.clearInterval(id);
   }, [recordingMove, raidSnapshot, sessionId]);
+
+  /**
+   * Advanced calibration: when Actual Sound ID is set while capturing, auto-arm
+   * Start Moving so clean onsets actually feed the logger (plain Listen alone
+   * used to show “logging” with gray Copy and zero rows). Skip while a lock is
+   * on screen so Report issue / Download WAV stay undisturbed.
+   */
+  useEffect(() => {
+    const multi =
+      scanStyleRef.current === 'continuous' && monitorRef.current === 'dual';
+    if (
+      !calibrationDebug ||
+      expectedSoundId == null ||
+      !capturing ||
+      recordingMove ||
+      multi ||
+      multiArmed ||
+      (locked != null && singlePhase === 'locked')
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (!matcherRef.current) return;
+      try {
+        setShopCalibrating(!atShop);
+        await matcherRef.current.startItemMoveBurst();
+        if (cancelled) {
+          await matcherRef.current.stopItemMoveBurst().catch(() => undefined);
+          return;
+        }
+        calibrationAutoArmedRef.current = true;
+        setAtShop(true);
+        setRecordingMove(true);
+        setLivePreview(null);
+        setShopToast(
+          `Calibration logging Actual #${expectedSoundId} — click cargo; Copy Debug JSON anytime.`,
+        );
+        setShopToastSticky(false);
+      } catch (err) {
+        calibrationAutoArmedRef.current = false;
+        const msg = err instanceof Error ? err.message : String(err);
+        setShopToast(`Calibration arm failed: ${msg}`);
+      } finally {
+        if (!cancelled) setShopCalibrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit atShop — startItemMoveBurst calibrates if needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    calibrationDebug,
+    expectedSoundId,
+    capturing,
+    recordingMove,
+    multiArmed,
+    locked,
+    singlePhase,
+  ]);
+
+  /** Drop auto-armed burst when Actual ID cleared (leave manual Start Moving alone). */
+  useEffect(() => {
+    if (expectedSoundId != null) return;
+    if (!calibrationAutoArmedRef.current) return;
+    calibrationAutoArmedRef.current = false;
+    if (!recordingMove || !matcherRef.current) return;
+    void matcherRef.current.stopMultiContinuous({ match: false }).catch(() => undefined);
+    setRecordingMove(false);
+    setLivePreview(null);
+  }, [expectedSoundId, recordingMove]);
 
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
@@ -2411,6 +2485,19 @@ export default function App() {
               captureDurationMs={burstCaptureMs}
               onPlayCapture={playBurstCapture}
               onDownloadCapture={downloadBurstCapture}
+              showReportIssue={!!latestLock && !latestLock.livePreview}
+              onReportIssue={() => {
+                if (multiMode) {
+                  if (slots[0]) {
+                    setMissTarget(slots[0].id);
+                    setMissOpen(true);
+                  }
+                  return;
+                }
+                if (!locked) return;
+                setMissTarget('locked');
+                setMissOpen(true);
+              }}
             />
 
             {((status === 'error' || suggestMicFallback) && !verifyOpen) || activeError ? (
@@ -2631,6 +2718,7 @@ export default function App() {
                 sessionId={sessionId}
                 fingerprints={fingerprints}
                 listening={recordingMove || status === 'listening' || status === 'capturing'}
+                loggingActive={recordingMove}
                 clipBlobs={confusionClips}
                 autoSave={calibrationAutoSave}
                 autoSaveStatus={autoSaveStatus}
@@ -2653,7 +2741,7 @@ export default function App() {
                 onClick={() => setCalibrationDebugPref(true)}
                 className="self-start text-[11px] text-[var(--muted)] underline-offset-2 hover:underline hover:text-[var(--accent)]"
               >
-                Calibration / Confusion panel
+                Advanced · live onset log
               </button>
             )}
 
@@ -2822,6 +2910,8 @@ export default function App() {
             : slots.find((s) => s.id === missTarget)?.soundId ?? 1
         }
         items={items}
+        hasCaptureWav={Boolean(burstCaptureUrl)}
+        onDownloadWav={downloadBurstCapture}
         onCancel={() => {
           setMissOpen(false);
           setMissTarget(null);

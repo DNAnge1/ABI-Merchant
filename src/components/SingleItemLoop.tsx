@@ -130,10 +130,11 @@ export function SingleItemLoop(props: {
           <button
             type="button"
             onClick={props.onThumbsDown}
-            className="rounded px-3 py-2 text-sm font-semibold bg-[var(--mythic)]/15 border border-[var(--mythic)] text-[var(--mythic-gold)]"
-            title="Wrong — log miss"
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)]"
+            title="Wrong — report issue (pick real item, send diagnostics)"
+            data-report-issue
           >
-            👎 Wrong
+            Report issue
           </button>
           <button
             type="button"

@@ -105,22 +105,24 @@ function FeedbackRow(props: {
   if (!props.onThumbsUp && !props.onThumbsDown && !props.onSkip) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/8">
+      {props.onThumbsDown && (
+        <button
+          type="button"
+          onClick={props.onThumbsDown}
+          className="rounded-lg px-3.5 py-2 text-[12px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)] hover:bg-[var(--mythic)]/30"
+          data-report-issue
+          title="Wrong guess — pick the real item and send diagnostics (no audio)"
+        >
+          Report issue
+        </button>
+      )}
       {props.onThumbsUp && (
         <button
           type="button"
           onClick={props.onThumbsUp}
           className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--ok)]/40 text-[var(--ok)]"
         >
-          👍 Correct
-        </button>
-      )}
-      {props.onThumbsDown && (
-        <button
-          type="button"
-          onClick={props.onThumbsDown}
-          className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--mythic)]/40 text-[var(--mythic-gold)]"
-        >
-          👎 Wrong
+          Correct
         </button>
       )}
       {props.onSkip && (

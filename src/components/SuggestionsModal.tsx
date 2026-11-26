@@ -187,7 +187,7 @@ export function SuggestionsModal(props: { open: boolean; onClose: () => void }) 
                 onChange={(e) => setDraft(e.target.value)}
                 rows={3}
                 maxLength={MAX_LEN}
-                placeholder="What would make Catch / matching better? (no URLs)"
+                placeholder="What would make Start Scan / matching better? (no URLs)"
                 className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2 text-[12px] text-[var(--text)] resize-y min-h-[4.5rem]"
               />
               <div className="flex flex-wrap items-center justify-between gap-2">

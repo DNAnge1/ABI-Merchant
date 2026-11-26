@@ -131,7 +131,7 @@ export function ListenCircle(props: {
         {props.capturing && !props.multiMode && (
           <ol
             className="m-0 p-0 list-none flex flex-wrap justify-center gap-1.5 text-[10px]"
-            aria-label="Catch progress"
+            aria-label="Scan progress"
           >
             <StateChip active={circleState !== 'idle'} done={circleState !== 'listening' || props.atShop}>
               1 · Burst

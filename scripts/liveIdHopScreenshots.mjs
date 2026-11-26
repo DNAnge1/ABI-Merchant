@@ -39,16 +39,42 @@ function saveBoth(name, fromPath) {
     console.error('FAIL: expected sticky Group #1, got', primary);
     process.exitCode = 1;
   }
-  // No WIP chip on Listen
-  const wipChip = await page.locator('[data-wip-header]').count();
+  // Centered WIP chip in ChromeBar; no Start button
+  const wipChip = await page.locator('header [data-wip-header]').count();
+  const bodyWip = await page.locator('[data-catch-hud] [data-wip-header]').count();
   const chromeStart = await page.locator('header button', { hasText: /^Start$/ }).count();
-  console.log('listen wip chips:', wipChip, 'chrome Start buttons:', chromeStart);
-  if (wipChip !== 0) {
-    console.error('FAIL: WIP chip should not appear on Listen');
+  const wipCenter = await page.evaluate(() => {
+    const chip = document.querySelector('header [data-wip-header]');
+    const header = document.querySelector('header');
+    if (!chip || !header) return null;
+    const cr = chip.getBoundingClientRect();
+    const hr = header.getBoundingClientRect();
+    return Math.round(cr.left + cr.width / 2 - (hr.left + hr.width / 2));
+  });
+  console.log(
+    'listen chrome wip chips:',
+    wipChip,
+    'body wip:',
+    bodyWip,
+    'chrome Start:',
+    chromeStart,
+    'wip center Δx:',
+    wipCenter,
+  );
+  if (wipChip !== 1) {
+    console.error('FAIL: expected centered WIP chip in ChromeBar on Listen');
+    process.exitCode = 1;
+  }
+  if (bodyWip !== 0) {
+    console.error('FAIL: WIP chip must not sit in Listen body');
     process.exitCode = 1;
   }
   if (chromeStart !== 0) {
     console.error('FAIL: ChromeBar Start button should be removed');
+    process.exitCode = 1;
+  }
+  if (wipCenter != null && Math.abs(wipCenter) > 40) {
+    console.error('FAIL: WIP chip not centered in ChromeBar, Δx=', wipCenter);
     process.exitCode = 1;
   }
   const tmp = join(artifactDir, '_tmp-live-sticky.png');
@@ -56,7 +82,7 @@ function saveBoth(name, fromPath) {
   saveBoth('01-live-sticky-holds-group-1.png', tmp);
   const tmpChrome = join(artifactDir, '_tmp-chrome-listen.png');
   await page.locator('header').first().screenshot({ path: tmpChrome });
-  saveBoth('04-chromebar-listen-no-wip-no-start.png', tmpChrome);
+  saveBoth('04-chromebar-listen-wip-centered-no-start.png', tmpChrome);
   await page.close();
 }
 

@@ -819,6 +819,16 @@ export function promotePitchCloserRunner(
   // Never pitch-demote metal crisp / Car Battery (#6) → Lion (#28). Field Battery is
   // often mic-dulled onto statue pitch (~1.8–2.0k) while shape still prefers #6.
   if (top.soundId === 6 && runner.soundId === 28) return matches;
+  // Never pitch-demote Big Metal (#2) → wood/blunt neighbors (#8/#14/#20).
+  // Field Oil Drum live centroid often sits closer to FP #8/#20 while shape+bass
+  // still prefer #2 (round2 peeks: pitch stole → #8/#20; Stop still locked #2).
+  // True #8/#14/#20 self-lock via shape and do not need this demotion.
+  if (
+    top.soundId === 2 &&
+    (runner.soundId === 8 || runner.soundId === 14 || runner.soundId === 20)
+  ) {
+    return matches;
+  }
   const gap = top.confidence - runner.confidence;
   if (gap < 0 || gap > maxGapPts) return matches;
   const dTop = Math.abs(capturedCentroid - top.spectralCentroid);
@@ -973,8 +983,11 @@ export function isId2VsId8SoftLock(
   return topSoundId === 2 && runnerSoundId === 8 && topConfidence >= 88;
 }
 
+/** Wood/blunt IDs that steal Big Metal (#2) via live-centroid prior. */
+const ID2_WOOD_SINKS = new Set([8, 14, 20]);
+
 /**
- * Restore #2 (Big Metal) when #8 stole a near-tie via centroid prior / wood neighbor.
+ * Restore #2 (Big Metal) when #8/#14/#20 stole via centroid prior / wood neighbor.
  * Shape + bass lobe own this pair — live centroid alone is unreliable (FP Δcent only ~84 Hz).
  * True #8 @ high conf with wood-preferring shape is left alone.
  */
@@ -986,25 +999,30 @@ export function resolveId2VsId8(
   if (!spectrumVector || matches.length < 2) return matches;
   const top = matches[0];
   const m2 = matches.find((m) => m.soundId === 2);
-  const m8 = matches.find((m) => m.soundId === 8);
-  if (!m2 || !m8) return matches;
+  if (!m2) return matches;
 
   const fp2 = fingerprints.fingerprints['2']?.pickup;
   const fp8 = fingerprints.fingerprints['8']?.pickup;
-  if (!fp2?.spectrumVector || !fp8?.spectrumVector) return matches;
+  if (!fp2?.spectrumVector) return matches;
 
   const s2 = cosineSimilarity(spectrumVector, fp2.spectrumVector);
-  const s8 = cosineSimilarity(spectrumVector, fp8.spectrumVector);
   const c2 = centeredCosine(spectrumVector, fp2.spectrumVector);
-  const c8 = centeredCosine(spectrumVector, fp8.spectrumVector);
+  const s8 = fp8?.spectrumVector
+    ? cosineSimilarity(spectrumVector, fp8.spectrumVector)
+    : 0;
+  const c8 = fp8?.spectrumVector
+    ? centeredCosine(spectrumVector, fp8.spectrumVector)
+    : 0;
   // Field Oil Drum clips: raw +0.04–0.05 for #2; pristine #8: raw −0.05+ (wood wins).
   const shapePrefers2 = s2 >= s8 + 0.025 && c2 >= c8 - 0.015;
+  // Wood clearly owns shape — protect true #8 even on a close conf race.
+  const shapePrefers8 = s8 >= s2 + 0.02 && c8 >= c2 - 0.015;
   const bass = bassLobeRatio(spectrumVector);
   // Big-metal thud keeps more sub-mid energy than med-wood knock.
   const bassPrefers2 = bass >= 0.23;
   const metalEvidence = shapePrefers2 && (bassPrefers2 || s2 >= s8 + 0.04);
 
-  if (top.soundId === 2 && matches[1]?.soundId === 8) {
+  if (top.soundId === 2 && ID2_WOOD_SINKS.has(matches[1]?.soundId ?? -1)) {
     if (top.id2Residual) return matches;
     if (metalEvidence || top.confidence >= 94) {
       return [{ ...top, id2Residual: true }, ...matches.slice(1)];
@@ -1012,12 +1030,30 @@ export function resolveId2VsId8(
     return matches;
   }
 
-  if (top.soundId !== 8) return matches;
-  // Hard wood self-lock with shape on #8 — do not steal true Acoustic Panel.
-  if (!shapePrefers2 && m8.confidence >= 96) return matches;
-  if (!metalEvidence) return matches;
-  // Only flip near-ties (Brent live ~1.5pt; never a clear #8 lead of 5+).
-  if (m8.confidence - m2.confidence > 4) return matches;
+  if (!ID2_WOOD_SINKS.has(top.soundId)) return matches;
+
+  const fpSink = fingerprints.fingerprints[String(top.soundId)]?.pickup;
+  if (!fpSink?.spectrumVector) return matches;
+  const sSink = cosineSimilarity(spectrumVector, fpSink.spectrumVector);
+  const cSink = centeredCosine(spectrumVector, fpSink.spectrumVector);
+  const shapePrefers2OverSink = s2 >= sSink + 0.025 && c2 >= cSink - 0.015;
+  const shapePrefersSink = sSink >= s2 + 0.02 && cSink >= c2 - 0.015;
+  const nearTieGap = top.confidence - m2.confidence;
+  const bassLedNearTie =
+    bassPrefers2 && !shapePrefersSink && nearTieGap >= 0 && nearTieGap <= 3;
+  const metalVsSink =
+    shapePrefers2OverSink && (bassPrefers2 || s2 >= sSink + 0.04);
+
+  // Hard wood/blunt self-lock — do not steal true #8/#14/#20.
+  if (shapePrefersSink && top.confidence >= 94) return matches;
+  if (top.soundId === 8 && shapePrefers8 && top.confidence >= 94) return matches;
+  if (!metalVsSink && !bassLedNearTie && !(metalEvidence && top.soundId === 8)) {
+    return matches;
+  }
+  // Only flip near-ties (Brent live ~1.5pt; never a clear sink lead of 5+).
+  if (nearTieGap > 4 && !metalVsSink) return matches;
+  // Strong shape vs sink may recover even a slightly larger conf gap (pitch steal).
+  if (nearTieGap > 8) return matches;
   if (!matches.slice(0, 8).some((m) => m.soundId === 2)) return matches;
 
   const others = matches.filter((m) => m.soundId !== 2);
@@ -2933,6 +2969,10 @@ export class AudioMatcher {
       pcmLobeNote = pcmScored.lobeNote;
 
       // Safety: a weak/noisy pcm300 window must not wipe a clear spike majority.
+      // But never restore a hard-rejectable dull sink (#28@<80) over a solid
+      // lobeVote — field #8 live@98 with long mixed burst spiked #28@69
+      // (keptSpikeMaj) while lobeVote 3/3→#8. Near-twin gaps (<5pt at ≥94%)
+      // are also not "weak pcm".
       if (
         majorityOk &&
         majorityId != null &&
@@ -2941,13 +2981,23 @@ export class AudioMatcher {
         const pcmTop = allMatches[0];
         const pcmRunner = allMatches[1];
         const pcmGap = pcmTop.confidence - (pcmRunner?.confidence ?? 0);
-        const pcmWeak = pcmTop.confidence < 92 || pcmGap < 5;
-        if (pcmWeak) {
+        const nearTwinGap =
+          pcmRunner != null &&
+          isKnownNearTwin(pcmTop.soundId, pcmRunner.soundId) &&
+          pcmTop.confidence >= 94;
+        const pcmWeak =
+          pcmTop.confidence < 92 || (pcmGap < 5 && !nearTwinGap);
+        const spikeTop = spikeMatches[0];
+        const spikeIsRejectableDull =
+          spikeTop != null && hardRejectDullSink(spikeTop) != null;
+        if (pcmWeak && !spikeIsRejectableDull) {
           spectrumVector = spikeSpectrum;
           centroid = spikeCentroid;
           allMatches = spikeMatches;
           matchSource = 'analyser-spikes';
           pcmLobeNote += ` · keptSpikeMaj#${majorityId}`;
+        } else if (pcmWeak && spikeIsRejectableDull) {
+          pcmLobeNote += ` · keptPcmOverWeakSpike#${majorityId}`;
         }
       }
     }

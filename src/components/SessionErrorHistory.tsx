@@ -1,15 +1,173 @@
 /**
  * Session diagnostic history (Multi + Single).
- * Newest/active fail is always visible; expand shows older entries.
+ * Catch HUD: errors open as a modal (not a sticky bar). Compact chip re-opens.
  * Fix → only on infra errors; ambiguous / match-fail never get Fix.
  */
 
+import { useEffect } from 'react';
 import { isInfraSessionError } from '../utils/sessionErrorKind';
 
 export interface SessionErrorEntry {
   id: string;
   ts: number;
   message: string;
+}
+
+/** Modal for audio setup / session errors (timestamp + Fix). */
+export function SessionErrorModal(props: {
+  open: boolean;
+  entry: SessionErrorEntry | null;
+  setupDetail?: string | null;
+  suggestMicFallback?: boolean;
+  onClose: () => void;
+  onFixInfra?: () => void;
+  onRetest?: () => void;
+  onClear?: () => void;
+  onStartOver?: () => void;
+}) {
+  const { open, onClose } = props;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const setup = props.setupDetail != null && props.setupDetail !== '';
+  const infra = setup
+    ? true
+    : props.entry
+      ? isInfraSessionError(props.entry.message)
+      : false;
+  const plain = setup
+    ? /NotAllowedError|Permission denied|AbortError/i.test(props.setupDetail ?? '')
+      ? 'Share canceled or denied — Retest and enable Share audio.'
+      : /NotReadableError|Could not start|audioTracks=0|G560/i.test(props.setupDetail ?? '') ||
+          props.suggestMicFallback
+        ? 'Loopback failed (headphones ↔ speakers / G560). Retest or use Mic / loopback.'
+        : 'Capture stopped. Retest to reconnect.'
+    : props.entry
+      ? plainSessionError(props.entry.message, infra)
+      : 'Unknown error';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Session error"
+      data-session-error-modal
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/65 border-none cursor-pointer"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-md rounded-xl border border-[var(--warn)]/50 bg-[var(--bg-panel)] shadow-xl p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="m-0 text-[14px] font-semibold text-[var(--mythic-gold)]">
+              {setup || infra ? 'Audio setup error' : 'Detect error'}
+            </h2>
+            {props.entry && (
+              <p className="m-0 mt-0.5 text-[11px] text-[var(--muted)]">
+                {formatEntryTime(props.entry.ts)}
+                {!infra && !setup ? ' · not a troubleshooting issue' : ''}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded px-2 py-1 text-[11px] text-[var(--muted)] border border-[var(--border)]"
+          >
+            Close
+          </button>
+        </div>
+        <p className="m-0 text-[13px] text-[var(--text)] leading-relaxed">{plain}</p>
+        {(setup ? props.setupDetail : props.entry?.message) && (
+          <details className="rounded border border-[var(--border)] bg-[var(--bg)]/40 px-2.5 py-1.5">
+            <summary className="cursor-pointer text-[10px] text-[var(--muted)]">Details ▾</summary>
+            <pre className="m-0 mt-1 max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-[var(--muted)]">
+              {setup ? props.setupDetail : props.entry?.message}
+            </pre>
+          </details>
+        )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {props.onRetest && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                props.onRetest?.();
+              }}
+              className="rounded-lg px-3 py-1.5 text-[12px] font-semibold bg-[var(--accent)] text-[#041412]"
+            >
+              Retest
+            </button>
+          )}
+          {infra && props.onFixInfra && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                props.onFixInfra?.();
+              }}
+              className="rounded-lg px-3 py-1.5 text-[12px] font-semibold border border-[var(--ok)] text-[var(--ok)]"
+            >
+              Fix →
+            </button>
+          )}
+          {props.onClear && (
+            <button
+              type="button"
+              onClick={() => {
+                props.onClear?.();
+                onClose();
+              }}
+              className="rounded-lg px-3 py-1.5 text-[12px] border border-[var(--border)] text-[var(--muted)]"
+            >
+              Clear
+            </button>
+          )}
+          {props.onStartOver && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                props.onStartOver?.();
+              }}
+              className="rounded-lg px-3 py-1.5 text-[12px] border border-[var(--border)] text-[var(--muted)]"
+            >
+              Start over
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Compact chip to re-open the latest error without a sticky bar. */
+export function SessionErrorChip(props: {
+  label?: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onOpen}
+      className="w-full rounded-lg border border-[var(--warn)]/45 bg-[#2a2208]/80 px-3 py-1.5 text-[11px] font-semibold text-[var(--warn)] hover:border-[var(--warn)]"
+      data-session-error-chip
+    >
+      {props.label ?? 'Session error — tap to view'}
+    </button>
+  );
 }
 
 export function SessionErrorHistory(props: {

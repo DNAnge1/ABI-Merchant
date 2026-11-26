@@ -1477,6 +1477,10 @@ export class AudioMatcher {
   private burstRecording = false;
   private burstFrames: BurstFrame[] = [];
   private burstStartedAt = 0;
+  /** Last clean onset t (ms since burst start) — slides the live analysis window. */
+  private burstLastCleanOnsetAt = 0;
+  /** Prior-frame RMS while bursting — rising edge detects clean onsets. */
+  private burstPrevRms = 0;
   /** Continuous mono PCM while Start Moving Item → Stop & Match. */
   private burstPcmChunks: Float32Array[] = [];
   /** Backup PCM from AnalyserNode time-domain hops when ScriptProcessor tee is empty. */
@@ -1633,6 +1637,61 @@ export class AudioMatcher {
     return this.captureSource;
   }
 
+  /** True while a MediaStream + analyser graph is still held (even if listening paused). */
+  hasActiveCapture() {
+    return !!(this.stream && this.analyser && this.ctx);
+  }
+
+  /**
+   * Pause analysis without tearing down the shared capture device.
+   * Circle Stop Listening → keep stream so Start Listening can resume.
+   */
+  pauseCaptureKeepStream(detail?: string): void {
+    if (this.burstRecording) {
+      this.stopBurstPcmCapture();
+      this.burstRecording = false;
+      this.burstFrames = [];
+      this.burstAnalyserPcmChunks = [];
+      this.burstLastCleanOnsetAt = 0;
+      this.burstPrevRms = 0;
+    }
+    this.clearMultiState();
+    this.listeningPaused = true;
+    this.atShopGate = false;
+    this.autoDetectArmed = false;
+    this.shopCalibrating = false;
+    this.shopPhase = 'in-raid';
+    this.lastBurstTopId = null;
+    if (this.hasActiveCapture()) {
+      this.setStatus(
+        'idle',
+        detail ?? 'Paused — capture held. Start Listening again (same device).',
+      );
+    }
+  }
+
+  /**
+   * Resume after {@link pauseCaptureKeepStream} without re-picking the device.
+   * Returns false when no stream is held (caller should start a fresh capture).
+   */
+  resumeCaptureSession(): boolean {
+    if (!this.hasActiveCapture()) return false;
+    this.listeningPaused = true; // burst-only until At Shop
+    this.atShopGate = false;
+    this.autoDetectArmed = false;
+    this.shopPhase = 'in-raid';
+    this.armFocusGrace();
+    this.startGraceUntil = performance.now() + this.startGraceMs;
+    const via =
+      this.captureSource === 'microphone' ? 'via mic/loopback' : 'via screen share';
+    this.setStatus(
+      'listening',
+      `In Raid (gate closed) · ${via} · capture reused — At Shop when ready`,
+    );
+    if (!this.raf) this.loop();
+    return true;
+  }
+
   isAtShopGate() {
     return this.atShopGate;
   }
@@ -1649,7 +1708,10 @@ export class AudioMatcher {
    * Live rolling preview while a move burst is recording.
    * Scores the current analyser buffer without stopping or clearing it
    * (PCM live300 tee keeps filling until Stop & Match).
-   * Returns [] when not recording or the buffer is still too thin.
+   *
+   * Silence / no real onset → [] so the UI freezes the last solid match
+   * (never invent from quiet floor noise). Rapid clicks: only the latest
+   * clean onset window is scored (sliding window; no multi-spike smear).
    */
   peekBurstMatches(): MatchResult[] {
     if (!this.burstRecording || !this.analyser || !this.ctx) return [];
@@ -1677,62 +1739,47 @@ export class AudioMatcher {
         peaks.push(f);
       }
     }
-    peaks.sort((a, b) => b.rms - a.rms);
-    const MAX_SPIKES = 3;
+    // Prefer recent peaks (sliding window). No under-threshold invent.
+    peaks.sort((a, b) => b.t - a.t || b.rms - a.rms);
     const chosen: BurstFrame[] = [];
     for (const p of peaks) {
       if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
       chosen.push(p);
-      if (chosen.length >= MAX_SPIKES) break;
+      if (chosen.length >= 1) break; // live: latest clean onset only
     }
     if (!chosen.length) {
-      const loud = [...frames].sort((a, b) => b.rms - a.rms);
+      // Soft pass: still require ≥ threshold — never invent from quiet.
+      const loud = [...frames].sort((a, b) => b.t - a.t);
       for (const f of loud) {
-        if (f.rms < threshold * 0.85) break;
-        if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
+        if (f.rms < threshold) continue;
         chosen.push(f);
-        if (chosen.length >= MAX_SPIKES) break;
+        break;
       }
-    }
-    if (!chosen.length) {
-      chosen.push(...[...frames].sort((a, b) => b.rms - a.rms).slice(0, MAX_SPIKES));
     }
     if (!chosen.length) return [];
 
     const LIVE300_PRE_MS = 16;
     const LIVE300_POST_MS = 280;
-    const bands = chosen[0].spectrum.length;
+    const c = chosen[0];
+    const bands = c.spectrum.length;
+    const win = frames.filter(
+      (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+    );
+    const slice = win.length > 0 ? win : [c];
     const avg = new Array(bands).fill(0);
     let centroidSum = 0;
-    let windowsUsed = 0;
+    for (const f of slice) {
+      for (let i = 0; i < bands; i++) avg[i] += f.spectrum[i] || 0;
+      centroidSum += f.centroid;
+    }
+    for (let i = 0; i < bands; i++) avg[i] /= slice.length;
+    const max = Math.max(...avg, 1e-9);
+    const spectrumVector = avg.map((v) => v / max);
+    const centroid = centroidSum / slice.length;
     const candidates =
       this.candidateSoundIds.length > 0
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
-
-    for (const c of chosen) {
-      const win = frames.filter(
-        (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
-      );
-      const slice = win.length > 0 ? win : [c];
-      const local = new Array(bands).fill(0);
-      let localCentroid = 0;
-      for (const f of slice) {
-        for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
-        localCentroid += f.centroid;
-      }
-      for (let i = 0; i < bands; i++) {
-        local[i] /= slice.length;
-        avg[i] += local[i];
-      }
-      centroidSum += localCentroid / slice.length;
-      windowsUsed += 1;
-    }
-    const denom = Math.max(windowsUsed, 1);
-    for (let i = 0; i < bands; i++) avg[i] /= denom;
-    const max = Math.max(...avg, 1e-9);
-    const spectrumVector = avg.map((v) => v / max);
-    const centroid = centroidSum / denom;
 
     return rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
@@ -1998,6 +2045,8 @@ export class AudioMatcher {
     this.burstRecording = true;
     this.burstFrames = [];
     this.burstAnalyserPcmChunks = [];
+    this.burstLastCleanOnsetAt = 0;
+    this.burstPrevRms = 0;
     this.burstStartedAt = performance.now();
     this.startBurstPcmCapture();
     this.shopPhase = 'recording';
@@ -2069,6 +2118,8 @@ export class AudioMatcher {
     this.burstRecording = true;
     this.burstFrames = [];
     this.burstAnalyserPcmChunks = [];
+    this.burstLastCleanOnsetAt = 0;
+    this.burstPrevRms = 0;
     this.burstStartedAt = performance.now();
     this.startBurstPcmCapture();
     this.shopPhase = 'recording';
@@ -2202,10 +2253,10 @@ export class AudioMatcher {
         peaks.push(f);
       }
     }
-    peaks.sort((a, b) => b.rms - a.rms);
-    // Cap at 3 loudest well-separated spikes — field: 2–3 clicks stabilize;
-    // 4–6+ add decay/release tails that swing % and flip near-twins (#20, #35).
-    const MAX_SPIKES = 3;
+    // Prefer most recent clean peaks (sliding window after rapid clicks).
+    // Cap at 2 recent well-separated spikes — averaging 3+ older clicks smears IDs.
+    peaks.sort((a, b) => b.t - a.t || b.rms - a.rms);
+    const MAX_SPIKES = 2;
     const chosen: BurstFrame[] = [];
     for (const p of peaks) {
       if (chosen.some((c) => Math.abs(c.t - p.t) < 60)) continue;
@@ -2213,18 +2264,24 @@ export class AudioMatcher {
       if (chosen.length >= MAX_SPIKES) break;
     }
     if (!chosen.length) {
-      const loud = [...frames].sort((a, b) => b.rms - a.rms);
+      const loud = [...frames].sort((a, b) => b.t - a.t || b.rms - a.rms);
       for (const f of loud) {
-        if (f.rms < threshold) break;
+        if (f.rms < threshold) continue;
         if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
         chosen.push(f);
         if (chosen.length >= MAX_SPIKES) break;
       }
     }
-    // Always attempt match: take absolute loudest frames even under threshold.
+    // No under-threshold invent: quiet buffer stays a soft fail / empty match path.
     if (!chosen.length) {
-      const loud = [...frames].sort((a, b) => b.rms - a.rms).slice(0, MAX_SPIKES);
-      chosen.push(...loud);
+      return this.failBurst({
+        ...empty,
+        threshold,
+        reason: `Stop & Match: no real onset above noise (silence). (${diagFor(
+          Math.max(...frames.map((f) => f.rms), 0),
+          0,
+        )}) Wait for a cargo click, then Stop & Match.`,
+      });
     }
 
     const peakRms = Math.max(...chosen.map((c) => c.rms), ...frames.map((f) => f.rms), 0);
@@ -2977,7 +3034,8 @@ export class AudioMatcher {
         this.ctx.sampleRate,
         this.analyser.fftSize,
       );
-      this.burstFrames.push({ t: now - this.burstStartedAt, rms, spectrum, centroid });
+      const tRel = now - this.burstStartedAt;
+      this.burstFrames.push({ t: tRel, rms, spectrum, centroid });
       // Cap ~20s of recording
       if (this.burstFrames.length > 1200) this.burstFrames.shift();
       // Non-overlapping hop of new samples for PCM-live300 backup (~1/raf advance).
@@ -2985,6 +3043,23 @@ export class AudioMatcher {
       const offset = Math.max(0, timeFloat.length - hop);
       this.burstAnalyserPcmChunks.push(timeFloat.slice(offset));
       if (this.burstAnalyserPcmChunks.length > 2000) this.burstAnalyserPcmChunks.shift();
+
+      // Slide analysis window on each clean onset so rapid clicks don't smear
+      // older spectra into a wrong live / Stop & Match ID.
+      const onsetThr = Math.max(
+        this.rmsBaseline + Math.max(this.fluxThreshold * 0.2, 0.004),
+        this.rmsBaseline * 1.12 + 0.003,
+      );
+      const cleanOnset =
+        rms >= onsetThr &&
+        rms > this.burstPrevRms * 1.12 &&
+        tRel - this.burstLastCleanOnsetAt >= 90;
+      if (cleanOnset) {
+        this.burstLastCleanOnsetAt = tRel;
+        const keepFrom = tRel - 40; // small pre-roll for LIVE300_PRE
+        this.burstFrames = this.burstFrames.filter((f) => f.t >= keepFrom);
+      }
+      this.burstPrevRms = rms;
 
       // Multi continuous: count cargo-move spikes → auto-finalize with same matcher.
       if (

@@ -10,6 +10,34 @@ const GITHUB_PRS = `${GITHUB_REPO}/pulls`;
 const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 const GITHUB_ACTIONS = `${GITHUB_REPO}/actions`;
 
+/** Compact centered header chip (Start Scan) — opens the existing WIP popup. */
+export function WipHeaderChip(props: {
+  onOpenSuggestions?: () => void;
+  onOpenStats?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mx-auto block rounded-full border border-[var(--accent)]/50 bg-[var(--accent-dim)]/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--accent)] hover:border-[var(--accent)]"
+        data-wip-header
+        title="Results may not be completely accurate yet — tap for details"
+      >
+        Work In Progress
+      </button>
+      <WipProgressModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onOpenSuggestions={props.onOpenSuggestions}
+        onOpenStats={props.onOpenStats}
+      />
+    </>
+  );
+}
+
+/** Full banner (Manual / entry-adjacent). Prefer {@link WipHeaderChip} on Start Scan. */
 export function WipAccuracyBanner(props: {
   prominent?: boolean;
   onOpenSuggestions?: () => void;

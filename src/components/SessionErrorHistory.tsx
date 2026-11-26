@@ -73,6 +73,7 @@ export function ActiveSessionError(props: {
   onFixInfra?: () => void;
 }) {
   const infra = isInfraSessionError(props.entry.message);
+  const plain = plainSessionError(props.entry.message, infra);
   return (
     <div
       role="status"
@@ -87,7 +88,15 @@ export function ActiveSessionError(props: {
               {infra ? '' : ' · not a troubleshooting issue'}
             </span>
           </p>
-          <p className="m-0 leading-relaxed whitespace-pre-wrap font-mono">{props.entry.message}</p>
+          <p className="m-0 leading-relaxed text-[var(--text)]">{plain}</p>
+          {!props.compact && (
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-[10px] text-[var(--muted)]">Details ▾</summary>
+              <pre className="m-0 mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-[var(--muted)]">
+                {props.entry.message}
+              </pre>
+            </details>
+          )}
         </div>
         {infra && props.onFixInfra && (
           <button
@@ -101,6 +110,17 @@ export function ActiveSessionError(props: {
       </div>
     </div>
   );
+}
+
+function plainSessionError(message: string, infra: boolean): string {
+  if (/NotAllowedError|Permission denied|AbortError/i.test(message)) {
+    return 'Share canceled or denied — Retest and enable Share audio.';
+  }
+  if (infra) {
+    return 'Capture/audio setup failed — open Fix for Mic / loopback or exclusive-mode steps.';
+  }
+  const short = message.split(/[·\n]/)[0]?.trim() ?? message;
+  return short.length > 120 ? `${short.slice(0, 117)}…` : short;
 }
 
 function HistoryActions(props: {

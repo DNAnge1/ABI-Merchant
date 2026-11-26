@@ -11,6 +11,8 @@ export function MicLoopbackFallback(props: {
   /** Emphasize when screen-share NotReadableError just happened */
   prominent?: boolean;
   busy?: boolean;
+  /** When false (default), routing / exclusive guides stay collapsed */
+  expandGuides?: boolean;
   onUseDevice: (deviceId: string | undefined) => void;
 }) {
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
@@ -100,9 +102,12 @@ export function MicLoopbackFallback(props: {
         <p className="m-0 text-[11px] text-[var(--mythic-gold)]">{listError}</p>
       )}
 
-      <details className="rounded border border-[var(--border)]/80 bg-[var(--bg)]/40 px-2.5 py-1.5" open={props.prominent}>
+      <details
+        className="rounded border border-[var(--border)]/80 bg-[var(--bg)]/40 px-2.5 py-1.5"
+        open={props.expandGuides === true}
+      >
         <summary className="cursor-pointer text-[11px] font-semibold text-[var(--muted)]">
-          How to route game audio into Chrome
+          How to route game audio into Chrome ▾
         </summary>
         <ul className="m-0 mt-2 pl-4 space-y-2 text-[11px] text-[var(--text)] leading-relaxed">
           {LOOPBACK_SETUP_STEPS.map((s) => (

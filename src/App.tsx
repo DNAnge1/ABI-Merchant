@@ -550,60 +550,64 @@ export default function App() {
       liveConsensusRef.current = next;
 
       // Calibration / Confusion: log each new clean onset when ground-truth is set.
-      // predictedId must follow HUD consensus (not a flickering raw peek top) so
-      // Report / Debug JSON stay aligned with what Live narrowing showed.
+      // Wait until the live300 window is filled + PCM clip is full (~400ms) —
+      // logging on the first incomplete peek produced truncated #11/#25 clips.
+      // predictedId follows HUD consensus (not a flickering raw peek top).
       const expectedId = expectedSoundIdRef.current;
       if (
         calibrationDebugRef.current &&
         expectedId != null &&
-        lastLoggedOnsetRef.current !== peek.onsetMs
+        lastLoggedOnsetRef.current !== peek.onsetMs &&
+        peek.windowFilled
       ) {
-        lastLoggedOnsetRef.current = peek.onsetMs;
-        const ranked =
-          peek.allMatches.length > 0
-            ? peek.allMatches
-            : matchSpectrumAgainstFingerprints(
-                peek.spectrumVector,
-                fingerprints,
-                ALL_SOUND_IDS,
-                'pickup',
-                peek.capturedCentroid,
-              );
-        let clipId: string | undefined;
         const wav = matcher.extractBurstOnsetWav(peek.onsetMs);
-        if (wav) {
-          clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
-          setConfusionClips((prev) => ({ ...prev, [clipId!]: wav }));
-        }
-        const hudPredicted =
-          next.soundId ?? ranked[0]?.soundId ?? undefined;
-        const event = buildMissReport({
-          expectedId,
-          matches: ranked,
-          source: 'live-onset',
-          fingerprints,
-          spectrumVector: peek.spectrumVector,
-          capturedCentroid: peek.capturedCentroid,
-          onsetDurationMs: peek.onsetDurationMs,
-          peakRms: peek.peakRms,
-          meanRms: peek.meanRms,
-          noiseFloor: peek.noiseFloor,
-          rmsBaseline: peek.rmsBaseline,
-          sampleRate: peek.sampleRate,
-          captureMode: peek.captureMode,
-          sessionId,
-          appVersion: __APP_VERSION__,
-          raid: raidSnapshot(),
-          clipId,
-          // Bind Pred column to consensus HUD id; top5 stays raw peek ranking.
-          predictedIdOverride: hudPredicted,
-        });
-        setConfusionEvents((prev) => [...prev, event].slice(-200));
-        if (calibrationAutoSaveRef.current) {
-          setAutoSaveStatus('saving');
-          void postMissReport(event).then((ok) => {
-            setAutoSaveStatus(ok ? 'ok' : 'err');
+        // Defer until PCM has the full post-onset body (same gate as windowFilled).
+        if (!wav) {
+          // Keep lastLogged unset so the next tick retries once PCM catches up.
+        } else {
+          lastLoggedOnsetRef.current = peek.onsetMs;
+          const ranked =
+            peek.allMatches.length > 0
+              ? peek.allMatches
+              : matchSpectrumAgainstFingerprints(
+                  peek.spectrumVector,
+                  fingerprints,
+                  ALL_SOUND_IDS,
+                  'pickup',
+                  peek.capturedCentroid,
+                );
+          const clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
+          setConfusionClips((prev) => ({ ...prev, [clipId]: wav }));
+          const hudPredicted =
+            next.soundId ?? ranked[0]?.soundId ?? undefined;
+          const event = buildMissReport({
+            expectedId,
+            matches: ranked,
+            source: 'live-onset',
+            fingerprints,
+            spectrumVector: peek.spectrumVector,
+            capturedCentroid: peek.capturedCentroid,
+            onsetDurationMs: peek.onsetDurationMs,
+            peakRms: peek.peakRms,
+            meanRms: peek.meanRms,
+            noiseFloor: peek.noiseFloor,
+            rmsBaseline: peek.rmsBaseline,
+            sampleRate: peek.sampleRate,
+            captureMode: peek.captureMode,
+            sessionId,
+            appVersion: __APP_VERSION__,
+            raid: raidSnapshot(),
+            clipId,
+            // Bind Pred column to consensus HUD id; top5 stays raw peek ranking.
+            predictedIdOverride: hudPredicted,
           });
+          setConfusionEvents((prev) => [...prev, event].slice(-200));
+          if (calibrationAutoSaveRef.current) {
+            setAutoSaveStatus('saving');
+            void postMissReport(event).then((ok) => {
+              setAutoSaveStatus(ok ? 'ok' : 'err');
+            });
+          }
         }
       }
 

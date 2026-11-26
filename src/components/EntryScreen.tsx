@@ -1,3 +1,4 @@
+import { EntryTrustFaq, EntryTrustStrip } from './EntryTrustFaq';
 import { WipAccuracyBanner } from './WipAccuracyBanner';
 
 export function EntryScreen(props: {
@@ -40,6 +41,11 @@ export function EntryScreen(props: {
             </span>
           </button>
 
+          {/* Trust strip near primary CTA — Entry only */}
+          <div className="w-full -mt-2">
+            <EntryTrustStrip />
+          </div>
+
           <button
             type="button"
             onClick={props.onManual}
@@ -55,6 +61,9 @@ export function EntryScreen(props: {
           >
             Need help? Troubleshooting
           </button>
+
+          {/* FAQ below Catch / Manual / Trouble cards — not on Catch HUD */}
+          <EntryTrustFaq />
         </div>
       </div>
     </div>

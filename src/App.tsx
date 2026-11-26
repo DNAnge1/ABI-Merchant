@@ -16,6 +16,7 @@ import {
 } from './components/SessionErrorHistory';
 import { MissFeedbackModal } from './components/MissFeedbackModal';
 import { AccuracyPanel } from './components/AccuracyPanel';
+import { CalibrationDebugPanel } from './components/CalibrationDebugPanel';
 import { SelftestPanel } from './components/SelftestPanel';
 import { ChromeBar } from './components/ChromeBar';
 import { EntryScreen } from './components/EntryScreen';
@@ -37,6 +38,7 @@ import {
   analyserFftSize,
   AudioMatcher,
   filterItemsByCargo,
+  matchSpectrumAgainstFingerprints,
   MULTI_SPIKE_TARGET_N,
   type FingerprintsFile,
   type MatcherStatus,
@@ -73,6 +75,15 @@ import {
   type MonitorSetup,
   type ScanStyle,
 } from './utils/calibrationStore';
+import {
+  buildMissReport,
+  isCalibrationDebugEnabledFromUrl,
+  readCalibrationDebugPref,
+  summarizeConfusion,
+  writeCalibrationDebugPref,
+  type MissReportPayload,
+  type RaidContextSnapshot,
+} from './utils/confusionDebug';
 import {
   postCommunityEvent,
   postCommunityVote,
@@ -236,6 +247,21 @@ export default function App() {
   const [statsTick, setStatsTick] = useState(0);
   const [floatOverlay, setFloatOverlay] = useState(false);
   const [sessionId] = useState(() => newSessionId());
+  /** Progressive disclosure: Calibration / Confusion panel (Advanced + ?debug=1). */
+  const [calibrationDebug, setCalibrationDebug] = useState(() =>
+    readCalibrationDebugPref(),
+  );
+  const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(() =>
+    isCalibrationDebugEnabledFromUrl() || readCalibrationDebugPref(),
+  );
+  const [expectedSoundId, setExpectedSoundId] = useState<number | null>(null);
+  const [confusionEvents, setConfusionEvents] = useState<MissReportPayload[]>([]);
+  const [confusionClips, setConfusionClips] = useState<Record<string, Blob>>({});
+  const lastLoggedOnsetRef = useRef<number | null>(null);
+  const expectedSoundIdRef = useRef<number | null>(null);
+  const calibrationDebugRef = useRef(calibrationDebug);
+  expectedSoundIdRef.current = expectedSoundId;
+  calibrationDebugRef.current = calibrationDebug;
 
   const matcherRef = useRef<AudioMatcher | null>(null);
   const verifyCleanupRef = useRef<(() => void) | null>(null);
@@ -277,6 +303,20 @@ export default function App() {
   captureSourceRef.current = captureSource;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  const raidSnapshot = useCallback((): RaidContextSnapshot => {
+    const id = mapModeIdRef.current || null;
+    const label = id
+      ? mapModes.find((m) => String(m.id) === String(id))?.name ?? id
+      : null;
+    const price = cargoPriceRef.current;
+    return {
+      mapModeId: id,
+      mapModeLabel: label,
+      cargoType: cargoTypeRef.current || null,
+      cargoPrice: price === '' ? null : price,
+    };
+  }, []);
 
   const stats = useMemo(() => {
     void statsTick;
@@ -460,6 +500,7 @@ export default function App() {
   useEffect(() => {
     if (!recordingMove) {
       liveConsensusRef.current = emptyLiveConsensus();
+      lastLoggedOnsetRef.current = null;
       return;
     }
     const LIVE_MS = 450;
@@ -475,6 +516,53 @@ export default function App() {
         );
         return;
       }
+
+      // Calibration / Confusion: log each new clean onset when ground-truth is set.
+      const expectedId = expectedSoundIdRef.current;
+      if (
+        calibrationDebugRef.current &&
+        expectedId != null &&
+        lastLoggedOnsetRef.current !== peek.onsetMs
+      ) {
+        lastLoggedOnsetRef.current = peek.onsetMs;
+        const ranked =
+          peek.allMatches.length > 0
+            ? peek.allMatches
+            : matchSpectrumAgainstFingerprints(
+                peek.spectrumVector,
+                fingerprints,
+                ALL_SOUND_IDS,
+                'pickup',
+                peek.capturedCentroid,
+              );
+        let clipId: string | undefined;
+        const wav = matcher.extractBurstOnsetWav(peek.onsetMs);
+        if (wav) {
+          clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
+          setConfusionClips((prev) => ({ ...prev, [clipId!]: wav }));
+        }
+        const event = buildMissReport({
+          expectedId,
+          matches: ranked,
+          source: 'live-onset',
+          fingerprints,
+          spectrumVector: peek.spectrumVector,
+          capturedCentroid: peek.capturedCentroid,
+          onsetDurationMs: peek.onsetDurationMs,
+          peakRms: peek.peakRms,
+          meanRms: peek.meanRms,
+          noiseFloor: peek.noiseFloor,
+          rmsBaseline: peek.rmsBaseline,
+          sampleRate: peek.sampleRate,
+          captureMode: peek.captureMode,
+          sessionId,
+          appVersion: __APP_VERSION__,
+          raid: raidSnapshot(),
+          clipId,
+        });
+        setConfusionEvents((prev) => [...prev, event].slice(-200));
+      }
+
       const sizedRaw = applySizeConstrainedFallback(
         peek.matches,
         items,
@@ -516,7 +604,7 @@ export default function App() {
     tick();
     const id = window.setInterval(tick, LIVE_MS);
     return () => window.clearInterval(id);
-  }, [recordingMove]);
+  }, [recordingMove, raidSnapshot, sessionId]);
 
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
@@ -784,8 +872,125 @@ export default function App() {
     [applyBestGuess, mode],
   );
 
+  const logConfusionFromPayload = useCallback(
+    (payload: MatchPayload) => {
+      const expectedId = expectedSoundIdRef.current;
+      if (!calibrationDebugRef.current || expectedId == null) return;
+      if (!payload.spectrumVector?.length) return;
+      const ranked =
+        payload.allMatches && payload.allMatches.length > 0
+          ? payload.allMatches
+          : matchSpectrumAgainstFingerprints(
+              payload.spectrumVector,
+              fingerprints,
+              ALL_SOUND_IDS,
+              'pickup',
+              payload.capturedCentroid,
+            );
+      let clipId: string | undefined;
+      if (payload.captureBlob) {
+        clipId = `burst-${Date.now().toString(36)}`;
+        setConfusionClips((prev) => ({ ...prev, [clipId!]: payload.captureBlob! }));
+      }
+      const diag = payload.diagnostics;
+      const event = buildMissReport({
+        expectedId,
+        matches: ranked,
+        source: payload.source === 'auto' ? 'auto' : 'burst',
+        fingerprints,
+        spectrumVector: payload.spectrumVector,
+        capturedCentroid: payload.capturedCentroid,
+        onsetDurationMs: diag?.onsetDurationMs ?? 300,
+        peakRms: diag?.peakRms ?? 0,
+        meanRms: diag?.meanRms ?? diag?.peakRms ?? 0,
+        noiseFloor: diag?.noiseFloor ?? matcherRef.current?.getNoiseFloor() ?? 0,
+        rmsBaseline: diag?.rmsBaseline ?? matcherRef.current?.getRmsBaseline() ?? 0,
+        sampleRate: diag?.sampleRate ?? matcherRef.current?.getSampleRate() ?? 0,
+        captureMode: diag?.captureMode ?? matcherRef.current?.getCaptureSource() ?? null,
+        sessionId,
+        appVersion: __APP_VERSION__,
+        raid: raidSnapshot(),
+        clipId,
+      });
+      setConfusionEvents((prev) => [...prev, event].slice(-200));
+    },
+    [raidSnapshot, sessionId],
+  );
+
+  /** Player 👎 → same MissReportPayload as Calibration logger (local WAV, numbers-only JSON). */
+  const logPlayerMissReport = useCallback(
+    (opts: {
+      predictedId: number;
+      expectedId: number;
+      spectrumVector?: number[];
+      capturedCentroid?: number;
+      actualItemId?: number;
+      actualItemName?: string;
+      allMatches?: MatchResult[];
+    }) => {
+      const spectrum = opts.spectrumVector ?? [];
+      const centroid = opts.capturedCentroid ?? 0;
+      const ranked =
+        opts.allMatches && opts.allMatches.length > 0
+          ? opts.allMatches
+          : spectrum.length > 0
+            ? matchSpectrumAgainstFingerprints(
+                spectrum,
+                fingerprints,
+                ALL_SOUND_IDS,
+                'pickup',
+                centroid,
+              )
+            : [
+                {
+                  soundId: opts.predictedId,
+                  confidence: 0,
+                  kind: 'pickup' as const,
+                  items: [],
+                  spectralCentroid: centroid,
+                },
+              ];
+      let clipId: string | undefined;
+      const blob = burstCaptureBlobRef.current;
+      if (blob) {
+        clipId = `player-miss-${Date.now().toString(36)}`;
+        setConfusionClips((prev) => ({ ...prev, [clipId!]: blob }));
+      }
+      const matcher = matcherRef.current;
+      const event = buildMissReport({
+        expectedId: opts.expectedId,
+        matches: ranked,
+        source: 'player-miss',
+        fingerprints,
+        spectrumVector: spectrum,
+        capturedCentroid: centroid,
+        onsetDurationMs: 300,
+        peakRms: 0,
+        meanRms: 0,
+        noiseFloor: matcher?.getNoiseFloor() ?? 0,
+        rmsBaseline: matcher?.getRmsBaseline() ?? 0,
+        sampleRate: matcher?.getSampleRate() ?? 0,
+        captureMode: matcher?.getCaptureSource() ?? captureSourceRef.current,
+        sessionId,
+        appVersion: __APP_VERSION__,
+        raid: raidSnapshot(),
+        actualItemId: opts.actualItemId,
+        actualItemName: opts.actualItemName,
+        predictedIdOverride: opts.predictedId,
+        clipId,
+      });
+      setConfusionEvents((prev) => [...prev, event].slice(-200));
+      // Surface panel so player can Copy JSON / Download Clip WAV (local).
+      setCalibrationDebug(true);
+      writeCalibrationDebugPref(true);
+      setCalibrationPanelOpen(true);
+    },
+    [raidSnapshot, sessionId],
+  );
+
   const handleMatchPayload = useCallback(
     (payload: MatchPayload) => {
+      logConfusionFromPayload(payload);
       const top = payload.matches[0];
       if (!top) {
         const msg = 'Match produced no candidates — try Stop & Match again.';
@@ -824,7 +1029,7 @@ export default function App() {
         statusLabel: 'Match locked',
       });
     },
-    [commitBestGuess, pushSessionError],
+    [commitBestGuess, logConfusionFromPayload, pushSessionError],
   );
 
   matchHandlerRef.current = handleMatchPayload;
@@ -1091,6 +1296,17 @@ export default function App() {
       actualItemId: actual?.itemId,
       actualItemName: actual?.itemName,
     });
+    if (feedback === 'down' && actual?.soundId != null) {
+      logPlayerMissReport({
+        predictedId: locked.match.soundId,
+        expectedId: actual.soundId,
+        spectrumVector: locked.spectrumVector,
+        capturedCentroid: locked.capturedCentroid,
+        actualItemId: actual.itemId,
+        actualItemName: actual.itemName,
+        allMatches: [locked.match, ...locked.alt],
+      });
+    }
     setLocked(null);
     setSinglePhase('ready');
     setMissOpen(false);
@@ -1731,7 +1947,19 @@ export default function App() {
     sensitivity,
     hideImages,
     focusGuard,
+    calibrationDebug,
   };
+
+  const confusionSummary = useMemo(
+    () => summarizeConfusion(confusionEvents),
+    [confusionEvents],
+  );
+
+  function setCalibrationDebugPref(on: boolean) {
+    setCalibrationDebug(on);
+    writeCalibrationDebugPref(on);
+    if (on) setCalibrationPanelOpen(true);
+  }
 
   function startOver() {
     clearAudioErrorState();
@@ -2065,6 +2293,9 @@ export default function App() {
               if (patch.sensitivity != null) setSensitivity(patch.sensitivity);
               if (patch.hideImages != null) setHideImages(patch.hideImages);
               if (patch.focusGuard != null) setFocusGuard(patch.focusGuard);
+              if (patch.calibrationDebug != null) {
+                setCalibrationDebugPref(patch.calibrationDebug);
+              }
             }}
             onNext={goNextFromSettings}
           />
@@ -2346,6 +2577,37 @@ export default function App() {
               }}
             />
 
+            {calibrationDebug && (
+              <CalibrationDebugPanel
+                open={calibrationPanelOpen}
+                onOpenChange={setCalibrationPanelOpen}
+                soundIds={ALL_SOUND_IDS}
+                expectedId={expectedSoundId}
+                onExpectedId={setExpectedSoundId}
+                events={confusionEvents}
+                summary={confusionSummary}
+                sessionId={sessionId}
+                fingerprints={fingerprints}
+                listening={recordingMove || status === 'listening' || status === 'capturing'}
+                clipBlobs={confusionClips}
+                onClear={() => {
+                  setConfusionEvents([]);
+                  setConfusionClips({});
+                  lastLoggedOnsetRef.current = null;
+                }}
+              />
+            )}
+
+            {!calibrationDebug && (
+              <button
+                type="button"
+                onClick={() => setCalibrationDebugPref(true)}
+                className="self-start text-[11px] text-[var(--muted)] underline-offset-2 hover:underline hover:text-[var(--accent)]"
+              >
+                Calibration / Confusion panel
+              </button>
+            )}
+
             <AccuracyPanel
               collapsedBar
               stats={stats}
@@ -2532,6 +2794,12 @@ export default function App() {
                 redPct: slot.redPct,
                 feedback: 'down',
                 actualSoundId: actual.soundId,
+                actualItemId: actual.itemId,
+                actualItemName: actual.itemName,
+              });
+              logPlayerMissReport({
+                predictedId: slot.soundId,
+                expectedId: actual.soundId,
                 actualItemId: actual.itemId,
                 actualItemName: actual.itemName,
               });

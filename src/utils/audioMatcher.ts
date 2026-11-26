@@ -128,6 +128,11 @@ export interface MatchResult {
 
 export interface MatchPayload {
   matches: MatchResult[];
+  /**
+   * Full ranked list (all candidates) when available — Calibration panel needs
+   * expectedId rank even when it is outside the UI top-N slice.
+   */
+  allMatches?: MatchResult[];
   peakMs: number;
   spectrumVector: number[];
   capturedCentroid: number;
@@ -136,6 +141,33 @@ export interface MatchPayload {
   /** Last burst WAV when source is burst (Multi + Stop & Match). */
   captureBlob?: Blob | null;
   captureDurationMs?: number;
+  /** Optional diagnostics for Calibration / Confusion logging. */
+  diagnostics?: {
+    peakRms: number;
+    meanRms?: number;
+    noiseFloor: number;
+    rmsBaseline: number;
+    onsetDurationMs: number;
+    sampleRate: number;
+    captureMode: CaptureSourceKind | null;
+  };
+}
+
+/** Live burst peek — scores + diagnostics for UI / Calibration logger. */
+export interface BurstPeekResult {
+  matches: MatchResult[];
+  /** Full ranked list (not truncated) for expected-ID rank logging. */
+  allMatches: MatchResult[];
+  onsetMs: number;
+  spectrumVector: number[];
+  capturedCentroid: number;
+  peakRms: number;
+  meanRms: number;
+  noiseFloor: number;
+  rmsBaseline: number;
+  onsetDurationMs: number;
+  sampleRate: number;
+  captureMode: CaptureSourceKind | null;
 }
 
 /** Result of Stop & Match — always populated so the UI can toast + replay capture. */
@@ -1726,8 +1758,9 @@ export class AudioMatcher {
    * - Slice [onset−16ms … onset+280ms] — same live300 body as Stop & Match.
    * - Re-peeks during the window keep scoring that anchored onset (fills in).
    * - Silence / no rising-edge yet → null so the UI freezes last consensus.
+   * Also returns full rankings + diagnostics for Calibration / Confusion logging.
    */
-  peekBurstMatches(): { matches: MatchResult[]; onsetMs: number } | null {
+  peekBurstMatches(): BurstPeekResult | null {
     if (!this.burstRecording || !this.analyser || !this.ctx) return null;
     const frames = this.burstFrames.slice();
     if (frames.length < 12) return null;
@@ -1806,9 +1839,13 @@ export class AudioMatcher {
     const slice = win.length > 0 ? win : [anchor];
     const avg = new Array(bands).fill(0);
     let centroidSum = 0;
+    let peakRms = 0;
+    let rmsSum = 0;
     for (const f of slice) {
       for (let i = 0; i < bands; i++) avg[i] += f.spectrum[i] || 0;
       centroidSum += f.centroid;
+      peakRms = Math.max(peakRms, f.rms);
+      rmsSum += f.rms;
     }
     for (let i = 0; i < bands; i++) avg[i] /= slice.length;
     const max = Math.max(...avg, 1e-9);
@@ -1819,7 +1856,8 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    const matches = rankMatchesWithPriors(
+    // Full ranking for confusion logger (expected rank may be outside top 5).
+    const allMatches = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
@@ -1828,16 +1866,61 @@ export class AudioMatcher {
         centroid,
       ),
       centroid,
-    )
-      .map((m) => ({
-        ...m,
-        spectrumVector,
-        capturedCentroid: centroid,
-      }))
-      .slice(0, 5);
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
 
-    if (matches.length === 0) return null;
-    return { matches, onsetMs: onsetT };
+    if (allMatches.length === 0) return null;
+    return {
+      matches: allMatches.slice(0, 5),
+      allMatches,
+      onsetMs: onsetT,
+      spectrumVector,
+      capturedCentroid: centroid,
+      peakRms,
+      meanRms: rmsSum / Math.max(slice.length, 1),
+      noiseFloor: this.noiseFloor,
+      rmsBaseline: this.rmsBaseline,
+      onsetDurationMs: LIVE300_PRE_MS + LIVE300_POST_MS,
+      sampleRate: this.ctx.sampleRate,
+      captureMode: this.captureSource,
+    };
+  }
+
+  getNoiseFloor() {
+    return this.noiseFloor;
+  }
+
+  getRmsBaseline() {
+    return this.rmsBaseline;
+  }
+
+  getSampleRate() {
+    return this.ctx?.sampleRate ?? 0;
+  }
+
+  /**
+   * Slice ~400ms of burst PCM around a clean onset (ms since burst start).
+   * Used by Calibration panel “Download Clip WAV” on logged misses.
+   */
+  extractBurstOnsetWav(onsetMs: number, padMs = 80, bodyMs = 320): Blob | null {
+    if (!this.ctx) return null;
+    const sampleRate = this.ctx.sampleRate;
+    const chunks =
+      this.burstPcmChunks.length > 0
+        ? this.burstPcmChunks
+        : this.burstAnalyserPcmChunks;
+    if (chunks.length === 0) return null;
+    const pcm = concatFloat32(chunks);
+    const start = Math.max(0, Math.floor(((onsetMs - padMs) / 1000) * sampleRate));
+    const end = Math.min(
+      pcm.length,
+      Math.floor(((onsetMs + bodyMs) / 1000) * sampleRate),
+    );
+    if (end - start < sampleRate * 0.05) return null;
+    return encodeWavMono(pcm.subarray(start, end), sampleRate);
   }
 
   getShopPhase() {
@@ -2879,12 +2962,21 @@ export class AudioMatcher {
     const rankedOut = allMatches.slice(0, 3);
     this.onMatch?.({
       matches: rankedOut,
+      allMatches,
       peakMs,
       spectrumVector,
       capturedCentroid: centroid,
       source: 'burst',
       captureBlob: captureBase.captureBlob,
       captureDurationMs: captureBase.captureDurationMs,
+      diagnostics: {
+        peakRms,
+        noiseFloor: this.noiseFloor,
+        rmsBaseline: effectiveBaseline,
+        onsetDurationMs: LIVE300_PRE_MS + LIVE300_POST_MS,
+        sampleRate: this.ctx?.sampleRate ?? captureBase.captureSampleRate,
+        captureMode: this.captureSource,
+      },
     });
     return {
       ok: true,
@@ -3423,10 +3515,19 @@ export class AudioMatcher {
     // Top-N ranked scores for UI (lock already decided against floor + margin).
     this.onMatch?.({
       matches: allMatches.slice(0, 3),
+      allMatches,
       peakMs,
       spectrumVector,
       capturedCentroid: centroid,
       source: 'auto',
+      diagnostics: {
+        peakRms: peakMs / 1000,
+        noiseFloor: this.noiseFloor,
+        rmsBaseline: this.rmsBaseline,
+        onsetDurationMs: this.sliceMs,
+        sampleRate: this.ctx?.sampleRate ?? 0,
+        captureMode: this.captureSource,
+      },
     });
 
     setTimeout(() => {

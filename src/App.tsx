@@ -32,6 +32,7 @@ import {
 import { WipAccuracyBanner, WipHeaderChip } from './components/WipAccuracyBanner';
 import { SuggestionsModal } from './components/SuggestionsModal';
 import { StatsPage } from './components/StatsPage';
+import { MapModePoolsPage } from './components/MapModePoolsPage';
 import type { SingleLoopPhase } from './components/SingleItemLoop';
 import {
   analyserFftSize,
@@ -96,6 +97,8 @@ import {
   scoreWithinRaidFilter,
   type CargoPriceBucket,
   type MapModeOption,
+  type RaidPoolBox,
+  type RaidProfileMeta,
 } from './utils/raidPools';
 
 const items = merchantData.items as MerchantItem[];
@@ -103,6 +106,10 @@ const fingerprints = fingerprintsData as FingerprintsFile;
 const sounds = merchantData.soundIds as SoundProfile[];
 const mapModes = ((merchantData as { mapModes?: MapModeOption[] }).mapModes ??
   []) as MapModeOption[];
+const raidPools = ((merchantData as { pools?: RaidPoolBox[] }).pools ??
+  []) as RaidPoolBox[];
+const raidProfiles = ((merchantData as { profiles?: RaidProfileMeta[] }).profiles ??
+  []) as RaidProfileMeta[];
 const ALL_SOUND_IDS = sounds.map((s) => s.soundId).sort((a, b) => a - b);
 
 const IDLE_VERIFY: VerifyState = {
@@ -131,7 +138,13 @@ interface LockedScan {
 export default function App() {
   const [mode, setMode] = useState<AppMode>('automatic');
   const [shellScreen, setShellScreen] = useState<
-    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting' | 'stats'
+    | 'entry'
+    | 'wizard'
+    | 'listen'
+    | 'manual'
+    | 'troubleshooting'
+    | 'stats'
+    | 'pools'
   >('entry');
   const [wizardStep, setWizardStep] = useState<WizardStep>('monitors');
   const [monitorSetup, setMonitorSetup] = useState<MonitorSetup | null>(null);
@@ -144,10 +157,13 @@ export default function App() {
   const [troubleSection, setTroubleSection] =
     useState<TroubleSection>('overview');
   const [troubleReturn, setTroubleReturn] = useState<
-    'entry' | 'wizard' | 'listen' | 'manual' | 'stats'
+    'entry' | 'wizard' | 'listen' | 'manual' | 'stats' | 'pools'
   >('entry');
   const [statsReturn, setStatsReturn] = useState<
-    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting'
+    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting' | 'pools'
+  >('entry');
+  const [poolsReturn, setPoolsReturn] = useState<
+    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting' | 'stats'
   >('entry');
   const [soundAlerts, setSoundAlerts] = useState(true);
   const [useTts, setUseTts] = useState(true);
@@ -841,6 +857,10 @@ export default function App() {
           ),
         ]);
       }
+    }
+    if (demo === 'pools') {
+      setShellScreen('pools');
+      return;
     }
     if (demo === 'stats') {
       appendCalibrationEvent({
@@ -1620,7 +1640,8 @@ export default function App() {
           shellScreen === 'wizard' ||
           shellScreen === 'listen' ||
           shellScreen === 'manual' ||
-          shellScreen === 'stats'
+          shellScreen === 'stats' ||
+          shellScreen === 'pools'
           ? shellScreen
           : 'entry',
       );
@@ -1636,12 +1657,29 @@ export default function App() {
           shellScreen === 'wizard' ||
           shellScreen === 'listen' ||
           shellScreen === 'manual' ||
-          shellScreen === 'troubleshooting'
+          shellScreen === 'troubleshooting' ||
+          shellScreen === 'pools'
           ? shellScreen
           : 'entry',
       );
     }
     setShellScreen('stats');
+  }
+
+  function openPools() {
+    if (shellScreen !== 'pools') {
+      setPoolsReturn(
+        shellScreen === 'entry' ||
+          shellScreen === 'wizard' ||
+          shellScreen === 'listen' ||
+          shellScreen === 'manual' ||
+          shellScreen === 'troubleshooting' ||
+          shellScreen === 'stats'
+          ? shellScreen
+          : 'entry',
+      );
+    }
+    setShellScreen('pools');
   }
 
   function chooseAutomatic() {
@@ -1771,15 +1809,20 @@ export default function App() {
       ? 'troubleshooting'
       : shellScreen === 'stats'
         ? 'stats'
-        : shellScreen === 'manual'
-          ? 'manual'
-          : shellScreen === 'listen'
-            ? 'listen'
-            : shellScreen === 'wizard'
-              ? 'wizard'
-              : 'entry';
+        : shellScreen === 'pools'
+          ? 'pools'
+          : shellScreen === 'manual'
+            ? 'manual'
+            : shellScreen === 'listen'
+              ? 'listen'
+              : shellScreen === 'wizard'
+                ? 'wizard'
+                : 'entry';
   const showChrome =
-    (shellScreen !== 'entry' && shellScreen !== 'stats') || hasAudioError;
+    (shellScreen !== 'entry' &&
+      shellScreen !== 'stats' &&
+      shellScreen !== 'pools') ||
+    hasAudioError;
 
   return (
     <div className="min-h-full flex flex-col">
@@ -1844,6 +1887,7 @@ export default function App() {
             onTrouble={() => openTroubleshooting('overview')}
             onOpenSuggestions={() => setSuggestionsOpen(true)}
             onOpenStats={openStats}
+            onOpenPools={openPools}
           />
         )}
 
@@ -1857,6 +1901,26 @@ export default function App() {
               setStatsTick((n) => n + 1);
             }}
             onOpenSuggestions={() => setSuggestionsOpen(true)}
+          />
+        )}
+
+        {shellScreen === 'pools' && (
+          <MapModePoolsPage
+            mapModes={mapModes}
+            pools={raidPools}
+            profiles={raidProfiles}
+            items={items}
+            onBack={() => setShellScreen(poolsReturn)}
+            onUseInScan={(id) => {
+              setMapModeId(id);
+              if (monitorSetup) {
+                setMode('automatic');
+                setShellScreen('listen');
+                setWizardStep('listen');
+              } else {
+                chooseAutomatic();
+              }
+            }}
           />
         )}
 
@@ -1986,6 +2050,13 @@ export default function App() {
               }}
               onStartOver={startOver}
             />
+            <button
+              type="button"
+              onClick={openPools}
+              className="self-start bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline underline-offset-2 cursor-pointer"
+            >
+              Pools — map/mode weight explainer →
+            </button>
 
             <SessionErrorHistory
               entries={sessionErrors}
@@ -2379,6 +2450,13 @@ export default function App() {
             className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
           >
             Stats
+          </button>
+          <button
+            type="button"
+            onClick={openPools}
+            className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
+          >
+            Map / Mode
           </button>
         </div>
         <p className="m-0 mx-auto max-w-xl text-[10px] leading-snug text-[var(--muted)]">

@@ -114,8 +114,8 @@ export function RaidContextBar(props: {
 
       <p className="m-0 mt-2 text-[10px] text-[var(--muted)] leading-snug">
         {mapModeOnly
-          ? 'Map/mode sets pool weights for Red Chance and EV. Size and cargo price pills live on the result card.'
-          : 'Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure — results still work from sound + size.'}
+          ? 'Map/mode sets pool weights for Red Chance and EV. Size and cargo price pills live on the result card. Footer → Map / Mode for pool weights.'
+          : 'Odds and EV use explorer pool weights for this raid. Leave Any if you are unsure — results still work from sound + size. Footer → Map / Mode to inspect pools.'}
       </p>
     </section>
   );

@@ -1,11 +1,17 @@
 /**
  * Entry-only trust FAQ accordion. Keep off Catch / Listen HUD.
  * Q&A is original for this fan companion — not copied from ABI Builder.
+ *
+ * Default: only the ToS / bans item starts open; the rest start collapsed.
+ * Controlled `open` + `onToggle` so React does not leave every panel stuck open.
  */
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode, type ToggleEvent } from 'react';
 
 const GITHUB_REPO = 'https://github.com/DNAnge1/ABI-Merchant';
+
+/** Index of “Is this legit? What about ToS / bans?” — sole default-open panel. */
+const DEFAULT_OPEN_INDEX = 0;
 
 const FAQ: { q: string; a: ReactNode }[] = [
   {
@@ -16,7 +22,10 @@ const FAQ: { q: string; a: ReactNode }[] = [
         game mod, never injects into the client, and never touches game memory or network traffic —
         it only listens to audio you choose to share (or a mic/loopback path you pick). We are{' '}
         <strong className="font-semibold text-[var(--text)]">not</strong> an official partner and
-        cannot promise how publisher policies treat external helpers. Use at your own discretion;
+        cannot promise how publisher policies treat external helpers. Other community passive-audio
+        tools have confirmed listen-only browser helpers (no install, no inject) as a pattern
+        players have used without a known ban wave from audio listening alone — still shared
+        experience, not a ban guarantee for you or this project. Use at your own discretion;
         game Terms of Service and enforcement can change without notice.
       </>
     ),
@@ -95,6 +104,19 @@ export function EntryTrustStrip() {
 }
 
 export function EntryTrustFaq() {
+  // Only ToS starts open; users may open/close any panel afterward.
+  const [openByIndex, setOpenByIndex] = useState<Record<number, boolean>>(() => ({
+    [DEFAULT_OPEN_INDEX]: true,
+  }));
+
+  const handleToggle = (index: number) => (e: ToggleEvent<HTMLDetailsElement>) => {
+    const next = e.currentTarget.open;
+    setOpenByIndex((prev) => {
+      if (Boolean(prev[index]) === next) return prev;
+      return { ...prev, [index]: next };
+    });
+  };
+
   return (
     <div className="w-full max-w-md mx-auto text-left" data-entry-trust-faq>
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)]/80 overflow-hidden">
@@ -105,7 +127,8 @@ export function EntryTrustFaq() {
           <details
             key={item.q}
             className="border-b border-[var(--border)] last:border-b-0 group"
-            open={i === 0}
+            open={Boolean(openByIndex[i])}
+            onToggle={handleToggle(i)}
           >
             <summary className="cursor-pointer list-none px-3 py-2.5 text-[12px] font-semibold text-[var(--text)] flex items-start justify-between gap-2 [&::-webkit-details-marker]:hidden">
               <span>{item.q}</span>

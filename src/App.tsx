@@ -1707,8 +1707,7 @@ export default function App() {
                 )}
               </div>
               <p className="m-0 text-[13px] text-[var(--muted)]">
-                Raid HUD — set map/mode below, then Start Listening. Multi always waits for 3
-                moves. Setup (monitors / sensitivity) is one step back.
+                Set map/mode, then Start Listening. Multi waits for 3 moves.
               </p>
             </div>
 
@@ -1734,44 +1733,61 @@ export default function App() {
             {(status === 'error' || suggestMicFallback) && !verifyOpen && (
               <div
                 role="alert"
-                className="rounded-lg border border-[var(--warn)]/50 bg-[#2a2208] px-3 py-3 space-y-2"
+                className="rounded-lg border border-[var(--warn)]/50 bg-[#2a2208] px-3 py-3 space-y-2.5"
               >
-                <p className="m-0 text-[12px] font-semibold text-[var(--warn)]">
-                  Audio capture interrupted
-                </p>
-                <p className="m-0 text-[12px] text-[var(--text)] leading-relaxed whitespace-pre-wrap">
-                  {statusDetail ||
-                    'Capture stopped — often after switching headphones ↔ speakers (G560). Retest to reconnect, or open Troubleshooting for Mic / loopback.'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void retestListening()}
-                    className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412]"
-                  >
-                    Retest
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => void retestListening()}
+                  className="rounded-lg px-4 py-2 text-[13px] font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
+                >
+                  Retest
+                </button>
+                <div>
+                  <p className="m-0 text-[13px] font-semibold text-[var(--warn)]">
+                    Audio capture interrupted
+                  </p>
+                  <p className="m-0 mt-1 text-[12px] text-[var(--text)] leading-relaxed">
+                    {/NotAllowedError|Permission denied|AbortError/i.test(statusDetail ?? '')
+                      ? 'Share was canceled or denied. Retest and enable Share audio.'
+                      : /NotReadableError|Could not start|audioTracks=0|G560/i.test(
+                            statusDetail ?? '',
+                          ) || suggestMicFallback
+                        ? 'Loopback failed (often headphones ↔ speakers / G560). Retest, or use Mic / loopback in Troubleshooting.'
+                        : 'Capture stopped. Retest to reconnect, or open Troubleshooting.'}
+                  </p>
+                  {statusDetail && (
+                    <details className="mt-2 rounded border border-[var(--border)]/60 bg-black/20 px-2.5 py-1.5">
+                      <summary className="cursor-pointer text-[11px] text-[var(--muted)]">
+                        Details ▾
+                      </summary>
+                      <pre className="m-0 mt-1.5 max-h-28 overflow-auto text-[10px] text-[var(--muted)] whitespace-pre-wrap font-mono">
+                        {statusDetail}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                   <button
                     type="button"
                     onClick={() => {
                       clearAudioErrorState();
                       openTroubleshooting('windows');
                     }}
-                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--text)]"
+                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
                   >
                     Troubleshooting
                   </button>
                   <button
                     type="button"
                     onClick={() => clearAudioErrorState()}
-                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
                   >
                     Clear error
                   </button>
                   <button
                     type="button"
                     onClick={startOver}
-                    className="rounded px-3 py-1.5 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)]"
+                    className="bg-transparent border-none p-0 text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)] cursor-pointer"
                   >
                     Start over
                   </button>
@@ -2009,6 +2025,7 @@ export default function App() {
                   cargoPrice={cargoPrice}
                   mapModeId={mapModeId}
                   noiseFloor={noiseFloor}
+                  raidContextElsewhere
                   onChange={(patch) => {
                     if (patch.size !== undefined) setSize(patch.size);
                     if (patch.cargoType !== undefined) setCargoType(patch.cargoType);

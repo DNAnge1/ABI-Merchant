@@ -117,7 +117,7 @@ export function AutoWizard(props: {
       <div className="space-y-1.5">
         <h2 className="m-0 text-2xl font-medium tracking-tight">Automatic setup</h2>
         <p className="m-0 text-sm text-[var(--muted)] leading-relaxed">
-          Only settings that apply to your layout. Recommended options are marked.
+          Pick your monitors, then one-click suggested settings — Advanced is optional.
         </p>
       </div>
 
@@ -157,33 +157,72 @@ export function AutoWizard(props: {
           <h3 className="m-0 text-lg font-medium">
             {isMulti ? 'Multi-monitor settings' : 'Single-monitor settings'}
           </h3>
-          <div className="flex flex-col gap-2.5">
-            {list.map((s) => {
-              const checked = settingChecked(s.id, props.settings, isMulti);
-              return (
-                <SettingRow
-                  key={s.id}
-                  setting={s}
-                  checked={checked}
-                  disabled={s.alwaysOn}
-                  onChange={() => toggleSetting(s, props.settings, props.onChangeSettings)}
-                />
-              );
-            })}
-          </div>
-          <div>
-            <button
-              type="button"
-              onClick={props.onNext}
-              className="rounded-lg px-4 py-2 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
-            >
-              Next
-            </button>
-          </div>
+          <p className="m-0 text-sm text-[var(--muted)] leading-relaxed">
+            One click applies recommended defaults for your layout. Open Advanced only if you need
+            to tweak.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              applySuggestedSettings(isMulti, props.onChangeSettings);
+              props.onNext();
+            }}
+            className="w-full sm:w-auto rounded-lg px-4 py-3 text-sm font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110 text-left sm:text-center"
+          >
+            Use Suggested Settings
+            <span className="block sm:inline sm:before:content-['_·_'] mt-0.5 sm:mt-0 text-[12px] font-medium opacity-80">
+              {isMulti
+                ? 'Med sensitivity · lock alerts · Multi scan'
+                : 'Focus guard · Med sensitivity · lock alerts'}
+            </span>
+          </button>
+
+          <details className="rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--text)]">
+              Advanced Settings ▾
+            </summary>
+            <div className="mt-3 flex flex-col gap-2.5">
+              {list.map((s) => {
+                const checked = settingChecked(s.id, props.settings, isMulti);
+                return (
+                  <SettingRow
+                    key={s.id}
+                    setting={s}
+                    checked={checked}
+                    disabled={s.alwaysOn}
+                    onChange={() => toggleSetting(s, props.settings, props.onChangeSettings)}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={props.onNext}
+                className="rounded-lg px-4 py-2 text-sm font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)]/20"
+              >
+                Next with current settings
+              </button>
+            </div>
+          </details>
         </div>
       )}
     </div>
   );
+}
+
+function applySuggestedSettings(
+  isMulti: boolean,
+  onChange: (patch: Partial<AutoSettings>) => void,
+) {
+  onChange({
+    sensitivity: 'med',
+    soundAlerts: true,
+    useTts: false,
+    hideImages: false,
+    focusGuard: !isMulti,
+  });
 }
 
 function settingChecked(

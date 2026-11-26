@@ -1,6 +1,7 @@
 /**
  * Standing work-in-progress notice — teal/dark, honest, not alarming.
- * Header chip lives in ChromeBar; click opens a centered modal (portaled to body).
+ * Full banner on Entry only; opens a centered modal (portaled to body).
+ * Do not mount a WIP chip in ChromeBar / Listen / other screens.
  */
 
 import { useEffect, useState } from 'react';
@@ -38,7 +39,7 @@ export function WipHeaderChip(props: {
   );
 }
 
-/** Full banner (Entry). Prefer {@link WipHeaderChip} in ChromeBar on other screens. */
+/** Full banner — Entry front page only. */
 export function WipAccuracyBanner(props: {
   prominent?: boolean;
   onOpenSuggestions?: () => void;
@@ -143,13 +144,13 @@ export function WipProgressModal(props: {
           </button>
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="p-4">
           <p className="m-0 text-[12px] text-[var(--muted)] leading-relaxed">
             Results may not be completely accurate yet — we’re still tuning matching from field
             captures. Track GitHub progress, leave Suggestions, or open community Stats.
           </p>
 
-          <ul className="m-0 p-0 list-none space-y-2">
+          <ul className="m-0 mt-4 p-0 list-none space-y-2.5">
             <li>
               <a
                 href={GITHUB_PRS}
@@ -191,7 +192,8 @@ export function WipProgressModal(props: {
             </li>
           </ul>
 
-          <div className="flex flex-wrap gap-2 pt-1">
+          {/* Explicit mt (not space-y) so Issues → Suggestions breathes; Repo shares the row gap. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 mt-5 pt-4 border-t border-[var(--border)]">
             {props.onOpenSuggestions && (
               <button
                 type="button"

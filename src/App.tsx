@@ -86,6 +86,7 @@ import { type SensitivityLevel } from './utils/sensitivity';
 import {
   buildBestGuessPool,
   DEFAULT_TOP_N,
+  stabilizeLiveMatches,
   type RankedSoundCandidate,
 } from './utils/rankedGuess';
 import {
@@ -222,6 +223,11 @@ export default function App() {
   const [locked, setLocked] = useState<LockedScan | null>(null);
   /** Live rolling peek while Start Moving / Multi burst (~450ms). */
   const [livePreview, setLivePreview] = useState<LockedScan | null>(null);
+  /** Sticky Group ID for live narrowing — avoid thrash while scores are close. */
+  const liveStickyRef = useRef<{ soundId: number | null; onsetMs: number | null }>({
+    soundId: null,
+    onsetMs: null,
+  });
   const [slots, setSlots] = useState<SessionSlot[]>([]);
   const [missOpen, setMissOpen] = useState(false);
   const [missTarget, setMissTarget] = useState<'locked' | string | null>(null);
@@ -331,6 +337,104 @@ export default function App() {
     });
   }, []);
 
+  // Hidden QA demo: ?verifyErrorDemo=1 — centered verify/share error modal (+ chip after Close).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('verifyErrorDemo') !== '1') return;
+    setMode('automatic');
+    setMonitorSetup('single');
+    setScanStyle('single');
+    setShellScreen('listen');
+    setWizardStep('listen');
+    setStatus('error');
+    setStatusDetail('NotAllowedError: Permission denied / share canceled (demo)');
+    setSuggestMicFallback(false);
+    setVerifyState({
+      phase: 'error',
+      message: 'Share canceled or denied — demo',
+      detail: 'NotAllowedError: Permission denied',
+      rms: 0,
+      peakRms: 0,
+      hasAudioTrack: false,
+    });
+    setVerifyOpen(true);
+  }, []);
+
+  // Hidden QA demo: ?liveStickyDemo=1 — thrashing raw peeks (#1→#28/…) held sticky on #1.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('liveStickyDemo') !== '1') return;
+    setMode('automatic');
+    setMonitorSetup('single');
+    setScanStyle('single');
+    setShellScreen('listen');
+    setWizardStep('listen');
+    setCapturing(true);
+    setAtShop(true);
+    setRecordingMove(true);
+    setStatus('listening');
+    setStatusDetail('Live sticky demo — raw peek thrash held on Group #1');
+
+    // Same onset; raw top thrash like Brent’s #1→#28/#3/#20/#11/#2 — #1 stays in set.
+    const frames: { ids: number[]; confs: number[] }[] = [
+      { ids: [1, 28, 3], confs: [92, 78, 71] },
+      { ids: [28, 1, 3], confs: [78, 75, 70] },
+      { ids: [3, 20, 1], confs: [74, 73, 72] },
+      { ids: [20, 11, 1], confs: [76, 74, 70] },
+      { ids: [11, 2, 1], confs: [77, 76, 74] },
+      { ids: [2, 1, 28], confs: [79, 78, 70] },
+      { ids: [1, 28, 3], confs: [88, 80, 72] },
+    ];
+    let i = 0;
+    const sticky = { soundId: null as number | null, onsetMs: null as number | null };
+    const onsetMs = 1000;
+    const apply = () => {
+      const frame = frames[i % frames.length];
+      i += 1;
+      const matches: MatchResult[] = frame.ids.map((soundId, idx) => ({
+        soundId,
+        confidence: frame.confs[idx] ?? 70,
+        kind: 'pickup' as const,
+        items: items.filter((it) => it.soundId === soundId),
+        spectralCentroid: 3200,
+      }));
+      const stabilized = stabilizeLiveMatches(matches, sticky, onsetMs);
+      sticky.soundId = stabilized.soundId;
+      sticky.onsetMs = stabilized.onsetMs;
+      const sized = stabilized.matches;
+      const pool = buildBestGuessPool(sized, items, {
+        topN: DEFAULT_TOP_N,
+        lowConfidence: true,
+      });
+      if (!pool) return;
+      const top = sized[0];
+      const resultItems = pool.primary.items;
+      setLivePreview({
+        match: {
+          ...top,
+          soundId: pool.primary.soundId,
+          confidence: pool.primary.confidence,
+          kind: pool.primary.kind,
+          items: resultItems,
+        },
+        alt: sized.slice(0, DEFAULT_TOP_N),
+        spectrumVector: [],
+        capturedCentroid: 3200,
+        redPct: redLikelihoodPercent(resultItems),
+        redChancePercent: pool.redChancePercent,
+        resultItems,
+        lowConfidence: true,
+        rankedCandidates: pool.candidates,
+        isolatedItem: pool.isolatedItem,
+      });
+    };
+    apply();
+    const id = window.setInterval(apply, 450);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Open error modal when a new setup/session error arrives (chip re-opens later).
   useEffect(() => {
     if ((status === 'error' || suggestMicFallback) && !verifyOpen) {
@@ -347,22 +451,34 @@ export default function App() {
   }, [sessionErrors[0]?.id]);
 
   // Live rolling match while burst is recording — freeze on silence / no onset.
+  // Sticky top + hysteresis: do not thrash Group ID every ~450ms when scores are close.
   useEffect(() => {
     if (!recordingMove) {
+      liveStickyRef.current = { soundId: null, onsetMs: null };
       return;
     }
     const LIVE_MS = 450;
     const tick = () => {
       const matcher = matcherRef.current;
       if (!matcher?.isBurstRecording()) return;
-      const matches = matcher.peekBurstMatches();
+      const peek = matcher.peekBurstMatches();
       // No real onset → keep last solid live preview (do not invent from quiet).
-      if (matches.length === 0) return;
-      const sized = applySizeConstrainedFallback(
-        matches,
+      if (!peek || peek.matches.length === 0) return;
+      const sizedRaw = applySizeConstrainedFallback(
+        peek.matches,
         items,
         selectedSizesRef.current,
       );
+      const stabilized = stabilizeLiveMatches(
+        sizedRaw,
+        liveStickyRef.current,
+        peek.onsetMs,
+      );
+      liveStickyRef.current = {
+        soundId: stabilized.soundId,
+        onsetMs: stabilized.onsetMs,
+      };
+      const sized = stabilized.matches;
       const pool = buildBestGuessPool(sized, items, {
         topN: DEFAULT_TOP_N,
         lowConfidence: true,
@@ -1834,11 +1950,9 @@ export default function App() {
           onStartOver={startOver}
           onModeChange={handleModeChange}
           onOpenTrouble={() => openTroubleshooting('overview')}
-          onStartListening={() => void startCapture()}
           onStopListening={() => void stopCapture()}
           onRetest={() => void retestListening()}
           onOpenSuggestions={() => setSuggestionsOpen(true)}
-          onOpenStats={openStats}
         />
       )}
 
@@ -1859,6 +1973,10 @@ export default function App() {
         suggestMicFallback={suggestMicFallback}
         micBusy={micBusy}
         onClose={() => {
+          // Dismiss modal only — keep status so the yellow reopen chip remains.
+          setVerifyOpen(false);
+        }}
+        onClear={() => {
           clearAudioErrorState();
         }}
         onRetry={() => void runVerify()}
@@ -2205,7 +2323,7 @@ export default function App() {
                 {capturing
                   ? multiMode
                     ? 'At Shop → Arm Multi → drag cargo 3×. Live results appear below the circle.'
-                    : 'At Shop → Start Moving Item. Live narrowing updates below (~450ms).'
+                    : 'At Shop → Start Moving Item. Live narrowing updates below (sticky Group ID).'
                   : 'Start Listening at the Field Merchant shop, then At Shop when ready.'}
               </div>
             )}

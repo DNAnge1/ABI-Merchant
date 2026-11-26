@@ -1,5 +1,3 @@
-import { WipHeaderChip } from './WipAccuracyBanner';
-
 export function ChromeBar(props: {
   mode: 'automatic' | 'manual';
   screen:
@@ -16,26 +14,22 @@ export function ChromeBar(props: {
   onStartOver: () => void;
   onModeChange: (mode: 'automatic' | 'manual') => void;
   onOpenTrouble: () => void;
-  onStartListening: () => void;
   onStopListening: () => void;
   onRetest?: () => void;
   /** Open Suggestions board (not Catch HUD) */
   onOpenSuggestions?: () => void;
-  /** Open community Stats from the WIP modal */
-  onOpenStats?: () => void;
-  /** Show WIP chip in the true header strip (default true) */
-  showWip?: boolean;
 }) {
   const autoActive = props.mode === 'automatic' && props.screen !== 'manual';
-  const showListenToggle =
+  // Stop only — never Start here (Start re-opens share picker → “Share canceled”).
+  const showStop =
+    props.capturing &&
     props.mode === 'automatic' &&
     (props.screen === 'listen' || props.screen === 'wizard' || props.hasAudioError);
-  const showWip = props.showWip !== false;
 
   return (
     <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur-sm px-3 py-2">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-        <div className="flex items-center gap-2 min-w-0 justify-self-start">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <h1 className="m-0 text-sm font-semibold tracking-wide text-[var(--accent)]">
             ABI Merchant
           </h1>
@@ -57,16 +51,7 @@ export function ChromeBar(props: {
           )}
         </div>
 
-        <div className="justify-self-center" data-chrome-wip>
-          {showWip && (
-            <WipHeaderChip
-              onOpenSuggestions={props.onOpenSuggestions}
-              onOpenStats={props.onOpenStats}
-            />
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 justify-self-end justify-end">
+        <div className="flex flex-wrap items-center gap-2 justify-end">
           <div className="flex rounded-full border border-[var(--border)] overflow-hidden text-[11px]">
             <button
               type="button"
@@ -118,24 +103,15 @@ export function ChromeBar(props: {
             Troubleshooting
           </button>
 
-          {showListenToggle &&
-            (!props.capturing ? (
-              <button
-                type="button"
-                onClick={props.onStartListening}
-                className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412] hover:brightness-110"
-              >
-                Start
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={props.onStopListening}
-                className="rounded px-3 py-1.5 text-[11px] font-medium bg-[#3a1f24] text-[#ffb4bc] border border-[#5c2a33]"
-              >
-                Stop
-              </button>
-            ))}
+          {showStop && (
+            <button
+              type="button"
+              onClick={props.onStopListening}
+              className="rounded px-3 py-1.5 text-[11px] font-medium bg-[#3a1f24] text-[#ffb4bc] border border-[#5c2a33]"
+            >
+              Stop
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -7,6 +7,72 @@ import type { MatchResult, MerchantItem, SoundKind } from './audioMatcher';
 
 export const DEFAULT_TOP_N = 3;
 
+/**
+ * Live narrowing re-ranks ~every 450ms. Without stickiness, close scores
+ * (and even mid-window spectrum drift) thrash the displayed Group ID.
+ * Challenger must beat the sticky top by this many confidence points.
+ */
+export const LIVE_STICKY_MARGIN_PTS = 6;
+
+/**
+ * Onset timestamps within this window (ms) are treated as the same clean
+ * click — do not reset sticky just because peak sample jittered.
+ */
+export const LIVE_ONSET_RESET_MS = 80;
+
+/**
+ * Keep the displayed live top stable while scores are close.
+ * - New clean onset → adopt raw top (reset sticky).
+ * - Same onset → keep sticky unless challenger leads by ≥ margin, or sticky
+ *   drops out of the scored set.
+ * Reorders matches so sticky is primary for buildBestGuessPool / UI.
+ */
+export function stabilizeLiveMatches(
+  matches: MatchResult[],
+  sticky: { soundId: number | null; onsetMs: number | null },
+  onsetMs: number,
+  opts?: { marginPts?: number; onsetResetMs?: number },
+): { matches: MatchResult[]; soundId: number; onsetMs: number } {
+  if (matches.length === 0) {
+    return { matches, soundId: sticky.soundId ?? 0, onsetMs };
+  }
+  const margin = opts?.marginPts ?? LIVE_STICKY_MARGIN_PTS;
+  const onsetReset = opts?.onsetResetMs ?? LIVE_ONSET_RESET_MS;
+  const rawTop = matches[0];
+
+  const stickyId = sticky.soundId;
+  const stickyOnset = sticky.onsetMs;
+  const newOnset =
+    stickyOnset == null || Math.abs(onsetMs - stickyOnset) >= onsetReset;
+  if (newOnset || stickyId == null) {
+    return { matches, soundId: rawTop.soundId, onsetMs };
+  }
+
+  const stickyIdx = matches.findIndex((m) => m.soundId === stickyId);
+  if (stickyIdx < 0) {
+    // Sticky fell out of top-N scores — adopt fresh ranking.
+    return { matches, soundId: rawTop.soundId, onsetMs };
+  }
+
+  const stickyMatch = matches[stickyIdx];
+  if (rawTop.soundId === stickyId) {
+    return { matches, soundId: stickyId, onsetMs };
+  }
+
+  // Strict > so a challenger exactly at sticky+margin does not thrash.
+  if (rawTop.confidence > stickyMatch.confidence + margin) {
+    return { matches, soundId: rawTop.soundId, onsetMs };
+  }
+
+  // Hold sticky on top; refresh its score from this peek; keep runners after.
+  const rest = matches.filter((m) => m.soundId !== stickyId);
+  return {
+    matches: [stickyMatch, ...rest],
+    soundId: stickyId,
+    onsetMs: stickyOnset,
+  };
+}
+
 export type RankedSoundCandidate = {
   soundId: number;
   confidence: number;

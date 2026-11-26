@@ -16,7 +16,7 @@ import { topNeighbors } from '../utils/fingerprintPairwise';
 import type { FingerprintsFile } from '../utils/audioMatcher';
 
 const EMPTY_COPY_MESSAGE =
-  'No calibration entries yet. Steps: (1) set Actual Sound ID, (2) Start Moving / click cargo so rows appear, (3) Copy Debug JSON anytime — even while listening.';
+  'No calibration entries yet. Steps: (1) set Actual Sound ID, (2) At Shop → Start Moving → click cargo so rows appear, (3) Copy Debug JSON anytime.';
 
 export function CalibrationDebugPanel(props: {
   open: boolean;
@@ -200,9 +200,9 @@ export function CalibrationDebugPanel(props: {
                 Listening, but not logging yet — press Start Moving / Arm Multi, then click cargo
               </span>
             ) : props.expectedId == null ? (
-              <span>Pick Actual Sound ID, then Start Moving to log</span>
+              <span>Pick Actual Sound ID, then At Shop → Start Moving to log</span>
             ) : (
-              <span>Ready — Start Moving / click cargo to log</span>
+              <span>Ready — At Shop → Start Moving / click cargo to log</span>
             )}
             {hasEvents && (
               <span className="ml-2 tabular-nums">· {props.events.length} logged</span>

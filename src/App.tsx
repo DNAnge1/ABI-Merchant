@@ -270,8 +270,6 @@ export default function App() {
   const expectedSoundIdRef = useRef<number | null>(null);
   const calibrationDebugRef = useRef(calibrationDebug);
   const calibrationAutoSaveRef = useRef(calibrationAutoSave);
-  /** True when we auto-started Start Moving for calibration logging. */
-  const calibrationAutoArmedRef = useRef(false);
   expectedSoundIdRef.current = expectedSoundId;
   calibrationDebugRef.current = calibrationDebug;
   calibrationAutoSaveRef.current = calibrationAutoSave;
@@ -284,9 +282,13 @@ export default function App() {
   const matchHandlerRef = useRef<(payload: MatchPayload) => void>(() => undefined);
   const finishLockedRef = useRef<(feedback: 'up' | 'down' | 'skip') => void>(() => undefined);
   const singlePhaseRef = useRef(singlePhase);
+  const lockedRef = useRef<LockedScan | null>(null);
+  /** Bumped on Stop & Match so in-flight live peek ticks cannot overwrite the Final card. */
+  const stopLockGenRef = useRef(0);
   scanStyleRef.current = scanStyle;
   monitorRef.current = monitorSetup ?? 'dual';
   singlePhaseRef.current = singlePhase;
+  lockedRef.current = locked;
 
   const raidProfileId = useMemo(
     () => resolveProfileId({ mapModeId: mapModeId || undefined }, mapModes),
@@ -518,6 +520,7 @@ export default function App() {
 
   // Live rolling match while burst is recording — freeze on silence / no onset.
   // Onset-anchored peek + confidence-weighted consensus across clean onsets.
+  // Suppressed entirely once a Final Stop & Match lock owns the result card.
   useEffect(() => {
     if (!recordingMove) {
       liveConsensusRef.current = emptyLiveConsensus();
@@ -525,7 +528,15 @@ export default function App() {
       return;
     }
     const LIVE_MS = 450;
+    const tickGen = stopLockGenRef.current;
     const tick = () => {
+      // Final lock wins — never let a stale peek resurrect Live Peek.
+      if (tickGen !== stopLockGenRef.current) return;
+      const multi =
+        scanStyleRef.current === 'continuous' && monitorRef.current === 'dual';
+      if (!multi && lockedRef.current && singlePhaseRef.current === 'locked') {
+        return;
+      }
       const matcher = matcherRef.current;
       if (!matcher?.isBurstRecording()) return;
       const peek = matcher.peekBurstMatches();
@@ -611,6 +622,18 @@ export default function App() {
         }
       }
 
+      // Re-check after async-ish work: Stop may have locked while we scored.
+      if (tickGen !== stopLockGenRef.current) return;
+      const multiAfter =
+        scanStyleRef.current === 'continuous' && monitorRef.current === 'dual';
+      if (
+        !multiAfter &&
+        lockedRef.current &&
+        singlePhaseRef.current === 'locked'
+      ) {
+        return;
+      }
+
       const sized = next.matches;
       if (!sized.length || next.soundId == null) return;
       const pool = buildBestGuessPool(sized, items, {
@@ -643,78 +666,6 @@ export default function App() {
     const id = window.setInterval(tick, LIVE_MS);
     return () => window.clearInterval(id);
   }, [recordingMove, raidSnapshot, sessionId]);
-
-  /**
-   * Advanced calibration: when Actual Sound ID is set while capturing, auto-arm
-   * Start Moving so clean onsets actually feed the logger (plain Listen alone
-   * used to show “logging” with gray Copy and zero rows). Skip while a lock is
-   * on screen so Report issue / Download WAV stay undisturbed.
-   */
-  useEffect(() => {
-    const multi =
-      scanStyleRef.current === 'continuous' && monitorRef.current === 'dual';
-    if (
-      !calibrationDebug ||
-      expectedSoundId == null ||
-      !capturing ||
-      recordingMove ||
-      multi ||
-      multiArmed ||
-      (locked != null && singlePhase === 'locked')
-    ) {
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      if (!matcherRef.current) return;
-      try {
-        setShopCalibrating(!atShop);
-        await matcherRef.current.startItemMoveBurst();
-        if (cancelled) {
-          await matcherRef.current.stopItemMoveBurst().catch(() => undefined);
-          return;
-        }
-        calibrationAutoArmedRef.current = true;
-        setAtShop(true);
-        setRecordingMove(true);
-        setLivePreview(null);
-        setShopToast(
-          `Calibration logging Actual #${expectedSoundId} — click cargo; Copy Debug JSON anytime.`,
-        );
-        setShopToastSticky(false);
-      } catch (err) {
-        calibrationAutoArmedRef.current = false;
-        const msg = err instanceof Error ? err.message : String(err);
-        setShopToast(`Calibration arm failed: ${msg}`);
-      } finally {
-        if (!cancelled) setShopCalibrating(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally omit atShop — startItemMoveBurst calibrates if needed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    calibrationDebug,
-    expectedSoundId,
-    capturing,
-    recordingMove,
-    multiArmed,
-    locked,
-    singlePhase,
-  ]);
-
-  /** Drop auto-armed burst when Actual ID cleared (leave manual Start Moving alone). */
-  useEffect(() => {
-    if (expectedSoundId != null) return;
-    if (!calibrationAutoArmedRef.current) return;
-    calibrationAutoArmedRef.current = false;
-    if (!recordingMove || !matcherRef.current) return;
-    void matcherRef.current.stopMultiContinuous({ match: false }).catch(() => undefined);
-    setRecordingMove(false);
-    setLivePreview(null);
-  }, [expectedSoundId, recordingMove]);
 
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
@@ -938,7 +889,10 @@ export default function App() {
       const applied = applyBestGuess(matches, meta);
       if (!applied) return;
       const { lockedScan, pool } = applied;
+      // Final lock owns the card — suppress any lingering Live Peek.
+      stopLockGenRef.current += 1;
       setLivePreview(null);
+      liveConsensusRef.current = emptyLiveConsensus();
 
       trackCommunityScan({
         soundId: lockedScan.match.soundId,
@@ -1665,15 +1619,24 @@ export default function App() {
     });
   }
 
-  /** Circle Stop: pause analysis; keep the shared capture device. */
-  function pauseListeningKeepCapture() {
+  /**
+   * Pause analyser / burst (same matcher path as circle Stop).
+   * Keeps MediaStream so Start Listening can resume without re-picking the device.
+   */
+  function pauseAnalysisKeepCapture() {
     matcherRef.current?.pauseCaptureKeepStream();
     setLivePreview(null);
-    setCapturing(false);
-    setAtShop(false);
+    liveConsensusRef.current = emptyLiveConsensus();
     setRecordingMove(false);
     setShopCalibrating(false);
     setMultiArmed(false);
+  }
+
+  /** Circle Stop Listening: pause analysis + leave capture idle (At Shop off). */
+  function pauseListeningKeepCapture() {
+    pauseAnalysisKeepCapture();
+    setCapturing(false);
+    setAtShop(false);
     setShopToast(null);
     setSinglePhase('ready');
     setStatus('idle');
@@ -1896,12 +1859,15 @@ export default function App() {
 
   async function handleStartMoveBurst() {
     if (!matcherRef.current || !capturing) return;
+    if (!atShop) {
+      setShopToast('Click At Shop first, then Start Moving Item.');
+      return;
+    }
     try {
-      setShopCalibrating(!atShop);
+      setShopCalibrating(false);
       setShopToast(null);
       clearBurstCapture();
       await matcherRef.current.startItemMoveBurst();
-      setAtShop(true);
       setRecordingMove(true);
       setLocked(null);
       setLivePreview(null);
@@ -1922,7 +1888,8 @@ export default function App() {
       return;
     }
     const keepMulti = matcherRef.current.isMultiContinuousArmed();
-    // Drop live peek immediately so Report / HUD bind only to Stop & Match lock.
+    // Invalidate in-flight live peeks; Final Stop lock owns the result card.
+    stopLockGenRef.current += 1;
     setLivePreview(null);
     liveConsensusRef.current = emptyLiveConsensus();
     setRecordingMove(keepMulti);
@@ -1957,6 +1924,25 @@ export default function App() {
       if (keepMulti && matcherRef.current.isMultiContinuousArmed()) {
         await matcherRef.current.rearmMultiAfterMatch(result.reason);
         setRecordingMove(true);
+        return;
+      }
+      // Single: pause analysis like the circle — keep stream + Final lock card.
+      // At Shop clears so the next move needs an explicit At Shop click.
+      const keptToast = result.reason;
+      const hasFinal = result.ok || result.matches.length > 0;
+      pauseAnalysisKeepCapture();
+      setCapturing(false);
+      setAtShop(false);
+      if (hasFinal) {
+        setSinglePhase('locked');
+        setStatus('done');
+        setStatusDetail(keptToast);
+        setShopToast(keptToast);
+      } else {
+        setStatus('idle');
+        setStatusDetail(
+          'Paused — capture held. Start Listening to resume (same device).',
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1965,17 +1951,23 @@ export default function App() {
       setShopToast(`Stop & Match error: ${msg}`);
       pushSessionError(`Stop & Match error: ${msg}`);
       setRecordingMove(false);
+      pauseAnalysisKeepCapture();
+      setCapturing(false);
+      setAtShop(false);
     }
   }
 
   async function handleArmMulti() {
     if (!matcherRef.current || !capturing) return;
+    if (!atShop) {
+      setShopToast('Click At Shop first, then Arm Multi.');
+      return;
+    }
     try {
-      setShopCalibrating(!atShop);
+      setShopCalibrating(false);
       setShopToast(null);
       clearBurstCapture();
       await matcherRef.current.startMultiContinuous();
-      setAtShop(true);
       setMultiArmed(true);
       setRecordingMove(true);
       setLocked(null);
@@ -2262,6 +2254,7 @@ export default function App() {
           }
         : null;
 
+  // Final Stop lock always owns the card; Live Peek only while no firm lock.
   const latestLock =
     firmLock ??
     (livePreview

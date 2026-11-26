@@ -272,12 +272,19 @@ export function TacticalResultCard(props: {
         )}
 
         <div className="ml-auto text-right space-y-1 self-start">
-          {props.livePreview && (
+          {props.livePreview ? (
             <span
               className="inline-block rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border border-[var(--listening)]/55 bg-[var(--listening)]/15 text-[var(--listening)]"
               data-badge="live-preview"
             >
-              Live peek · not final
+              Live Peek · not final
+            </span>
+          ) : (
+            <span
+              className="inline-block rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border border-[var(--ok)]/55 bg-[var(--ok)]/15 text-[var(--ok)]"
+              data-badge="final-lock"
+            >
+              Final lock
             </span>
           )}
           {props.lowConfidence && !props.livePreview && (
@@ -293,8 +300,8 @@ export function TacticalResultCard(props: {
               100% locked
             </span>
           )}
-          <div className="text-[10px] text-[var(--muted)]">
-            {props.livePreview ? 'Live Group' : 'Predicted Group'} #{props.soundId}
+          <div className="text-[10px] text-[var(--muted)]" data-group-label={props.livePreview ? 'live-peek' : 'final'}>
+            {props.livePreview ? 'Live Peek Group' : 'Final Group'} #{props.soundId}
           </div>
           {props.meta && (
             <div className="text-[10px] text-[var(--muted)]">{props.meta}</div>

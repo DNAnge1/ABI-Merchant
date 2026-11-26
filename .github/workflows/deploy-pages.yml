@@ -24,7 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       # Cloud-only Pages: build from committed static assets only
-      # (src/data/*.json + public/sounds/*.ogg). Never run extract/Playwright/ffmpeg.
+      # (src/data/*.json + public/sounds/*.ogg + public/icons/*.png).
+      # Never run extract/Playwright/ffmpeg in CI.
       - run: npm ci
       - name: Verify committed merchant assets
         run: |
@@ -33,12 +34,18 @@ jobs:
           count=$(find public/sounds -name '*.ogg' | wc -l)
           echo "ogg count=$count"
           test "$count" -eq 76
+          icons=$(find public/icons -name '*.png' | wc -l)
+          echo "icon count=$icons"
+          test "$icons" -eq 189
       - run: GITHUB_PAGES=1 npm run build
-      - name: Verify dist includes reference audio
+      - name: Verify dist includes reference audio and icons
         run: |
           count=$(find dist/sounds -name '*.ogg' | wc -l)
           echo "dist ogg count=$count"
           test "$count" -eq 76
+          icons=$(find dist/icons -name '*.png' | wc -l)
+          echo "dist icon count=$icons"
+          test "$icons" -eq 189
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

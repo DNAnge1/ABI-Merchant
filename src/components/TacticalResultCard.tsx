@@ -156,6 +156,10 @@ export function TacticalResultCard(props: {
   compact?: boolean;
   /** Optional subtitle under Red Chance */
   meta?: string;
+  /** Expected Koen value of remaining candidates */
+  expectedValue?: number | null;
+  /** Payback % vs cargo price (100 = break-even) */
+  paybackPercent?: number | null;
   children?: ReactNode;
 }) {
   const sorted = sortHudItems(props.items);
@@ -163,6 +167,8 @@ export function TacticalResultCard(props: {
   const alone = isolatedLock && sorted.length === 1;
   const redChance = props.redChancePercent;
   const showGrid = sorted.length > 0;
+  const showEv =
+    props.expectedValue != null && props.expectedValue >= 0 && !props.compact;
 
   return (
     <section
@@ -226,6 +232,39 @@ export function TacticalResultCard(props: {
           )}
         </div>
       </header>
+
+      {showEv && (
+        <div
+          className="mb-3 flex flex-wrap gap-3 items-end border-b border-white/8 pb-3"
+          data-metric="ev-payback"
+        >
+          <div>
+            <div className="text-xl sm:text-2xl font-bold tabular-nums text-[var(--accent)] leading-none">
+              {formatPrice(props.expectedValue!)}
+            </div>
+            <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+              Expected value
+            </div>
+          </div>
+          {props.paybackPercent != null && (
+            <div>
+              <div
+                className={[
+                  'text-xl sm:text-2xl font-bold tabular-nums leading-none',
+                  props.paybackPercent >= 100
+                    ? 'text-[var(--ok)]'
+                    : 'text-[var(--warn)]',
+                ].join(' ')}
+              >
+                {formatPct(props.paybackPercent)}
+              </div>
+              <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                Payback
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {!showGrid ? (
         <p className="m-0 text-xs text-[var(--muted)]">No candidates in current filters.</p>

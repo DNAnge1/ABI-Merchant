@@ -8,7 +8,13 @@ import {
 } from './SessionErrorHistory';
 import type { RankedSoundCandidate } from '../utils/rankedGuess';
 import { TacticalResultCard, TacticalSlotChip } from './TacticalResultCard';
-import { scoreWithinSizes, filterScoredFeed } from '../utils/resultProbability';
+import { filterScoredFeed } from '../utils/resultProbability';
+import {
+  computeEvSummary,
+  scoreWithinRaidFilter,
+  type MapModeOption,
+  type RaidFilter,
+} from '../utils/raidPools';
 
 export interface SessionSlot {
   id: string;
@@ -47,6 +53,8 @@ export function ContinuousGrid(props: {
   multiSpikeCount?: number;
   multiTargetN?: number;
   multiPhase?: string;
+  mapModes?: MapModeOption[];
+  raidFilter?: RaidFilter;
 }) {
   const latest = props.slots[0] ?? null;
   const activeError = props.sessionErrors?.[0] ?? null;
@@ -168,18 +176,28 @@ export function ContinuousGrid(props: {
         hideActiveBanner
       />
 
-      {latest && (
+      {latest && (() => {
+        const scored = scoreWithinRaidFilter(
+          latest.items,
+          props.raidFilter ?? {},
+          props.mapModes ?? [],
+        );
+        const feed = filterScoredFeed(scored, {
+          onlyRed: false,
+          onlyYellow: false,
+        });
+        const ev = computeEvSummary(scored, props.raidFilter?.cargoPrice);
+        return (
         <TacticalResultCard
-          items={filterScoredFeed(scoreWithinSizes(latest.items, []), {
-            onlyRed: false,
-            onlyYellow: false,
-          })}
+          items={feed}
           redChancePercent={latest.redChancePercent ?? latest.redPct}
           soundId={latest.soundId}
           audioConfidence={latest.confidence}
           lowConfidence={latest.lowConfidence}
           isolatedItem={latest.isolatedItem}
           meta="Latest Multi lock"
+          expectedValue={ev.expectedValue}
+          paybackPercent={ev.paybackPercent}
         >
           <div className="mt-3 flex flex-wrap gap-2 border-t border-white/8 pt-3">
             <button
@@ -205,7 +223,8 @@ export function ContinuousGrid(props: {
             </button>
           </div>
         </TacticalResultCard>
-      )}
+        );
+      })()}
 
       {props.slots.length > 1 ? (
         <div>
@@ -214,10 +233,17 @@ export function ContinuousGrid(props: {
           </p>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {props.slots.slice(1).map((slot) => {
-              const scored = filterScoredFeed(scoreWithinSizes(slot.items, []), {
-                onlyRed: false,
-                onlyYellow: false,
-              });
+              const scored = filterScoredFeed(
+                scoreWithinRaidFilter(
+                  slot.items,
+                  props.raidFilter ?? {},
+                  props.mapModes ?? [],
+                ),
+                {
+                  onlyRed: false,
+                  onlyYellow: false,
+                },
+              );
               return (
                 <div key={slot.id} className="space-y-1.5">
                   <TacticalSlotChip

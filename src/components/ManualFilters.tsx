@@ -1,21 +1,27 @@
+import type { MapModeOption } from '../utils/raidPools';
+
 const SIZES = ['1x1', '1x2', '2x1', '2x2', '2x3', '3x2'] as const;
 
 export function ManualFilters(props: {
   sizes: string[];
   cargoTypes: string[];
   cargoPrices: number[];
+  mapModes?: MapModeOption[];
   size: string;
   cargoType: string;
   cargoPrice: number | '';
+  mapModeId?: string;
   noiseFloor: number;
   onChange: (patch: {
     size?: string;
     cargoType?: string;
     cargoPrice?: number | '';
+    mapModeId?: string;
     noiseFloor?: number;
   }) => void;
 }) {
   const sizeOptions = props.sizes.length ? props.sizes : [...SIZES];
+  const mapModes = props.mapModes ?? [];
 
   return (
     <section className="rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3">
@@ -23,8 +29,29 @@ export function ManualFilters(props: {
         Manual filters
       </h2>
       <p className="m-0 mt-1 text-[10px] text-[var(--muted)]">
-        Optional — narrow the pool when picking by ear. Automatic Mode ignores these.
+        Optional — narrow by raid map/mode, size, cargo type, and price. Same raid context
+        as Catch (listen) uses for EV.
       </p>
+
+      {mapModes.length > 0 && (
+        <div className="mt-2">
+          <p className="m-0 mb-1 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            Map / mode
+          </p>
+          <select
+            value={props.mapModeId ?? ''}
+            onChange={(e) => props.onChange({ mapModeId: e.target.value })}
+            className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)]"
+          >
+            <option value="">Any map (avg pools)</option>
+            {mapModes.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mt-2">
         <p className="m-0 mb-1 text-[10px] uppercase tracking-wide text-[var(--muted)]">Size</p>

@@ -22,6 +22,8 @@ import { AutoWizard, type AutoSettings } from './components/AutoWizard';
 import { StepRow, type WizardStep } from './components/StepRow';
 import { ListenCircle } from './components/ListenCircle';
 import { LatestLockFeed } from './components/LatestLockFeed';
+import { RaidContextBar } from './components/RaidContextBar';
+import { RecommendedAudioSettings } from './components/RecommendedAudioSettings';
 import {
   TroubleshootingPage,
   type TroubleSection,
@@ -76,10 +78,19 @@ import {
   DEFAULT_TOP_N,
   type RankedSoundCandidate,
 } from './utils/rankedGuess';
+import {
+  applySizeConstrainedFallback,
+  computeEvSummary,
+  resolveProfileId,
+  scoreWithinRaidFilter,
+  type MapModeOption,
+} from './utils/raidPools';
 
 const items = merchantData.items as MerchantItem[];
 const fingerprints = fingerprintsData as FingerprintsFile;
 const sounds = merchantData.soundIds as SoundProfile[];
+const mapModes = ((merchantData as { mapModes?: MapModeOption[] }).mapModes ??
+  []) as MapModeOption[];
 const ALL_SOUND_IDS = sounds.map((s) => s.soundId).sort((a, b) => a - b);
 
 const IDLE_VERIFY: VerifyState = {
@@ -128,6 +139,7 @@ export default function App() {
   const [size, setSize] = useState('');
   const [cargoType, setCargoType] = useState('');
   const [cargoPrice, setCargoPrice] = useState<number | ''>('');
+  const [mapModeId, setMapModeId] = useState('');
   const [noiseFloor, setNoiseFloor] = useState(0.2);
   /** Default Med; mic/loopback applies one notch stricter inside the matcher. */
   const [sensitivity, setSensitivity] = useState<SensitivityLevel>('med');
@@ -193,15 +205,30 @@ export default function App() {
   monitorRef.current = monitorSetup ?? 'dual';
   singlePhaseRef.current = singlePhase;
 
+  const raidProfileId = useMemo(
+    () => resolveProfileId({ mapModeId: mapModeId || undefined }, mapModes),
+    [mapModeId],
+  );
+
   const filteredManual = useMemo(
     () =>
       filterItemsByCargo(items, {
         size: size || undefined,
         cargoType: cargoType || undefined,
         cargoPrice: cargoPrice === '' ? undefined : cargoPrice,
+        profileId: raidProfileId,
       }),
-    [size, cargoType, cargoPrice],
+    [size, cargoType, cargoPrice, raidProfileId],
   );
+
+  const selectedSizesRef = useRef(selectedSizes);
+  selectedSizesRef.current = selectedSizes;
+  const cargoTypeRef = useRef(cargoType);
+  cargoTypeRef.current = cargoType;
+  const cargoPriceRef = useRef(cargoPrice);
+  cargoPriceRef.current = cargoPrice;
+  const mapModeIdRef = useRef(mapModeId);
+  mapModeIdRef.current = mapModeId;
 
   const stats = useMemo(() => {
     void statsTick;
@@ -275,11 +302,21 @@ export default function App() {
     [mode, sessionId],
   );
 
-  const updatePip = useCallback((data: { group: number; confidence: number; redPct: number; status: string }) => {
-    if (pipRef.current?.window && !pipRef.current.window.closed) {
-      renderPipContent(pipRef.current.window, data);
-    }
-  }, []);
+  const updatePip = useCallback(
+    (data: {
+      group: number;
+      confidence: number;
+      redPct: number;
+      status: string;
+      expectedValue?: number | null;
+      paybackPercent?: number | null;
+    }) => {
+      if (pipRef.current?.window && !pipRef.current.window.closed) {
+        renderPipContent(pipRef.current.window, data);
+      }
+    },
+    [],
+  );
 
   const isFailDiagnostic = useCallback((msg: string) => {
     return /ambiguous|weak match|no fingerprint|failed|error|reject|too quiet|need ≥|no candidates/i.test(
@@ -319,7 +356,12 @@ export default function App() {
         pushError?: boolean;
       },
     ) => {
-      const pool = buildBestGuessPool(matches, items, {
+      const sized = applySizeConstrainedFallback(
+        matches,
+        items,
+        selectedSizesRef.current,
+      );
+      const pool = buildBestGuessPool(sized, items, {
         topN: DEFAULT_TOP_N,
         lowConfidence: opts.lowConfidence,
       });
@@ -329,9 +371,20 @@ export default function App() {
         pushSessionError(msg);
         return null;
       }
-      const top = matches[0];
+      const top = sized[0];
       const resultItems = pool.primary.items;
       const redPct = redLikelihoodPercent(resultItems);
+      const scored = scoreWithinRaidFilter(
+        resultItems,
+        {
+          mapModeId: mapModeIdRef.current || undefined,
+          sizes: selectedSizesRef.current,
+          cargoType: cargoTypeRef.current || undefined,
+          cargoPrice: cargoPriceRef.current,
+        },
+        mapModes,
+      );
+      const ev = computeEvSummary(scored, cargoPriceRef.current);
       const lockedScan: LockedScan = {
         match: {
           ...top,
@@ -340,7 +393,7 @@ export default function App() {
           kind: pool.primary.kind,
           items: resultItems,
         },
-        alt: matches.slice(0, DEFAULT_TOP_N),
+        alt: sized.slice(0, DEFAULT_TOP_N),
         spectrumVector: opts.spectrumVector ?? top.spectrumVector ?? [],
         capturedCentroid: opts.capturedCentroid ?? top.capturedCentroid ?? 0,
         redPct,
@@ -374,6 +427,8 @@ export default function App() {
         confidence: pool.primary.confidence,
         redPct: pool.redChancePercent,
         status: opts.statusLabel ?? (opts.lowConfidence ? 'Best guess' : 'Match locked'),
+        expectedValue: ev.expectedValue,
+        paybackPercent: ev.paybackPercent,
       });
 
       return { pool, lockedScan };
@@ -1589,7 +1644,7 @@ export default function App() {
 
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="m-0 text-2xl font-medium tracking-tight">Listening</h2>
+                <h2 className="m-0 text-2xl font-medium tracking-tight">Catch</h2>
                 <span
                   className={[
                     'rounded-full px-2.5 py-0.5 text-[11px] font-semibold border',
@@ -1617,12 +1672,29 @@ export default function App() {
                 )}
               </div>
               <p className="m-0 text-[13px] text-[var(--muted)]">
-                Mid-screen circle CTA — step row above for Back / Monitors. Multi always waits for
-                3 moves.
+                Raid HUD — set map/mode below, then Start Listening. Multi always waits for 3
+                moves. Setup (monitors / sensitivity) is one step back.
               </p>
             </div>
 
             <WipAccuracyBanner />
+
+            <RaidContextBar
+              sticky
+              mapModes={mapModes}
+              cargoTypes={merchantData.cargoTypes}
+              cargoPrices={merchantData.cargoPrices}
+              mapModeId={mapModeId}
+              cargoType={cargoType}
+              cargoPrice={cargoPrice}
+              onChange={(patch) => {
+                if (patch.mapModeId !== undefined) setMapModeId(patch.mapModeId);
+                if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
+                if (patch.cargoPrice !== undefined) setCargoPrice(patch.cargoPrice);
+              }}
+            />
+
+            <RecommendedAudioSettings compact />
 
             {(status === 'error' || suggestMicFallback) && !verifyOpen && (
               <div
@@ -1746,6 +1818,10 @@ export default function App() {
                 onlyRed={onlyRed}
                 onlyYellow={onlyYellow}
                 selectedSizes={selectedSizes}
+                mapModes={mapModes}
+                mapModeId={mapModeId}
+                cargoType={cargoType}
+                cargoPrice={cargoPrice}
                 onToggleSize={toggleSize}
                 onOnlyRed={setOnlyRed}
                 onOnlyYellow={setOnlyYellow}
@@ -1867,25 +1943,42 @@ export default function App() {
           <div className="max-w-[960px] mx-auto flex flex-col gap-4">
             <WipAccuracyBanner />
             <div className="space-y-1">
-              <h2 className="m-0 text-2xl font-medium tracking-tight">Manual</h2>
+              <h2 className="m-0 text-2xl font-medium tracking-tight">Manual Setup</h2>
               <p className="m-0 text-sm text-[var(--muted)]">
-                Filters + sound board — audition pickup IDs by hand. Not the listen/scan loop.
+                Filters + sound board — audition pickup IDs by hand. For live raids use Catch
+                (Automatic).
               </p>
             </div>
+            <RaidContextBar
+              mapModes={mapModes}
+              cargoTypes={merchantData.cargoTypes}
+              cargoPrices={merchantData.cargoPrices}
+              mapModeId={mapModeId}
+              cargoType={cargoType}
+              cargoPrice={cargoPrice}
+              onChange={(patch) => {
+                if (patch.mapModeId !== undefined) setMapModeId(patch.mapModeId);
+                if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
+                if (patch.cargoPrice !== undefined) setCargoPrice(patch.cargoPrice);
+              }}
+            />
             <div className="grid gap-3 lg:grid-cols-[300px_1fr]">
               <aside className="flex flex-col gap-3 min-w-0">
                 <ManualFilters
                   sizes={merchantData.sizes}
                   cargoTypes={merchantData.cargoTypes}
                   cargoPrices={merchantData.cargoPrices}
+                  mapModes={mapModes}
                   size={size}
                   cargoType={cargoType}
                   cargoPrice={cargoPrice}
+                  mapModeId={mapModeId}
                   noiseFloor={noiseFloor}
                   onChange={(patch) => {
                     if (patch.size !== undefined) setSize(patch.size);
                     if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
                     if (patch.cargoPrice !== undefined) setCargoPrice(patch.cargoPrice);
+                    if (patch.mapModeId !== undefined) setMapModeId(patch.mapModeId);
                     if (patch.noiseFloor !== undefined) setNoiseFloor(patch.noiseFloor);
                   }}
                 />
@@ -2030,10 +2123,21 @@ export default function App() {
         }}
       />
 
-      <footer className="mt-auto border-t border-[var(--border)] px-3 py-2 text-center">
-        <span className="text-[11px] tabular-nums text-[var(--muted)]">
-          v{__APP_VERSION__}
-        </span>
+      <footer className="mt-auto border-t border-[var(--border)] px-3 py-3 text-center space-y-1">
+        <div className="text-[11px] tabular-nums text-[var(--muted)]">v{__APP_VERSION__}</div>
+        <p className="m-0 mx-auto max-w-xl text-[10px] leading-snug text-[var(--muted)]">
+          Independent fan companion — not affiliated with Morefun Studios, Tencent Games, or ABI
+          Builder. Catalog courtesy of the public explorer at{' '}
+          <a
+            href="https://abibuilder.com/merchant"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            abibuilder.com/merchant
+          </a>
+          . Audio stays on your device.
+        </p>
       </footer>
     </div>
   );

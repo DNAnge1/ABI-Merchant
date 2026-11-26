@@ -66,6 +66,16 @@ export interface FingerprintsFile {
   fingerprints: Record<string, SoundFingerprint>;
 }
 
+/** Cargo pool membership for an item (profile-aware when enriched). */
+export type MerchantItemSource = {
+  cargoType: string;
+  cargoPrice: number;
+  /** Raid profile id from explorer pools; omitted on legacy data. */
+  profileId?: number;
+  /** Drop weight within that pool; omitted → equal share. */
+  weight?: number;
+};
+
 export interface MerchantItem {
   id: number;
   name: string;
@@ -74,13 +84,15 @@ export interface MerchantItem {
   size: string;
   category: string;
   contactPrice: number;
+  /** Market/reference price from explorer when present. */
+  referencePrice?: number;
   soundId: number;
   iconUrl?: string;
   /** Optional local/CDN image; itemImage() prefers this over iconUrl. */
   image?: string;
   pickupSound: string;
   dropSound: string;
-  sources: { cargoType: string; cargoPrice: number }[];
+  sources: MerchantItemSource[];
 }
 
 export interface MatchResult {
@@ -462,17 +474,27 @@ export function spectralCentroidHz(
   return Math.min(FP_NYQUIST_HZ, Math.max(CENTROID_MIN_HZ, num / den));
 }
 
-/** Items valid for a given cargo size + price (and optional cargo type). */
+/** Items valid for a given cargo size + price (and optional cargo type / raid profile). */
 export function filterItemsByCargo(
   items: MerchantItem[],
-  opts: { size?: string; cargoPrice?: number; cargoType?: string },
+  opts: {
+    size?: string;
+    cargoPrice?: number;
+    cargoType?: string;
+    profileId?: number;
+  },
 ): MerchantItem[] {
   return items.filter((item) => {
     if (opts.size && item.size !== opts.size) return false;
-    if (opts.cargoPrice == null && !opts.cargoType) return true;
+    if (opts.cargoPrice == null && !opts.cargoType && opts.profileId == null) {
+      return true;
+    }
     return item.sources.some((s) => {
       if (opts.cargoPrice != null && s.cargoPrice !== opts.cargoPrice) return false;
       if (opts.cargoType && s.cargoType !== opts.cargoType) return false;
+      if (opts.profileId != null && s.profileId != null && s.profileId !== opts.profileId) {
+        return false;
+      }
       return true;
     });
   });

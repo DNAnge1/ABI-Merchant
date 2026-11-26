@@ -24,10 +24,19 @@ const ROOT = resolve(__dirname, '..');
 const OUT_DATA = join(ROOT, 'src/data/merchantData.json');
 const OUT_FP = join(ROOT, 'src/data/fingerprints.json');
 const SOUNDS_DIR = join(ROOT, 'public/sounds');
+const ICONS_DIR = join(ROOT, 'public/icons');
 const LIVE_URL = 'https://abibuilder.com/merchant';
 const WAYBACK_URL =
   'https://web.archive.org/web/20261009010813id_/https://abibuilder.com/merchant';
 const AUDIO_BASE = 'https://abibuilder.com/audio/merchant';
+
+/** Explorer page remaps infection mode labels for the Map/Mode dropdown. */
+function displayMode(mode) {
+  const m = String(mode || '');
+  if (m.toLowerCase() === 'infection') return 'Infected';
+  if (m === 'SevereInfection') return 'Deep Infected';
+  return m;
+}
 
 const KNOWN_CARGO = {
   100001: 'Flammables',
@@ -53,7 +62,92 @@ const KNOWN_CARGO = {
 
 function ensureDirs() {
   mkdirSync(SOUNDS_DIR, { recursive: true });
+  mkdirSync(ICONS_DIR, { recursive: true });
   mkdirSync(dirname(OUT_DATA), { recursive: true });
+}
+
+/** Bracket-aware JSON array slice starting at `start` (must point at `[`). */
+function sliceJsonArray(text, start) {
+  if (text[start] !== '[') throw new Error('Expected [ at sliceJsonArray start');
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === '[') depth++;
+    else if (ch === ']') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  throw new Error('Unclosed JSON array');
+}
+
+function extractProfiles(text) {
+  // Prefer the data array: "profiles":[{...}], not the count "profiles":10
+  const marker = '"profiles":[{';
+  const idx = text.indexOf(marker);
+  if (idx < 0) return [];
+  const start = idx + '"profiles":'.length;
+  try {
+    const raw = sliceJsonArray(text, start);
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((p) => p && typeof p.id === 'number')
+      .map((p) => ({
+        id: p.id,
+        label: p.label || `Profile ${p.id}`,
+        groupWeightTotal: p.groupWeightTotal ?? null,
+        maps: Array.isArray(p.maps)
+          ? p.maps.map((m) => ({
+              mapId: String(m.map ?? m.mapId ?? ''),
+              mapName: String(m.mapName ?? ''),
+              mode: String(m.mode ?? ''),
+            }))
+          : [],
+      }));
+  } catch (err) {
+    console.warn(`[parse] profiles JSON failed: ${err.message}`);
+    return [];
+  }
+}
+
+function buildMapModes(profiles) {
+  const out = [];
+  const seen = new Set();
+  for (const p of profiles) {
+    for (const m of p.maps || []) {
+      if (!m.mapName) continue;
+      // Distorted Valley entries exist on profiles but explorer UI skips them.
+      if (/distorted/i.test(m.mapName) || /distorted/i.test(m.mode)) continue;
+      const mode = displayMode(m.mode);
+      const id = `${m.mapName} ${mode}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({
+        id,
+        name: id,
+        profileId: p.id,
+        mapName: m.mapName,
+        mode,
+        modeRaw: m.mode,
+        mapId: m.mapId,
+      });
+    }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
 }
 
 async function fetchText(url) {
@@ -189,28 +283,60 @@ function parseMerchantHtml(html, sourceLabel) {
     });
   }
 
+  const profiles = extractProfiles(text);
+  const mapModes = buildMapModes(profiles);
+
   const boxRe =
     /\{"id":(\d+),"profile":(\d+),"itemGroup":(\d+),"weight":(\d+),"typeId":(\d+),"price":(\d+),"nameKey":(\d+),"weightTotal":(\d+),"items":\[(.*?)\]\}/g;
   const sourcesByItem = new Map();
   const cargoPrices = new Set();
   const cargoTypeNames = new Set();
+  const pools = [];
 
   for (const m of text.matchAll(boxRe)) {
+    const poolId = Number(m[1]);
+    const profileId = Number(m[2]);
+    const itemGroup = Number(m[3]);
+    const boxWeight = Number(m[4]);
     const typeId = Number(m[5]);
     const price = Number(m[6]);
+    const weightTotal = Number(m[8]);
     const itemsJson = m[9];
     const cargoType = cargoTypes[typeId] || `type_${typeId}`;
     cargoPrices.add(price);
     cargoTypeNames.add(cargoType);
-    const srcKey = `${cargoType}@@${price}`;
+
+    const poolItems = [];
     for (const im of itemsJson.matchAll(/\{"id":(\d+),"weight":(\d+)\}/g)) {
       const iid = Number(im[1]);
+      const weight = Number(im[2]);
+      poolItems.push({ id: iid, weight });
       if (!sourcesByItem.has(iid)) sourcesByItem.set(iid, new Map());
       const map = sourcesByItem.get(iid);
-      if (!map.has(srcKey)) {
-        map.set(srcKey, { cargoType, cargoPrice: price });
+      // One entry per profile × cargoType × price (keep max weight if duplicate).
+      const srcKey = `${profileId}@@${cargoType}@@${price}`;
+      const prev = map.get(srcKey);
+      if (!prev || weight > prev.weight) {
+        map.set(srcKey, {
+          profileId,
+          cargoType,
+          cargoPrice: price,
+          weight,
+        });
       }
     }
+
+    pools.push({
+      id: poolId,
+      profileId,
+      itemGroup,
+      cargoTypeId: typeId,
+      cargoType,
+      cargoPrice: price,
+      weight: boxWeight,
+      weightTotal,
+      items: poolItems,
+    });
   }
 
   for (const [iid, item] of itemsById) {
@@ -236,21 +362,32 @@ function parseMerchantHtml(html, sourceLabel) {
     s.itemNames.push(item.name);
   }
 
-  const items = Array.from(itemsById.values()).map((item) => ({
-    id: item.id,
-    name: item.name,
-    rarity: item.rarity,
-    size: item.size,
-    category: item.category,
-    contactPrice: item.contactPrice,
-    soundId: item.soundId,
-    iconUrl: item.iconUrl,
-    pickupSound: item.pickupSound,
-    dropSound: item.dropSound,
-    sources: item.sources,
-  }));
+  const items = Array.from(itemsById.values()).map((item) => {
+    const localIcon = `/icons/${item.id}.png`;
+    return {
+      id: item.id,
+      name: item.name,
+      rarity: item.rarity,
+      size: item.size,
+      category: item.category,
+      contactPrice: item.contactPrice,
+      referencePrice: item.referencePrice,
+      soundId: item.soundId,
+      /** Local Pages path after downloadIcons(); remote kept as fallback source. */
+      iconUrl: localIcon,
+      iconRemote: item.iconUrl || undefined,
+      image: localIcon,
+      pickupSound: item.pickupSound,
+      dropSound: item.dropSound,
+      sources: item.sources,
+    };
+  });
 
   items.sort((a, b) => b.rarity - a.rarity || b.contactPrice - a.contactPrice || a.name.localeCompare(b.name));
+
+  console.log(
+    `[parse] profiles=${profiles.length} mapModes=${mapModes.length} pools=${pools.length}`,
+  );
 
   return {
     source: LIVE_URL,
@@ -258,10 +395,57 @@ function parseMerchantHtml(html, sourceLabel) {
     extractedAt: new Date().toISOString(),
     soundIds: Array.from(sounds.values()).sort((a, b) => a.soundId - b.soundId),
     items,
+    profiles,
+    mapModes,
+    pools,
     cargoTypes: Array.from(cargoTypeNames).sort(),
     cargoPrices: Array.from(cargoPrices).sort((a, b) => a - b),
     sizes: Array.from(new Set(items.map((i) => i.size))).sort(),
   };
+}
+
+/**
+ * Mirror remote item icons into public/icons/{id}.png for static Pages.
+ * Prefer item.iconRemote (CDN); skip if local file already present.
+ */
+async function downloadIcons(items) {
+  mkdirSync(ICONS_DIR, { recursive: true });
+  let ok = 0;
+  let skip = 0;
+  let fail = 0;
+  console.log(`[icons] downloading up to ${items.length} → ${ICONS_DIR}`);
+  for (const item of items) {
+    const dest = join(ICONS_DIR, `${item.id}.png`);
+    if (existsSync(dest) && readFileSync(dest).length > 100) {
+      skip++;
+      ok++;
+      continue;
+    }
+    const url = item.iconRemote || item.iconUrl;
+    if (!url || url.startsWith('/')) {
+      fail++;
+      continue;
+    }
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (compatible; ABI-Merchant-extract/0.9; +https://github.com/DNAnge1/ABI-Merchant)',
+          Accept: 'image/png,image/*',
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 50) throw new Error('tiny file');
+      writeFileSync(dest, buf);
+      ok++;
+    } catch (err) {
+      fail++;
+      console.warn(`  ✗ icon ${item.id}: ${err.message}`);
+    }
+  }
+  console.log(`[icons] done ok=${ok} cached=${skip} fail=${fail}`);
+  return { ok, fail, skip };
 }
 
 async function downloadAudio(soundIds) {
@@ -570,38 +754,48 @@ async function main() {
   } else {
     let html = null;
     let sourceLabel = LIVE_URL;
+    const fromHtmlIdx = process.argv.indexOf('--from-html');
+    const fromHtmlPath =
+      fromHtmlIdx >= 0 ? process.argv[fromHtmlIdx + 1] : null;
 
-    try {
-      html = await scrapeWithPlaywright(LIVE_URL);
-    } catch (err) {
-      console.warn(`[scrape] Playwright live failed: ${err.message}`);
-    }
-
-    if (!html) {
-      console.log('[scrape] falling back to Wayback Machine snapshot');
-      sourceLabel = WAYBACK_URL;
+    if (fromHtmlPath) {
+      console.log(`[scrape] reading local HTML ${fromHtmlPath}`);
+      html = readFileSync(fromHtmlPath, 'utf8');
+      sourceLabel = `file://${resolve(fromHtmlPath)}`;
+    } else {
       try {
-        html = await scrapeWithPlaywright(WAYBACK_URL);
+        html = await scrapeWithPlaywright(LIVE_URL);
       } catch (err) {
-        console.warn(`[scrape] Playwright Wayback failed: ${err.message}`);
+        console.warn(`[scrape] Playwright live failed: ${err.message}`);
       }
-    }
 
-    if (!html) {
-      console.log('[scrape] fetching Wayback HTML via HTTP');
-      html = await fetchText(WAYBACK_URL);
-      sourceLabel = WAYBACK_URL + ' (HTTP)';
+      if (!html) {
+        console.log('[scrape] falling back to Wayback Machine snapshot');
+        sourceLabel = WAYBACK_URL;
+        try {
+          html = await scrapeWithPlaywright(WAYBACK_URL);
+        } catch (err) {
+          console.warn(`[scrape] Playwright Wayback failed: ${err.message}`);
+        }
+      }
+
+      if (!html) {
+        console.log('[scrape] fetching Wayback HTML via HTTP');
+        html = await fetchText(WAYBACK_URL);
+        sourceLabel = WAYBACK_URL + ' (HTTP)';
+      }
     }
 
     merchant = parseMerchantHtml(html, sourceLabel);
     console.log(
-      `[data] items=${merchant.items.length} sounds=${merchant.soundIds.length} cargoTypes=${merchant.cargoTypes.length}`,
+      `[data] items=${merchant.items.length} sounds=${merchant.soundIds.length} cargoTypes=${merchant.cargoTypes.length} profiles=${merchant.profiles?.length ?? 0}`,
     );
 
     writeFileSync(OUT_DATA, JSON.stringify(merchant, null, 2));
     console.log(`[data] wrote ${OUT_DATA}`);
 
     await downloadAudio(merchant.soundIds);
+    await downloadIcons(merchant.items);
   }
 
   const fp = generateFingerprints(merchant);

@@ -17,11 +17,60 @@ export const LIVE_STICKY_MARGIN_PTS = 6;
 /**
  * Onset timestamps within this window (ms) are treated as the same clean
  * click — do not reset sticky just because peak sample jittered.
+ * Kept tight; refractory + consensus handle decay re-triggers.
  */
 export const LIVE_ONSET_RESET_MS = 80;
 
 /**
- * Keep the displayed live top stable while scores are close.
+ * A hit at or above this confidence is "strong" — a lone weaker tick
+ * (e.g. decay lobe ~75%) must not overwrite it.
+ */
+export const LIVE_STRONG_CONF_PTS = 88;
+
+/** Votes below this are low-confidence outliers once a strong hit exists. */
+export const LIVE_WEAK_CONF_PTS = 80;
+
+/** Keep this many clean-onset votes for confidence-weighted consensus. */
+export const LIVE_VOTE_HISTORY = 5;
+
+/**
+ * Distinct clean onsets that must agree on a new Group ID before overthrowing
+ * an existing strong consensus (≥ LIVE_STRONG_CONF_PTS).
+ */
+export const LIVE_VOTE_AGREE_N = 2;
+
+export type LiveOnsetVote = {
+  soundId: number;
+  confidence: number;
+  onsetMs: number;
+  matches: MatchResult[];
+};
+
+export type LiveConsensusState = {
+  /** Displayed primary sound id (null until first solid vote). */
+  soundId: number | null;
+  /** Onset ms of the vote that last set / reinforced consensus. */
+  onsetMs: number | null;
+  /** Best confidence observed for the consensus soundId. */
+  confidence: number;
+  /** Recent clean-onset votes (newest last), capped at LIVE_VOTE_HISTORY. */
+  votes: LiveOnsetVote[];
+  /** Matches reorder for UI (sticky/consensus primary first). */
+  matches: MatchResult[];
+};
+
+export function emptyLiveConsensus(): LiveConsensusState {
+  return {
+    soundId: null,
+    onsetMs: null,
+    confidence: 0,
+    votes: [],
+    matches: [],
+  };
+}
+
+/**
+ * Keep the displayed live top stable while scores are close (same onset).
  * - New clean onset → adopt raw top (reset sticky).
  * - Same onset → keep sticky unless challenger leads by ≥ margin, or sticky
  *   drops out of the scored set.
@@ -70,6 +119,199 @@ export function stabilizeLiveMatches(
     matches: [stickyMatch, ...rest],
     soundId: stickyId,
     onsetMs: stickyOnset,
+  };
+}
+
+function reorderPrimary(
+  matches: MatchResult[],
+  soundId: number,
+): MatchResult[] {
+  const idx = matches.findIndex((m) => m.soundId === soundId);
+  if (idx <= 0) return matches;
+  const primary = matches[idx];
+  return [primary, ...matches.filter((m) => m.soundId !== soundId)];
+}
+
+function weightedVoteWinner(
+  votes: LiveOnsetVote[],
+): { soundId: number; weight: number; bestConf: number } | null {
+  if (votes.length === 0) return null;
+  const byId = new Map<number, { weight: number; bestConf: number; count: number }>();
+  for (const v of votes) {
+    const cur = byId.get(v.soundId) ?? { weight: 0, bestConf: 0, count: 0 };
+    cur.weight += Math.max(v.confidence, 0.01);
+    cur.bestConf = Math.max(cur.bestConf, v.confidence);
+    cur.count += 1;
+    byId.set(v.soundId, cur);
+  }
+  let best: { soundId: number; weight: number; bestConf: number } | null = null;
+  for (const [soundId, stats] of byId) {
+    if (
+      !best ||
+      stats.weight > best.weight ||
+      (stats.weight === best.weight && stats.bestConf > best.bestConf)
+    ) {
+      best = { soundId, weight: stats.weight, bestConf: stats.bestConf };
+    }
+  }
+  return best;
+}
+
+function distinctOnsetAgreeCount(
+  votes: LiveOnsetVote[],
+  soundId: number,
+  sinceOnsetMs: number | null,
+): number {
+  const seen = new Set<number>();
+  for (const v of votes) {
+    if (v.soundId !== soundId) continue;
+    if (sinceOnsetMs != null && v.onsetMs <= sinceOnsetMs) continue;
+    // Bucket near-identical onset jitter as one click.
+    const bucket = Math.round(v.onsetMs / LIVE_ONSET_RESET_MS);
+    seen.add(bucket);
+  }
+  return seen.size;
+}
+
+/**
+ * Confidence-weighted consensus across recent clean onsets.
+ *
+ * - `peek == null` → freeze: return prior consensus unchanged (silence / no onset).
+ * - Same onset re-peek → stabilize within-onset, refresh scores.
+ * - New onset → record vote; never let a lone weak (~75%) overwrite a strong
+ *   (≥88–90%) hit unless LIVE_VOTE_AGREE_N distinct clean onsets agree.
+ */
+export function applyLiveConsensus(
+  state: LiveConsensusState,
+  peek: { matches: MatchResult[]; onsetMs: number } | null,
+  opts?: {
+    strongPts?: number;
+    weakPts?: number;
+    historyN?: number;
+    agreeN?: number;
+    marginPts?: number;
+    onsetResetMs?: number;
+  },
+): LiveConsensusState {
+  if (!peek || peek.matches.length === 0) {
+    // Freeze-on-silence: keep last solid consensus on screen.
+    return state;
+  }
+
+  const strongPts = opts?.strongPts ?? LIVE_STRONG_CONF_PTS;
+  const weakPts = opts?.weakPts ?? LIVE_WEAK_CONF_PTS;
+  const historyN = opts?.historyN ?? LIVE_VOTE_HISTORY;
+  const agreeN = opts?.agreeN ?? LIVE_VOTE_AGREE_N;
+  const onsetReset = opts?.onsetResetMs ?? LIVE_ONSET_RESET_MS;
+
+  const sameOnset =
+    state.onsetMs != null &&
+    Math.abs(peek.onsetMs - state.onsetMs) < onsetReset;
+
+  // Within the same clean onset: hysteresis only — do not append a new vote.
+  if (sameOnset && state.soundId != null) {
+    const stabilized = stabilizeLiveMatches(
+      peek.matches,
+      { soundId: state.soundId, onsetMs: state.onsetMs },
+      peek.onsetMs,
+      opts,
+    );
+    const primary =
+      stabilized.matches.find((m) => m.soundId === stabilized.soundId) ??
+      stabilized.matches[0];
+    return {
+      ...state,
+      soundId: stabilized.soundId,
+      onsetMs: stabilized.onsetMs,
+      confidence: Math.max(state.confidence, primary?.confidence ?? 0),
+      matches: stabilized.matches,
+    };
+  }
+
+  // New clean onset (or first vote).
+  const rawTop = peek.matches[0];
+  const vote: LiveOnsetVote = {
+    soundId: rawTop.soundId,
+    confidence: rawTop.confidence,
+    onsetMs: peek.onsetMs,
+    matches: peek.matches,
+  };
+  const votes = [...state.votes, vote].slice(-historyN);
+
+  // First solid vote → adopt.
+  if (state.soundId == null) {
+    return {
+      soundId: vote.soundId,
+      onsetMs: vote.onsetMs,
+      confidence: vote.confidence,
+      votes,
+      matches: peek.matches,
+    };
+  }
+
+  // Same group reinforced.
+  if (vote.soundId === state.soundId) {
+    return {
+      soundId: state.soundId,
+      onsetMs: vote.onsetMs,
+      confidence: Math.max(state.confidence, vote.confidence),
+      votes,
+      matches: reorderPrimary(peek.matches, state.soundId),
+    };
+  }
+
+  const hasStrong = state.confidence >= strongPts;
+  const voteWeak = vote.confidence < weakPts;
+  const voteStrong = vote.confidence >= strongPts;
+
+  // Once a strong hit exists: ignore low-confidence outliers.
+  if (hasStrong && voteWeak) {
+    return {
+      ...state,
+      votes,
+      matches: reorderPrimary(peek.matches, state.soundId),
+    };
+  }
+
+  // Strong consensus: challenger needs multiple distinct clean onsets agreeing,
+  // or a single strong challenger that also wins weighted vote of recent history.
+  if (hasStrong) {
+    const agree = distinctOnsetAgreeCount(votes, vote.soundId, state.onsetMs);
+    const winner = weightedVoteWinner(votes);
+    const weightedOk =
+      winner != null &&
+      winner.soundId === vote.soundId &&
+      (voteStrong || agree >= agreeN);
+
+    if (agree < agreeN && !weightedOk) {
+      return {
+        ...state,
+        votes,
+        matches: reorderPrimary(peek.matches, state.soundId),
+      };
+    }
+  } else {
+    // No strong lock yet — confidence-weighted vote across recent onsets.
+    const winner = weightedVoteWinner(votes);
+    if (winner && winner.soundId !== vote.soundId) {
+      // Keep prior if weighted history still prefers it and new vote isn't strong.
+      if (!voteStrong && winner.soundId === state.soundId) {
+        return {
+          ...state,
+          votes,
+          matches: reorderPrimary(peek.matches, state.soundId),
+        };
+      }
+    }
+  }
+
+  // Adopt challenger.
+  return {
+    soundId: vote.soundId,
+    onsetMs: vote.onsetMs,
+    confidence: vote.confidence,
+    votes,
+    matches: peek.matches,
   };
 }
 

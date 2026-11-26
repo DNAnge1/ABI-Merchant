@@ -84,9 +84,11 @@ import { alertForMatch } from './utils/soundAlerts';
 import { openDocumentPiP, renderPipContent, type PipHandle } from './utils/pipOverlay';
 import { type SensitivityLevel } from './utils/sensitivity';
 import {
+  applyLiveConsensus,
   buildBestGuessPool,
   DEFAULT_TOP_N,
-  stabilizeLiveMatches,
+  emptyLiveConsensus,
+  type LiveConsensusState,
   type RankedSoundCandidate,
 } from './utils/rankedGuess';
 import {
@@ -223,11 +225,11 @@ export default function App() {
   const [locked, setLocked] = useState<LockedScan | null>(null);
   /** Live rolling peek while Start Moving / Multi burst (~450ms). */
   const [livePreview, setLivePreview] = useState<LockedScan | null>(null);
-  /** Sticky Group ID for live narrowing — avoid thrash while scores are close. */
-  const liveStickyRef = useRef<{ soundId: number | null; onsetMs: number | null }>({
-    soundId: null,
-    onsetMs: null,
-  });
+  /**
+   * Onset-anchored consensus for live narrowing:
+   * sticky within one click + confidence-weighted votes across clean onsets.
+   */
+  const liveConsensusRef = useRef<LiveConsensusState>(emptyLiveConsensus());
   const [slots, setSlots] = useState<SessionSlot[]>([]);
   const [missOpen, setMissOpen] = useState(false);
   const [missTarget, setMissTarget] = useState<'locked' | string | null>(null);
@@ -361,7 +363,7 @@ export default function App() {
     setVerifyOpen(true);
   }, []);
 
-  // Hidden QA demo: ?liveStickyDemo=1 — thrashing raw peeks (#1→#28/…) held sticky on #1.
+  // Hidden QA demo: ?liveStickyDemo=1 — strong #1 then weak #3 decay ticks; consensus holds #1.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -375,21 +377,22 @@ export default function App() {
     setAtShop(true);
     setRecordingMove(true);
     setStatus('listening');
-    setStatusDetail('Live sticky demo — raw peek thrash held on Group #1');
+    setStatusDetail('Live consensus demo — strong #1 holds through weak #3 decay ticks');
 
-    // Same onset; raw top thrash like Brent’s #1→#28/#3/#20/#11/#2 — #1 stays in set.
-    const frames: { ids: number[]; confs: number[] }[] = [
-      { ids: [1, 28, 3], confs: [92, 78, 71] },
-      { ids: [28, 1, 3], confs: [78, 75, 70] },
-      { ids: [3, 20, 1], confs: [74, 73, 72] },
-      { ids: [20, 11, 1], confs: [76, 74, 70] },
-      { ids: [11, 2, 1], confs: [77, 76, 74] },
-      { ids: [2, 1, 28], confs: [79, 78, 70] },
-      { ids: [1, 28, 3], confs: [88, 80, 72] },
+    // Brent+Gemini hop pattern: nail #1 @91–97%, then ~500ms later #3 @~75% (same click tail).
+    // Also include same-onset mid-pack thrash. Consensus must keep Group #1.
+    const frames: { ids: number[]; confs: number[]; onsetMs: number }[] = [
+      { ids: [1, 28, 3], confs: [93.3, 78, 71], onsetMs: 1000 },
+      { ids: [1, 28, 3], confs: [95.1, 76, 70], onsetMs: 1020 }, // same onset fill-in
+      { ids: [3, 1, 28], confs: [75.4, 72, 68], onsetMs: 1520 }, // decay lobe — ignore
+      { ids: [3, 2, 1], confs: [77.8, 74, 70], onsetMs: 1980 }, // another weak — ignore
+      { ids: [1, 28, 3], confs: [93.6, 80, 72], onsetMs: 2500 }, // reinforce #1
+      { ids: [28, 1, 3], confs: [78, 75, 70], onsetMs: 2520 }, // same-onset thrash
+      { ids: [3, 20, 1], confs: [74, 73, 72], onsetMs: 2540 },
+      { ids: [1, 28, 3], confs: [92, 78, 71], onsetMs: 2560 },
     ];
     let i = 0;
-    const sticky = { soundId: null as number | null, onsetMs: null as number | null };
-    const onsetMs = 1000;
+    let consensus = emptyLiveConsensus();
     const apply = () => {
       const frame = frames[i % frames.length];
       i += 1;
@@ -400,10 +403,12 @@ export default function App() {
         items: items.filter((it) => it.soundId === soundId),
         spectralCentroid: 3200,
       }));
-      const stabilized = stabilizeLiveMatches(matches, sticky, onsetMs);
-      sticky.soundId = stabilized.soundId;
-      sticky.onsetMs = stabilized.onsetMs;
-      const sized = stabilized.matches;
+      consensus = applyLiveConsensus(consensus, {
+        matches,
+        onsetMs: frame.onsetMs,
+      });
+      const sized = consensus.matches;
+      if (!sized.length || consensus.soundId == null) return;
       const pool = buildBestGuessPool(sized, items, {
         topN: DEFAULT_TOP_N,
         lowConfidence: true,
@@ -451,10 +456,10 @@ export default function App() {
   }, [sessionErrors[0]?.id]);
 
   // Live rolling match while burst is recording — freeze on silence / no onset.
-  // Sticky top + hysteresis: do not thrash Group ID every ~450ms when scores are close.
+  // Onset-anchored peek + confidence-weighted consensus across clean onsets.
   useEffect(() => {
     if (!recordingMove) {
-      liveStickyRef.current = { soundId: null, onsetMs: null };
+      liveConsensusRef.current = emptyLiveConsensus();
       return;
     }
     const LIVE_MS = 450;
@@ -462,23 +467,26 @@ export default function App() {
       const matcher = matcherRef.current;
       if (!matcher?.isBurstRecording()) return;
       const peek = matcher.peekBurstMatches();
-      // No real onset → keep last solid live preview (do not invent from quiet).
-      if (!peek || peek.matches.length === 0) return;
+      // No rising-edge / past window → freeze last solid consensus (do not invent).
+      if (!peek || peek.matches.length === 0) {
+        liveConsensusRef.current = applyLiveConsensus(
+          liveConsensusRef.current,
+          null,
+        );
+        return;
+      }
       const sizedRaw = applySizeConstrainedFallback(
         peek.matches,
         items,
         selectedSizesRef.current,
       );
-      const stabilized = stabilizeLiveMatches(
-        sizedRaw,
-        liveStickyRef.current,
-        peek.onsetMs,
-      );
-      liveStickyRef.current = {
-        soundId: stabilized.soundId,
-        onsetMs: stabilized.onsetMs,
-      };
-      const sized = stabilized.matches;
+      const next = applyLiveConsensus(liveConsensusRef.current, {
+        matches: sizedRaw,
+        onsetMs: peek.onsetMs,
+      });
+      liveConsensusRef.current = next;
+      const sized = next.matches;
+      if (!sized.length || next.soundId == null) return;
       const pool = buildBestGuessPool(sized, items, {
         topN: DEFAULT_TOP_N,
         lowConfidence: true,
@@ -2161,14 +2169,6 @@ export default function App() {
               }}
               onStartOver={startOver}
             />
-            <button
-              type="button"
-              onClick={openPools}
-              className="self-start bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline underline-offset-2 cursor-pointer"
-            >
-              Pools — map/mode weight explainer →
-            </button>
-
             <SessionErrorHistory
               entries={sessionErrors}
               onClear={() => setSessionErrors([])}
@@ -2338,6 +2338,7 @@ export default function App() {
               mapModeId={mapModeId}
               cargoType={cargoType}
               cargoPrice={cargoPrice}
+              onOpenPools={openPools}
               onChange={(patch) => {
                 if (patch.mapModeId !== undefined) setMapModeId(patch.mapModeId);
                 if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
@@ -2373,6 +2374,7 @@ export default function App() {
               mapModeId={mapModeId}
               cargoType={cargoType}
               cargoPrice={cargoPrice}
+              onOpenPools={openPools}
               onChange={(patch) => {
                 if (patch.mapModeId !== undefined) setMapModeId(patch.mapModeId);
                 if (patch.cargoType !== undefined) setCargoType(patch.cargoType);
@@ -2563,7 +2565,7 @@ export default function App() {
             onClick={openPools}
             className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
           >
-            Map / Mode
+            Map Pools
           </button>
         </div>
         <p className="m-0 mx-auto max-w-xl text-[10px] leading-snug text-[var(--muted)]">

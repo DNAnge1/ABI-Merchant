@@ -1,17 +1,11 @@
 /**
- * Entry-only trust FAQ accordion. Keep off Catch / Listen HUD.
- * Q&A is original for this fan companion — not copied from ABI Builder.
- *
- * Default: only the ToS / bans item starts open; the rest start collapsed.
- * Controlled `open` + `onToggle` so React does not leave every panel stuck open.
+ * Entry-only trust FAQ. Keep off Catch / Listen HUD.
+ * Compact: FAQ button opens a modal; exclusive accordion (all closed by default).
  */
 
-import { useState, type ReactNode, type ToggleEvent } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 const GITHUB_REPO = 'https://github.com/DNAnge1/ABI-Merchant';
-
-/** Index of “Is this legit? What about ToS / bans?” — sole default-open panel. */
-const DEFAULT_OPEN_INDEX = 0;
 
 const FAQ: { q: string; a: ReactNode }[] = [
   {
@@ -103,43 +97,98 @@ export function EntryTrustStrip() {
   );
 }
 
+/** Compact Entry trigger — opens FAQ in a modal so the first viewport stays short. */
 export function EntryTrustFaq() {
-  // Only ToS starts open; users may open/close any panel afterward.
-  const [openByIndex, setOpenByIndex] = useState<Record<number, boolean>>(() => ({
-    [DEFAULT_OPEN_INDEX]: true,
-  }));
-
-  const handleToggle = (index: number) => (e: ToggleEvent<HTMLDetailsElement>) => {
-    const next = e.currentTarget.open;
-    setOpenByIndex((prev) => {
-      if (Boolean(prev[index]) === next) return prev;
-      return { ...prev, [index]: next };
-    });
-  };
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="w-full max-w-md mx-auto text-left" data-entry-trust-faq>
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)]/80 overflow-hidden">
-        <p className="m-0 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)] border-b border-[var(--border)]">
-          Trust &amp; safety FAQ
-        </p>
-        {FAQ.map((item, i) => (
-          <details
-            key={item.q}
-            className="border-b border-[var(--border)] last:border-b-0 group"
-            open={Boolean(openByIndex[i])}
-            onToggle={handleToggle(i)}
+    <div className="w-full max-w-md mx-auto text-center" data-entry-trust-faq>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-lg border border-[var(--border)] bg-[var(--bg-panel)]/80 px-4 py-2 text-[12px] font-semibold text-[var(--text)] hover:border-[var(--accent)]/50"
+      >
+        Trust &amp; safety FAQ
+      </button>
+      <FaqModal open={open} onClose={() => setOpen(false)} />
+    </div>
+  );
+}
+
+export function FaqModal(props: { open: boolean; onClose: () => void }) {
+  /** Exclusive accordion — null means all closed. */
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  const { open, onClose } = props;
+  useEffect(() => {
+    if (!open) {
+      setOpenIndex(null);
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!props.open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Trust and safety FAQ"
+      data-faq-modal
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/65 border-none cursor-pointer"
+        aria-label="Close FAQ"
+        onClick={props.onClose}
+      />
+      <div className="relative w-full max-w-md max-h-[85vh] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg-panel)] px-3 py-2.5">
+          <h2 className="m-0 text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+            Trust &amp; safety FAQ
+          </h2>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded px-2 py-1 text-[11px] text-[var(--muted)] border border-[var(--border)] hover:text-[var(--text)]"
           >
-            <summary className="cursor-pointer list-none px-3 py-2.5 text-[12px] font-semibold text-[var(--text)] flex items-start justify-between gap-2 [&::-webkit-details-marker]:hidden">
-              <span>{item.q}</span>
-              <span className="shrink-0 text-[10px] text-[var(--muted)] group-open:hidden">▸</span>
-              <span className="shrink-0 text-[10px] text-[var(--muted)] hidden group-open:inline">
-                ▾
-              </span>
-            </summary>
-            <div className="px-3 pb-3 text-[11px] text-[var(--muted)] leading-relaxed">{item.a}</div>
-          </details>
-        ))}
+            Close
+          </button>
+        </div>
+        <div className="text-left">
+          {FAQ.map((item, i) => {
+            const isOpen = openIndex === i;
+            return (
+              <div
+                key={item.q}
+                className="border-b border-[var(--border)] last:border-b-0"
+              >
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpenIndex(isOpen ? null : i)}
+                  className="w-full bg-transparent border-none cursor-pointer px-3 py-2.5 text-left text-[12px] font-semibold text-[var(--text)] flex items-start justify-between gap-2"
+                >
+                  <span>{item.q}</span>
+                  <span className="shrink-0 text-[10px] text-[var(--muted)]">
+                    {isOpen ? '▾' : '▸'}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-3 pb-3 text-[11px] text-[var(--muted)] leading-relaxed">
+                    {item.a}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

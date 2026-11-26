@@ -5,12 +5,18 @@ export function EntryScreen(props: {
   onAutomatic: () => void;
   onManual: () => void;
   onTrouble: () => void;
+  onOpenSuggestions?: () => void;
+  onOpenStats?: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Top-pinned so the disclaimer stays above the fold without crowding Auto/Manual */}
       <div className="w-full max-w-lg mx-auto shrink-0 px-1 pt-1 pb-3">
-        <WipAccuracyBanner prominent />
+        <WipAccuracyBanner
+          prominent
+          onOpenSuggestions={props.onOpenSuggestions}
+          onOpenStats={props.onOpenStats}
+        />
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 pb-10 pt-2">
@@ -62,7 +68,7 @@ export function EntryScreen(props: {
             Need help? Troubleshooting
           </button>
 
-          {/* FAQ below Catch / Manual / Trouble cards — not on Catch HUD */}
+          {/* FAQ button → modal (keeps Entry short) */}
           <EntryTrustFaq />
         </div>
       </div>

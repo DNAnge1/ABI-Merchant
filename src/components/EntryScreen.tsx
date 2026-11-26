@@ -68,11 +68,7 @@ export function EntryScreen(props: {
             Need help? Troubleshooting
           </button>
 
-<<<<<<< HEAD
-          {/* FAQ button → modal (keeps Entry short) */}
-=======
-          {/* FAQ below Start Scan / Manual / Trouble — not on the live scan HUD */}
->>>>>>> fd9648f (Rename Catch CTA and HUD copy to Start Scan.)
+          {/* FAQ button → modal (keeps Entry short); not on the live scan HUD */}
           <EntryTrustFaq />
         </div>
       </div>

@@ -1,3 +1,5 @@
+import { WipHeaderChip } from './WipAccuracyBanner';
+
 export function ChromeBar(props: {
   mode: 'automatic' | 'manual';
   screen:
@@ -18,6 +20,8 @@ export function ChromeBar(props: {
   onRetest?: () => void;
   /** Open Suggestions board (not Catch HUD) */
   onOpenSuggestions?: () => void;
+  /** Open community Stats from the WIP modal */
+  onOpenStats?: () => void;
 }) {
   const autoActive = props.mode === 'automatic' && props.screen !== 'manual';
   // Stop only — never Start here (Start re-opens share picker → “Share canceled”).
@@ -28,8 +32,9 @@ export function ChromeBar(props: {
 
   return (
     <header className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur-sm px-3 py-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* 3-col grid centers WIP without transform (avoids trapping portaled modal). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 justify-self-start">
           <h1 className="m-0 text-sm font-semibold tracking-wide text-[var(--accent)]">
             ABI Merchant
           </h1>
@@ -51,7 +56,14 @@ export function ChromeBar(props: {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 justify-end">
+        <div className="justify-self-center" data-chrome-wip>
+          <WipHeaderChip
+            onOpenSuggestions={props.onOpenSuggestions}
+            onOpenStats={props.onOpenStats}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-self-end justify-end">
           <div className="flex rounded-full border border-[var(--border)] overflow-hidden text-[11px]">
             <button
               type="button"

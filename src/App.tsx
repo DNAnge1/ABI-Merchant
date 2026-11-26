@@ -1953,6 +1953,7 @@ export default function App() {
           onStopListening={() => void stopCapture()}
           onRetest={() => void retestListening()}
           onOpenSuggestions={() => setSuggestionsOpen(true)}
+          onOpenStats={openStats}
         />
       )}
 

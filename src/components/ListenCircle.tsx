@@ -150,6 +150,9 @@ export function ListenCircle(props: {
                   <button
                     type="button"
                     disabled={!props.atShop || props.calibrating}
+                    title={
+                      props.atShop ? 'Arm continuous multi-move scan' : 'Click At Shop first'
+                    }
                     onClick={props.onArmMulti}
                     className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--accent)] text-[#041412] disabled:opacity-50"
                   >
@@ -177,13 +180,18 @@ export function ListenCircle(props: {
             ) : !props.recordingMove ? (
               <button
                 type="button"
-                disabled={props.calibrating}
+                disabled={props.calibrating || !props.atShop}
+                title={
+                  props.atShop
+                    ? 'Start buffering while you drag cargo'
+                    : 'Click At Shop first'
+                }
                 onClick={props.onStartMove}
                 className={[
                   'rounded px-3 py-1.5 text-[11px] font-semibold border',
                   props.atShop
                     ? 'bg-[var(--mythic)] text-white border-transparent catch-pulse-red-btn'
-                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]',
+                    : 'border-[var(--border)] text-[var(--muted)] opacity-50',
                 ].join(' ')}
               >
                 Start Moving Item

@@ -2178,8 +2178,9 @@ export class AudioMatcher {
     if (!this.analyser || !this.ctx) {
       throw new Error('Start Listening first.');
     }
+    // At Shop must be an explicit click — do not auto-calibrate / auto-arm here.
     if (!this.atShopGate) {
-      await this.calibrateShopIdle();
+      throw new Error('Click At Shop first, then Start Moving Item.');
     }
     this.listeningPaused = true;
     this.burstRecording = true;

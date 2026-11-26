@@ -414,12 +414,12 @@ export function LatestLockFeed(props: {
   return (
     <div className="flex flex-col gap-2.5" data-tactical-feed="catch-hud">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="m-0 text-[15px] font-medium">
+        <h2 className="m-0 text-[15px] font-medium" data-result-kind={props.livePreview ? 'live-peek' : 'final'}>
           {props.livePreview
-            ? 'Live peek (not final)'
+            ? 'Live Peek (not final)'
             : props.lowConfidence
-              ? 'Best guess · Stop & Match'
-              : 'Predicted lock · Stop & Match'}
+              ? 'Final · Best guess · Stop & Match'
+              : 'Final · Stop & Match'}
         </h2>
       </div>
 

@@ -13,6 +13,43 @@ export type MapModeOption = {
   mode: string;
 };
 
+/** Result-card price pills — coarse buckets, not every exact cargo price. */
+export type CargoPriceBucket = '' | 'lt50k' | '100k' | '200k' | 'gt200k';
+
+export const CARGO_PRICE_BUCKETS: ReadonlyArray<{
+  id: CargoPriceBucket;
+  label: string;
+  /** Inclusive min; null = no lower bound. */
+  min: number | null;
+  /** Inclusive max; null = no upper bound. */
+  max: number | null;
+  /** Representative cost for EV / payback when this bucket is selected. */
+  costBasis: number | '';
+}> = [
+  { id: '', label: 'Any', min: null, max: null, costBasis: '' },
+  { id: 'lt50k', label: '<50k', min: 0, max: 49_999, costBasis: 30_000 },
+  { id: '100k', label: '100k', min: 50_000, max: 149_999, costBasis: 100_000 },
+  { id: '200k', label: '200k', min: 150_000, max: 200_000, costBasis: 200_000 },
+  { id: 'gt200k', label: '>200k', min: 200_001, max: null, costBasis: 350_000 },
+];
+
+export function cargoPriceMatchesBucket(
+  price: number,
+  bucket: CargoPriceBucket | undefined,
+): boolean {
+  if (!bucket) return true;
+  const b = CARGO_PRICE_BUCKETS.find((x) => x.id === bucket);
+  if (!b || (b.min == null && b.max == null)) return true;
+  if (b.min != null && price < b.min) return false;
+  if (b.max != null && price > b.max) return false;
+  return true;
+}
+
+export function costBasisForBucket(bucket: CargoPriceBucket | undefined): number | '' {
+  const b = CARGO_PRICE_BUCKETS.find((x) => x.id === (bucket ?? ''));
+  return b?.costBasis ?? '';
+}
+
 export type RaidFilter = {
   /** Explorer map/mode id, e.g. "Farm Lockdown". Empty = all profiles. */
   mapModeId?: string;
@@ -21,7 +58,10 @@ export type RaidFilter = {
   /** Multi-select sizes (listen feed); empty = any. */
   sizes?: string[];
   cargoType?: string;
+  /** Exact price (Manual). Prefer cargoPriceBucket on the Catch result card. */
   cargoPrice?: number | '';
+  /** Coarse price range for Catch HUD pills. */
+  cargoPriceBucket?: CargoPriceBucket;
 };
 
 export type WeightedScoredItem = MerchantItem & {
@@ -67,7 +107,9 @@ function sourceMatches(
     return false;
   }
   if (filter.cargoType && s.cargoType !== filter.cargoType) return false;
-  if (
+  if (filter.cargoPriceBucket) {
+    if (!cargoPriceMatchesBucket(s.cargoPrice, filter.cargoPriceBucket)) return false;
+  } else if (
     filter.cargoPrice !== undefined &&
     filter.cargoPrice !== '' &&
     s.cargoPrice !== filter.cargoPrice
@@ -89,6 +131,7 @@ export function itemPoolWeight(
     if (
       profileId != null ||
       filter.cargoType ||
+      filter.cargoPriceBucket ||
       (filter.cargoPrice !== undefined && filter.cargoPrice !== '')
     ) {
       return 0;

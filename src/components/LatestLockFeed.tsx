@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { MerchantItem } from '../utils/audioMatcher';
 import {
   filterScoredFeed,
@@ -9,10 +9,12 @@ import {
 import type { RankedSoundCandidate } from '../utils/rankedGuess';
 import { redLikelihoodPercent } from '../utils/sizeGroups';
 import {
+  CARGO_PRICE_BUCKETS,
   computeEvSummary,
-  formatKoen,
+  costBasisForBucket,
   scoreWithinRaidFilter,
   weightedRedChanceFromScored,
+  type CargoPriceBucket,
   type MapModeOption,
   type RaidFilter,
 } from '../utils/raidPools';
@@ -171,6 +173,62 @@ function DetailsList(props: { items: ScoredItem[] }) {
   );
 }
 
+function ViewDetailsModal(props: {
+  open: boolean;
+  onClose: () => void;
+  items: ScoredItem[];
+}) {
+  const { open, onClose } = props;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Match details"
+      data-view-details-modal
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/65 border-none cursor-pointer"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] shadow-xl p-4 space-y-3 max-h-[80vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="m-0 text-[15px] font-semibold text-[var(--text)]">
+              Full size-grouped list
+            </h2>
+            <p className="m-0 mt-1 text-xs text-[var(--muted)]">
+              Survivors share pool-weighted match % (sum 100%). Off-size / off-raid rows stay 0% /
+              excluded.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded px-2 py-1 text-[11px] text-[var(--muted)] border border-[var(--border)]"
+          >
+            Close
+          </button>
+        </div>
+        <DetailsList items={props.items} />
+      </div>
+    </div>
+  );
+}
+
 export function LatestLockFeed(props: {
   soundId: number;
   audioConfidence: number;
@@ -183,12 +241,14 @@ export function LatestLockFeed(props: {
   mapModeId?: string;
   cargoType?: string;
   cargoPrice?: number | '';
+  cargoPriceBucket?: CargoPriceBucket;
   cargoPrices?: number[];
   onToggleSize: (size: string) => void;
   onOnlyRed: (v: boolean) => void;
   onOnlyYellow: (v: boolean) => void;
   onShowAll: () => void;
   onCargoPrice?: (price: number | '') => void;
+  onCargoPriceBucket?: (bucket: CargoPriceBucket) => void;
   onThumbsUp?: () => void;
   onThumbsDown?: () => void;
   onSkip?: () => void;
@@ -210,16 +270,19 @@ export function LatestLockFeed(props: {
   onDismissEarlier?: (id: string) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const tier: TierFilter = { onlyRed: props.onlyRed, onlyYellow: props.onlyYellow };
   const groupSizes = sizesInGroup(props.items);
+  const bucket = props.cargoPriceBucket ?? '';
   const raidFilter: RaidFilter = useMemo(
     () => ({
       mapModeId: props.mapModeId || undefined,
       sizes: props.selectedSizes,
       cargoType: props.cargoType || undefined,
-      cargoPrice: props.cargoPrice,
+      cargoPriceBucket: bucket || undefined,
+      cargoPrice: bucket ? undefined : props.cargoPrice,
     }),
-    [props.mapModeId, props.selectedSizes, props.cargoType, props.cargoPrice],
+    [props.mapModeId, props.selectedSizes, props.cargoType, props.cargoPrice, bucket],
   );
   const mapModes = props.mapModes ?? [];
   const scored = scoreWithinRaidFilter(props.items, raidFilter, mapModes);
@@ -229,96 +292,120 @@ export function LatestLockFeed(props: {
     props.selectedSizes.length === 0
       ? 'all group sizes'
       : props.selectedSizes.join(' + ');
-  const ev = computeEvSummary(scored, props.cargoPrice);
+  const costBasis = bucket
+    ? costBasisForBucket(bucket)
+    : props.cargoPrice;
+  const ev = computeEvSummary(scored, costBasis);
   const poolRed = weightedRedChanceFromScored(
     feed.length ? (feed as typeof scored) : scored,
   );
 
   const redChance =
-    props.mapModeId || props.cargoType || props.cargoPrice
+    props.mapModeId || props.cargoType || bucket || props.cargoPrice
       ? poolRed
       : props.redChancePercent != null
         ? props.redChancePercent
         : poolRed || redLikelihoodPercent(feed);
   const ranked = props.rankedCandidates ?? [];
-  const cargoPrices = props.cargoPrices ?? [];
   const tierActive = props.onlyRed || props.onlyYellow;
+  const useBuckets = props.onCargoPriceBucket != null;
+
+  const sizePills: ReactNode = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] mr-1">
+        Size
+      </span>
+      <Pill
+        active={props.selectedSizes.length === 0}
+        label="Any"
+        onClick={() => {
+          for (const s of [...props.selectedSizes]) props.onToggleSize(s);
+        }}
+      />
+      {groupSizes.map((size) => (
+        <Pill
+          key={size}
+          active={props.selectedSizes.includes(size)}
+          label={size}
+          onClick={() => props.onToggleSize(size)}
+        />
+      ))}
+    </div>
+  );
+
+  const pricePills: ReactNode = useBuckets ? (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] mr-1">
+        Price
+      </span>
+      {CARGO_PRICE_BUCKETS.map((b) => (
+        <Pill
+          key={b.id || 'any'}
+          active={bucket === b.id}
+          label={b.label}
+          onClick={() => props.onCargoPriceBucket?.(bucket === b.id && b.id !== '' ? '' : b.id)}
+        />
+      ))}
+    </div>
+  ) : props.onCargoPrice ? (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] mr-1">
+        Price
+      </span>
+      <Pill
+        active={props.cargoPrice === ''}
+        label="Any"
+        onClick={() => props.onCargoPrice?.('')}
+      />
+      {(props.cargoPrices ?? []).map((p) => (
+        <Pill
+          key={p}
+          active={props.cargoPrice === p}
+          label={p >= 1000 ? `${Math.round(p / 1000)}k` : String(p)}
+          onClick={() => props.onCargoPrice?.(props.cargoPrice === p ? '' : p)}
+        />
+      ))}
+    </div>
+  ) : null;
 
   const pills: ReactNode = (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] mr-1">
-          Size
-        </span>
-        <Pill
-          active={props.selectedSizes.length === 0}
-          label="Any"
-          onClick={() => {
-            for (const s of [...props.selectedSizes]) props.onToggleSize(s);
-          }}
-        />
-        {groupSizes.map((size) => (
-          <Pill
-            key={size}
-            active={props.selectedSizes.includes(size)}
-            label={size}
-            onClick={() => props.onToggleSize(size)}
-          />
-        ))}
-      </div>
-      {cargoPrices.length > 0 && props.onCargoPrice && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] mr-1">
-            Price
-          </span>
-          <Pill
-            active={props.cargoPrice === ''}
-            label="Any"
-            onClick={() => props.onCargoPrice?.('')}
-          />
-          {cargoPrices.map((p) => (
-            <Pill
-              key={p}
-              active={props.cargoPrice === p}
-              label={formatKoen(p)}
-              onClick={() =>
-                props.onCargoPrice?.(props.cargoPrice === p ? '' : p)
-              }
+      {sizePills}
+      {pricePills}
+      <div>
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="rounded border border-white/8 bg-black/20 px-2.5 py-1.5 text-[11px] text-[var(--muted)] hover:border-[var(--accent)]/40"
+          data-advanced-settings
+        >
+          Advanced settings {advancedOpen ? '▴' : '▾'}
+          {tierActive ? (
+            <span className="ml-1.5 text-[var(--mythic-gold)]">
+              ({props.onlyRed ? 'Red' : ''}
+              {props.onlyRed && props.onlyYellow ? '+' : ''}
+              {props.onlyYellow ? 'Yellow' : ''})
+            </span>
+          ) : (
+            <span className="ml-1.5 text-[var(--accent)]">(Show All)</span>
+          )}
+        </button>
+        {advancedOpen && (
+          <div className="mt-2 space-y-2 rounded border border-white/8 bg-black/20 px-2.5 py-2">
+            <TierFilterBar
+              onlyRed={props.onlyRed}
+              onlyYellow={props.onlyYellow}
+              onOnlyRed={props.onOnlyRed}
+              onOnlyYellow={props.onOnlyYellow}
+              onShowAll={props.onShowAll}
             />
-          ))}
-        </div>
-      )}
-      <details className="rounded border border-white/8 bg-black/20 px-2.5 py-1.5 group">
-        <summary className="cursor-pointer list-none flex items-center justify-between gap-2 text-[11px] text-[var(--muted)] [&::-webkit-details-marker]:hidden">
-          <span>
-            Advanced · filters
-            {tierActive ? (
-              <span className="ml-1.5 text-[var(--mythic-gold)]">
-                ({props.onlyRed ? 'Red' : ''}
-                {props.onlyRed && props.onlyYellow ? '+' : ''}
-                {props.onlyYellow ? 'Yellow' : ''})
-              </span>
-            ) : (
-              <span className="ml-1.5 text-[var(--accent)]">(Show All)</span>
-            )}
-          </span>
-          <span className="group-open:hidden">▸</span>
-          <span className="hidden group-open:inline">▾</span>
-        </summary>
-        <div className="mt-2 space-y-2 border-t border-white/8 pt-2">
-          <TierFilterBar
-            onlyRed={props.onlyRed}
-            onlyYellow={props.onlyYellow}
-            onOnlyRed={props.onOnlyRed}
-            onOnlyYellow={props.onOnlyYellow}
-            onShowAll={props.onShowAll}
-          />
-          <p className="m-0 text-[10px] text-[var(--muted)] leading-snug">
-            Only Red / Only Yellow OR together. Show All clears both. Size pills
-            redistribute match % over the remaining pool.
-          </p>
-        </div>
-      </details>
+            <p className="m-0 text-[10px] text-[var(--muted)] leading-snug">
+              Only Red / Only Yellow OR together. Show All clears both. Size pills redistribute
+              match % over the remaining pool. Price uses ~5 buckets (not every exact price).
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -361,15 +448,12 @@ export function LatestLockFeed(props: {
           <div className="rounded-[10px] border border-[var(--warn)]/40 bg-[rgba(8,10,14,0.92)] p-4">
             <div className="font-semibold mb-1">No valuable items</div>
             <p className="m-0 text-[13px] text-[var(--muted)]">
-              Nothing matches the current Red / Yellow / size filters. Open Advanced
-              or choose Show All.
+              Nothing matches the current Red / Yellow / size filters. Open Advanced settings or
+              choose Show All.
             </p>
             <div className="mt-3">{pills}</div>
           </div>
-          <OutlineBtn onClick={() => setDetailsOpen(!detailsOpen)}>
-            {detailsOpen ? 'Hide Details' : 'View Details'}
-          </OutlineBtn>
-          {detailsOpen && <DetailsList items={scored} />}
+          <OutlineBtn onClick={() => setDetailsOpen(true)}>View Details</OutlineBtn>
         </div>
       ) : (
         <TacticalResultCard
@@ -394,22 +478,16 @@ export function LatestLockFeed(props: {
             />
           )}
           <div className="mt-3">
-            <OutlineBtn onClick={() => setDetailsOpen(!detailsOpen)}>
-              {detailsOpen ? 'Hide Details' : 'View Details'}
-            </OutlineBtn>
-            {detailsOpen && (
-              <div className="mt-2 space-y-1.5">
-                <div className="text-[13px] font-semibold">Full size-grouped list</div>
-                <p className="m-0 text-xs text-[var(--muted)]">
-                  Survivors share pool-weighted match % (sum 100%). Off-size / off-raid
-                  rows stay 0% / excluded.
-                </p>
-                <DetailsList items={scored} />
-              </div>
-            )}
+            <OutlineBtn onClick={() => setDetailsOpen(true)}>View Details</OutlineBtn>
           </div>
         </TacticalResultCard>
       )}
+
+      <ViewDetailsModal
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+        items={scored}
+      />
 
       {props.earlier && props.earlier.length > 0 && (
         <div>

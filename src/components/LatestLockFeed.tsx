@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { MerchantItem } from '../utils/audioMatcher';
+import { ItemThumb } from './ItemThumb';
 import {
   filterScoredFeed,
   itemTier,
@@ -8,28 +9,13 @@ import {
   type ScoredItem,
   type TierFilter,
 } from '../utils/resultProbability';
+import type { RankedSoundCandidate } from '../utils/rankedGuess';
+import { rarityHueTextClass, rarityHue } from '../utils/itemDisplay';
 
 function formatPrice(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1000)}k`;
   return String(n);
-}
-
-function ItemThumb(props: { item: MerchantItem; hide?: boolean; size?: 'sm' | 'lg' }) {
-  if (props.hide) return null;
-  const dim = props.size === 'lg' ? 'h-14 w-14' : 'h-10 w-10';
-  if (props.item.iconUrl) {
-    return (
-      <img
-        src={props.item.iconUrl}
-        alt=""
-        className={`${dim} object-contain rounded bg-black/30 shrink-0`}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-      />
-    );
-  }
-  return <div className={`${dim} rounded bg-black/30 shrink-0`} />;
 }
 
 export function TierFilterBar(props: {
@@ -92,12 +78,23 @@ export function LatestLockFeed(props: {
   onThumbsUp?: () => void;
   onThumbsDown?: () => void;
   onSkip?: () => void;
+  /** Phase 2: below lock floor — still show #1 as best guess. */
+  lowConfidence?: boolean;
+  /** Phase 2: weighted Red chance over ranked candidate pool. */
+  redChancePercent?: number;
+  /** Phase 2: top-N sound IDs with relative probs (Phase 3 styles the grid). */
+  rankedCandidates?: RankedSoundCandidate[];
+  /** Isolated single-item primary → 100% lock highlight. */
+  isolatedItem?: boolean;
+  onPickRanked?: (soundId: number) => void;
   /** Earlier Multi locks (compact) */
   earlier?: Array<{
     id: string;
     soundId: number;
     confidence: number;
     items: MerchantItem[];
+    lowConfidence?: boolean;
+    redChancePercent?: number;
   }>;
   onDismissEarlier?: (id: string) => void;
 }) {
@@ -112,12 +109,79 @@ export function LatestLockFeed(props: {
     props.selectedSizes.length === 0
       ? 'all group sizes'
       : props.selectedSizes.join(' + ');
+  const redChance = props.redChancePercent;
+  const ranked = props.rankedCandidates ?? [];
+  const isolatedLock = props.isolatedItem === true && !props.lowConfidence;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-tactical-result="phase12">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="m-0 text-[17px] font-medium">Latest lock</h2>
+        <h2 className="m-0 text-[17px] font-medium">
+          {props.lowConfidence ? 'Best guess' : 'Latest lock'}
+        </h2>
+        {props.lowConfidence && (
+          <span
+            className="rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border border-[var(--warn)]/50 bg-[var(--warn)]/10 text-[var(--warn)]"
+            data-badge="low-confidence"
+          >
+            Low Confidence / Best Guess
+          </span>
+        )}
       </div>
+
+      {/* Phase 2 TL;DR hook — Phase 3 restyles as full Red Chance header */}
+      {redChance != null && (
+        <div
+          className={[
+            'rounded-lg border px-3 py-2 flex flex-wrap items-end justify-between gap-2',
+            redChance > 0
+              ? 'border-[var(--mythic)]/45 bg-gradient-to-r from-[#2a1014] to-[var(--bg-elevated)]'
+              : 'border-[var(--border)] bg-[var(--bg-elevated)]',
+          ].join(' ')}
+          data-metric="red-chance"
+        >
+          <div>
+            <div
+              className={[
+                'text-3xl font-bold tabular-nums leading-none',
+                redChance > 0 ? 'text-[var(--mythic)]' : 'text-[var(--muted)]',
+              ].join(' ')}
+            >
+              {redChance}%
+            </div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
+              Red Chance
+            </div>
+          </div>
+          <div className="text-[11px] text-[var(--muted)] text-right">
+            Group #{props.soundId} · {props.audioConfidence}% audio
+            {isolatedLock ? ' · isolated 100%' : ''}
+          </div>
+        </div>
+      )}
+
+      {/* Ranked sound-ID strip — Phase 3 expands to thumbnail grid */}
+      {ranked.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 items-center" data-ranked-candidates>
+          <span className="text-[10px] text-[var(--muted)]">Top guesses:</span>
+          {ranked.map((c, idx) => (
+            <button
+              key={c.soundId}
+              type="button"
+              onClick={() => props.onPickRanked?.(c.soundId)}
+              className={[
+                'rounded px-2 py-1 text-[10px] border tabular-nums',
+                idx === 0
+                  ? 'border-[var(--accent)]/60 bg-[var(--accent-dim)]/25 text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)]',
+              ].join(' ')}
+            >
+              #{c.soundId} · {c.relativeProb}%
+              <span className="opacity-70"> ({c.confidence})</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <TierFilterBar
         onlyRed={props.onlyRed}
@@ -149,7 +213,6 @@ export function LatestLockFeed(props: {
             <button
               type="button"
               onClick={() => {
-                // clear all sizes → any size in group
                 for (const s of [...props.selectedSizes]) props.onToggleSize(s);
               }}
               className="text-[11px] text-[var(--muted)] underline"
@@ -173,28 +236,39 @@ export function LatestLockFeed(props: {
             {detailsOpen ? 'Hide Details' : 'View Details'}
           </OutlineBtn>
           {detailsOpen && (
-            <ItemList items={scored} hideImages={props.hideImages} audioConfidence={props.audioConfidence} />
+            <ItemList
+              items={scored}
+              hideImages={props.hideImages}
+              audioConfidence={props.audioConfidence}
+              isolatedLock={isolatedLock}
+            />
           )}
         </div>
       ) : (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] p-4 space-y-3">
+        <div
+          className={[
+            'rounded-xl border bg-[var(--bg-panel)] p-4 space-y-3',
+            props.lowConfidence
+              ? 'border-[var(--warn)]/40'
+              : 'border-[var(--border)]',
+          ].join(' ')}
+        >
           <div className="flex gap-3 items-center">
-            {headline && <ItemThumb item={headline} hide={props.hideImages} size="lg" />}
+            {headline && (
+              <ItemThumb
+                item={headline}
+                hide={props.hideImages}
+                size="lg"
+                lockedHighlight={isolatedLock && headline.displayPct >= 100}
+              />
+            )}
             <div className="min-w-0 flex-1">
               <div className="text-[17px] font-semibold">
                 {headline?.name}
                 {headline && (
-                  <span
-                    className={
-                      itemTier(headline) === 'Red'
-                        ? ' text-[var(--mythic)]'
-                        : itemTier(headline) === 'Yellow'
-                          ? ' text-[var(--mythic-gold)]'
-                          : ' text-[var(--muted)]'
-                    }
-                  >
+                  <span className={` ${rarityHueTextClass(rarityHue(headline))}`}>
                     {' '}
-                    · {headline.displayPct}%
+                    · {isolatedLock ? 100 : headline.displayPct}%
                   </span>
                 )}
               </div>
@@ -207,6 +281,7 @@ export function LatestLockFeed(props: {
               </div>
               <div className="text-[11px] text-[var(--muted)] mt-0.5">
                 Audio confidence (separate): {props.audioConfidence}%
+                {props.lowConfidence ? ' · best guess (below lock floor)' : ''}
               </div>
             </div>
           </div>
@@ -214,7 +289,12 @@ export function LatestLockFeed(props: {
           <p className="m-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
             Match probability (within selected sizes)
           </p>
-          <ItemList items={feed} hideImages={props.hideImages} audioConfidence={props.audioConfidence} />
+          <ItemList
+            items={feed}
+            hideImages={props.hideImages}
+            audioConfidence={props.audioConfidence}
+            isolatedLock={isolatedLock}
+          />
 
           {(props.onThumbsUp || props.onThumbsDown || props.onSkip) && (
             <div className="flex flex-wrap gap-2">
@@ -261,6 +341,7 @@ export function LatestLockFeed(props: {
                 items={scored}
                 hideImages={props.hideImages}
                 audioConfidence={props.audioConfidence}
+                isolatedLock={isolatedLock}
               />
             </div>
           )}
@@ -287,6 +368,10 @@ export function LatestLockFeed(props: {
                     </div>
                     <div className="text-[10px] text-[var(--muted)]">
                       Group #{slot.soundId} · {slot.confidence}% audio
+                      {slot.lowConfidence ? ' · best guess' : ''}
+                      {slot.redChancePercent != null
+                        ? ` · ${slot.redChancePercent}% red`
+                        : ''}
                     </div>
                   </div>
                   {props.onDismissEarlier && (
@@ -312,12 +397,17 @@ function ItemList(props: {
   items: ScoredItem[];
   hideImages: boolean;
   audioConfidence: number;
+  isolatedLock?: boolean;
 }) {
   return (
     <ul className="m-0 p-0 list-none space-y-2">
       {props.items.map((item) => {
         const excluded = item.sizeExcluded || item.displayPct === 0;
         const tier = itemTier(item);
+        const alone =
+          props.isolatedLock &&
+          !excluded &&
+          props.items.filter((i) => !i.sizeExcluded && i.displayPct > 0).length === 1;
         return (
           <li
             key={item.id}
@@ -330,7 +420,11 @@ function ItemList(props: {
                   : 'border-[var(--border)] bg-[var(--bg-elevated)]',
             ].join(' ')}
           >
-            <ItemThumb item={item} hide={props.hideImages} />
+            <ItemThumb
+              item={item}
+              hide={props.hideImages}
+              lockedHighlight={alone}
+            />
             <div className="min-w-0 flex-1">
               <div className="text-[13px] font-semibold truncate">{item.name}</div>
               <div className="text-[11px] text-[var(--muted)]">
@@ -351,7 +445,9 @@ function ItemList(props: {
                 {excluded ? (
                   <span className="text-[var(--warn)]">0% · excluded (size)</span>
                 ) : (
-                  <span>{item.displayPct}% match probability (within selected sizes)</span>
+                  <span>
+                    {alone ? 100 : item.displayPct}% match probability (within selected sizes)
+                  </span>
                 )}
               </div>
               <div className="text-[10px] text-[var(--muted)] mt-0.5">

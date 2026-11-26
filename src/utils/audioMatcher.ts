@@ -69,12 +69,15 @@ export interface FingerprintsFile {
 export interface MerchantItem {
   id: number;
   name: string;
+  /** Numeric rarity from catalog (Mythic=6, Legendary=5, …). Use rarityHue() for HUD. */
   rarity: number;
   size: string;
   category: string;
   contactPrice: number;
   soundId: number;
   iconUrl?: string;
+  /** Optional local/CDN image; itemImage() prefers this over iconUrl. */
+  image?: string;
   pickupSound: string;
   dropSound: string;
   sources: { cargoType: string; cargoPrice: number }[];
@@ -2645,8 +2648,10 @@ export class AudioMatcher {
               : '';
     const reason = `Locked Group #${top.soundId} · ${top.confidence}% · ${sourceNote}${residualNote} (${stats}${voteNote})`;
     this.setStatus('done', reason);
+    // Emit top-N ranked scores for UI best-guess / relative probs (lock already decided).
+    const rankedOut = allMatches.slice(0, 3);
     this.onMatch?.({
-      matches: allMatches.filter((m) => m.confidence >= floor),
+      matches: rankedOut,
       peakMs,
       spectrumVector,
       capturedCentroid: centroid,
@@ -2657,7 +2662,7 @@ export class AudioMatcher {
     return {
       ok: true,
       reason,
-      matches: allMatches.filter((m) => m.confidence >= floor),
+      matches: rankedOut,
       frameCount: frames.length,
       spikeCount: chosen.length,
       peakRms,
@@ -3170,8 +3175,9 @@ export class AudioMatcher {
       'done',
       `Locked Group #${top.soundId} · audio ${top.confidence}% (auto${autoResidual})`,
     );
+    // Top-N ranked scores for UI (lock already decided against floor + margin).
     this.onMatch?.({
-      matches,
+      matches: allMatches.slice(0, 3),
       peakMs,
       spectrumVector,
       capturedCentroid: centroid,

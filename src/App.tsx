@@ -71,6 +71,11 @@ import {
 import { alertForMatch } from './utils/soundAlerts';
 import { openDocumentPiP, renderPipContent, type PipHandle } from './utils/pipOverlay';
 import { type SensitivityLevel } from './utils/sensitivity';
+import {
+  buildBestGuessPool,
+  DEFAULT_TOP_N,
+  type RankedSoundCandidate,
+} from './utils/rankedGuess';
 
 const items = merchantData.items as MerchantItem[];
 const fingerprints = fingerprintsData as FingerprintsFile;
@@ -90,8 +95,14 @@ interface LockedScan {
   alt: MatchResult[];
   spectrumVector: number[];
   capturedCentroid: number;
+  /** Equal-share red % within primary group (legacy alerts / accuracy). */
   redPct: number;
+  /** Weighted red chance over ranked candidate pool (Phase 2 HUD). */
+  redChancePercent: number;
   resultItems: MerchantItem[];
+  lowConfidence: boolean;
+  rankedCandidates: RankedSoundCandidate[];
+  isolatedItem: boolean;
 }
 
 export default function App() {
@@ -293,6 +304,136 @@ export default function App() {
   const pushSessionErrorRef = useRef(pushSessionError);
   pushSessionErrorRef.current = pushSessionError;
 
+  /** Phase 2: always surface top-N best guess from existing scores (never blank). */
+  const applyBestGuess = useCallback(
+    (
+      matches: MatchResult[],
+      opts: {
+        lowConfidence: boolean;
+        spectrumVector?: number[];
+        capturedCentroid?: number;
+        captureBlob?: Blob | null;
+        captureDurationMs?: number;
+        statusLabel?: string;
+        toastMsg?: string | null;
+        pushError?: boolean;
+      },
+    ) => {
+      const pool = buildBestGuessPool(matches, items, {
+        topN: DEFAULT_TOP_N,
+        lowConfidence: opts.lowConfidence,
+      });
+      if (!pool) {
+        const msg = 'Match produced no candidates — try Stop & Match again.';
+        setShopToast(msg);
+        pushSessionError(msg);
+        return null;
+      }
+      const top = matches[0];
+      const resultItems = pool.primary.items;
+      const redPct = redLikelihoodPercent(resultItems);
+      const lockedScan: LockedScan = {
+        match: {
+          ...top,
+          soundId: pool.primary.soundId,
+          confidence: pool.primary.confidence,
+          kind: pool.primary.kind,
+          items: resultItems,
+        },
+        alt: matches.slice(0, DEFAULT_TOP_N),
+        spectrumVector: opts.spectrumVector ?? top.spectrumVector ?? [],
+        capturedCentroid: opts.capturedCentroid ?? top.capturedCentroid ?? 0,
+        redPct,
+        redChancePercent: pool.redChancePercent,
+        resultItems,
+        lowConfidence: pool.lowConfidence,
+        rankedCandidates: pool.candidates,
+        isolatedItem: pool.isolatedItem,
+      };
+
+      if (opts.captureBlob) {
+        adoptBurstCapture(opts.captureBlob, opts.captureDurationMs ?? 0);
+      }
+      if (opts.toastMsg) {
+        setShopToast(opts.toastMsg);
+        if (opts.pushError) pushSessionError(opts.toastMsg);
+      } else if (!opts.lowConfidence) {
+        setShopToast(null);
+        setShopToastSticky(false);
+      }
+
+      void alertForMatch({
+        soundId: pool.primary.soundId,
+        redPct: pool.redChancePercent,
+        enabled: monitorRef.current === 'single' && soundAlerts && !opts.lowConfidence,
+        useTts: useTts,
+      });
+
+      updatePip({
+        group: pool.primary.soundId,
+        confidence: pool.primary.confidence,
+        redPct: pool.redChancePercent,
+        status: opts.statusLabel ?? (opts.lowConfidence ? 'Best guess' : 'Match locked'),
+      });
+
+      return { pool, lockedScan };
+    },
+    [pushSessionError, soundAlerts, updatePip, useTts],
+  );
+
+  const commitBestGuess = useCallback(
+    (
+      matches: MatchResult[],
+      meta: {
+        lowConfidence: boolean;
+        spectrumVector?: number[];
+        capturedCentroid?: number;
+        captureBlob?: Blob | null;
+        captureDurationMs?: number;
+        toastMsg?: string | null;
+        pushError?: boolean;
+        statusLabel?: string;
+      },
+    ) => {
+      const applied = applyBestGuess(matches, meta);
+      if (!applied) return;
+      const { lockedScan, pool } = applied;
+
+      // Multi keeps recordingMove true (re-arms after cooldown); single stops.
+      if (!(scanStyleRef.current === 'continuous' && monitorRef.current === 'dual')) {
+        setRecordingMove(false);
+      }
+
+      if (mode === 'manual') {
+        setManualSoundId(lockedScan.match.soundId);
+        setLocked(lockedScan);
+        return;
+      }
+
+      if (scanStyleRef.current === 'continuous' && monitorRef.current === 'dual') {
+        matcherRef.current?.setListeningPaused(false);
+        setSlots((prev) =>
+          [
+            buildSlotFromMatch(lockedScan.match, items, {
+              lowConfidence: pool.lowConfidence,
+              redChancePercent: pool.redChancePercent,
+              rankedCandidates: pool.candidates,
+              isolatedItem: pool.isolatedItem,
+            }),
+            ...prev,
+          ].slice(0, 48),
+        );
+        return;
+      }
+
+      // Style A — show result (firm lock or low-confidence best guess)
+      matcherRef.current?.setListeningPaused(true);
+      setSinglePhase('locked');
+      setLocked(lockedScan);
+    },
+    [applyBestGuess, mode],
+  );
+
   const handleMatchPayload = useCallback(
     (payload: MatchPayload) => {
       const top = payload.matches[0];
@@ -307,72 +448,33 @@ export default function App() {
       const floor = isBurst
         ? Math.max(48, (matcherRef.current?.getMinConfidence() ?? 60) - 8)
         : Math.max(matcherRef.current?.getMinConfidence() ?? 60, 68);
-      if (top.confidence < floor) {
-        const msg = `${isBurst ? 'Stop & Match' : 'Auto'}: weak match Group #${top.soundId} at ${top.confidence}% (need ≥${floor}%).`;
+      const lowConfidence = top.confidence < floor;
+      if (lowConfidence) {
+        const msg = `${isBurst ? 'Stop & Match' : 'Auto'}: weak match Group #${top.soundId} at ${top.confidence}% (need ≥${floor}%) — showing best guess.`;
         setStatus('listening');
         setStatusDetail(msg);
-        setShopToast(msg);
-        pushSessionError(msg);
-        return;
-      }
-      setShopToast(null);
-      setShopToastSticky(false);
-      if (payload.captureBlob) {
-        adoptBurstCapture(payload.captureBlob, payload.captureDurationMs ?? 0);
-      }
-      // Multi keeps recordingMove true (re-arms after cooldown); single stops.
-      if (!(scanStyleRef.current === 'continuous' && monitorRef.current === 'dual')) {
-        setRecordingMove(false);
-      }
-      const resultItems = itemsForSound(top.soundId);
-      const redPct = redLikelihoodPercent(resultItems);
-
-      void alertForMatch({
-        soundId: top.soundId,
-        redPct,
-        enabled: monitorRef.current === 'single' && soundAlerts,
-        useTts: useTts,
-      });
-
-      updatePip({
-        group: top.soundId,
-        confidence: top.confidence,
-        redPct,
-        status: 'Match locked',
-      });
-
-      if (mode === 'manual') {
-        setManualSoundId(top.soundId);
-        setLocked({
-          match: top,
-          alt: payload.matches,
+        commitBestGuess(payload.matches, {
+          lowConfidence: true,
           spectrumVector: payload.spectrumVector,
           capturedCentroid: payload.capturedCentroid,
-          redPct,
-          resultItems,
+          captureBlob: payload.captureBlob,
+          captureDurationMs: payload.captureDurationMs,
+          toastMsg: msg,
+          pushError: true,
+          statusLabel: 'Best guess (low confidence)',
         });
         return;
       }
-
-      if (scanStyleRef.current === 'continuous' && monitorRef.current === 'dual') {
-        matcherRef.current?.setListeningPaused(false);
-        setSlots((prev) => [buildSlotFromMatch(top, items), ...prev].slice(0, 48));
-        return;
-      }
-
-      // Style A — single item lock
-      matcherRef.current?.setListeningPaused(true);
-      setSinglePhase('locked');
-      setLocked({
-        match: top,
-        alt: payload.matches,
+      commitBestGuess(payload.matches, {
+        lowConfidence: false,
         spectrumVector: payload.spectrumVector,
         capturedCentroid: payload.capturedCentroid,
-        redPct,
-        resultItems,
+        captureBlob: payload.captureBlob,
+        captureDurationMs: payload.captureDurationMs,
+        statusLabel: 'Match locked',
       });
     },
-    [itemsForSound, mode, pushSessionError, soundAlerts, updatePip, useTts],
+    [commitBestGuess, pushSessionError],
   );
 
   matchHandlerRef.current = handleMatchPayload;
@@ -501,13 +603,18 @@ export default function App() {
       if (demo === 'lock') {
         setCapturing(true);
         setSinglePhase('locked');
+        const demoPool = buildBestGuessPool([match], items, { lowConfidence: false });
         setLocked({
           match,
           alt: [match],
           spectrumVector: match.spectrumVector!,
           capturedCentroid: 2800,
           redPct,
+          redChancePercent: demoPool?.redChancePercent ?? redPct,
           resultItems,
+          lowConfidence: false,
+          rankedCandidates: demoPool?.candidates ?? [],
+          isolatedItem: demoPool?.isolatedItem ?? resultItems.length === 1,
         });
       } else {
         setCapturing(true);
@@ -1097,8 +1204,22 @@ export default function App() {
         setStatus('listening');
         if (keepMulti) setShopToastSticky(true);
         pushSessionError(result.reason);
+        // Phase 2: failed lock still shows ranked best guess when scores exist.
+        if (result.matches.length > 0) {
+          commitBestGuess(result.matches, {
+            lowConfidence: true,
+            spectrumVector: result.matches[0]?.spectrumVector,
+            capturedCentroid: result.matches[0]?.capturedCentroid,
+            captureBlob: result.captureBlob,
+            captureDurationMs: result.captureDurationMs,
+            toastMsg: `${result.reason} — showing best guess.`,
+            pushError: false,
+            statusLabel: 'Best guess (below lock)',
+          });
+        }
       } else {
         setShopToastSticky(false);
+        // Firm lock already applied via onMatch → handleMatchPayload.
       }
       // Dual+Multi Force Stop & Match: cooldown then wait for next cargo.
       if (keepMulti && matcherRef.current.isMultiContinuousArmed()) {
@@ -1341,12 +1462,20 @@ export default function App() {
           soundId: slots[0].soundId,
           confidence: slots[0].confidence,
           items: slots[0].items,
+          lowConfidence: slots[0].lowConfidence === true,
+          redChancePercent: slots[0].redChancePercent,
+          rankedCandidates: slots[0].rankedCandidates,
+          isolatedItem: slots[0].isolatedItem === true,
         }
       : locked
         ? {
             soundId: locked.match.soundId,
             confidence: locked.match.confidence,
             items: locked.resultItems,
+            lowConfidence: locked.lowConfidence,
+            redChancePercent: locked.redChancePercent,
+            rankedCandidates: locked.rankedCandidates,
+            isolatedItem: locked.isolatedItem,
           }
         : null;
 
@@ -1624,6 +1753,31 @@ export default function App() {
                   setOnlyRed(false);
                   setOnlyYellow(false);
                 }}
+                lowConfidence={latestLock.lowConfidence}
+                redChancePercent={latestLock.redChancePercent}
+                rankedCandidates={latestLock.rankedCandidates}
+                isolatedItem={latestLock.isolatedItem}
+                onPickRanked={(soundId) => {
+                  setManualSoundId(soundId);
+                  if (locked) {
+                    const pick = locked.alt.find((m) => m.soundId === soundId);
+                    if (!pick) return;
+                    commitBestGuess(
+                      [
+                        pick,
+                        ...locked.alt.filter((m) => m.soundId !== soundId),
+                      ],
+                      {
+                        lowConfidence: locked.lowConfidence,
+                        spectrumVector: locked.spectrumVector,
+                        capturedCentroid: locked.capturedCentroid,
+                        statusLabel: locked.lowConfidence
+                          ? 'Best guess (picked alt)'
+                          : 'Match locked (picked alt)',
+                      },
+                    );
+                  }
+                }}
                 onThumbsUp={
                   multiMode
                     ? () => {
@@ -1637,7 +1791,7 @@ export default function App() {
                             items: slot.items,
                             spectralCentroid: 0,
                           },
-                          redPct: slot.redPct,
+                          redPct: slot.redChancePercent ?? slot.redPct,
                           feedback: 'up',
                         });
                         setSlots((prev) => prev.filter((s) => s.id !== slot.id));
@@ -1665,6 +1819,8 @@ export default function App() {
                         soundId: s.soundId,
                         confidence: s.confidence,
                         items: s.items,
+                        lowConfidence: s.lowConfidence,
+                        redChancePercent: s.redChancePercent,
                       }))
                     : undefined
                 }
@@ -1679,7 +1835,7 @@ export default function App() {
                         items: slot.items,
                         spectralCentroid: 0,
                       },
-                      redPct: slot.redPct,
+                      redPct: slot.redChancePercent ?? slot.redPct,
                       feedback: 'dismiss',
                     });
                   }
@@ -1760,6 +1916,9 @@ export default function App() {
                     matchConfidence={locked?.match.confidence}
                     matchKind={locked?.match.kind}
                     modeLabel="Manual Sound ID"
+                    lowConfidence={locked?.lowConfidence}
+                    redChancePercent={locked?.redChancePercent}
+                    altMatches={locked?.alt}
                     onClear={() => {
                       setManualSoundId(null);
                       setLocked(null);

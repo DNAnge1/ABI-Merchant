@@ -30,6 +30,7 @@ import {
 } from './components/TroubleshootingPage';
 import { WipAccuracyBanner } from './components/WipAccuracyBanner';
 import { SuggestionsModal } from './components/SuggestionsModal';
+import { StatsPage } from './components/StatsPage';
 import type { SingleLoopPhase } from './components/SingleItemLoop';
 import {
   analyserFftSize,
@@ -127,7 +128,7 @@ interface LockedScan {
 export default function App() {
   const [mode, setMode] = useState<AppMode>('automatic');
   const [shellScreen, setShellScreen] = useState<
-    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting'
+    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting' | 'stats'
   >('entry');
   const [wizardStep, setWizardStep] = useState<WizardStep>('monitors');
   const [monitorSetup, setMonitorSetup] = useState<MonitorSetup | null>(null);
@@ -140,7 +141,10 @@ export default function App() {
   const [troubleSection, setTroubleSection] =
     useState<TroubleSection>('overview');
   const [troubleReturn, setTroubleReturn] = useState<
-    'entry' | 'wizard' | 'listen' | 'manual'
+    'entry' | 'wizard' | 'listen' | 'manual' | 'stats'
+  >('entry');
+  const [statsReturn, setStatsReturn] = useState<
+    'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting'
   >('entry');
   const [soundAlerts, setSoundAlerts] = useState(true);
   const [useTts, setUseTts] = useState(true);
@@ -1564,13 +1568,29 @@ export default function App() {
         shellScreen === 'entry' ||
           shellScreen === 'wizard' ||
           shellScreen === 'listen' ||
-          shellScreen === 'manual'
+          shellScreen === 'manual' ||
+          shellScreen === 'stats'
           ? shellScreen
           : 'entry',
       );
     }
     setTroubleSection(section);
     setShellScreen('troubleshooting');
+  }
+
+  function openStats() {
+    if (shellScreen !== 'stats') {
+      setStatsReturn(
+        shellScreen === 'entry' ||
+          shellScreen === 'wizard' ||
+          shellScreen === 'listen' ||
+          shellScreen === 'manual' ||
+          shellScreen === 'troubleshooting'
+          ? shellScreen
+          : 'entry',
+      );
+    }
+    setShellScreen('stats');
   }
 
   function chooseAutomatic() {
@@ -1698,14 +1718,17 @@ export default function App() {
   const chromeScreen =
     shellScreen === 'troubleshooting'
       ? 'troubleshooting'
-      : shellScreen === 'manual'
-        ? 'manual'
-        : shellScreen === 'listen'
-          ? 'listen'
-          : shellScreen === 'wizard'
-            ? 'wizard'
-            : 'entry';
-  const showChrome = shellScreen !== 'entry' || hasAudioError;
+      : shellScreen === 'stats'
+        ? 'stats'
+        : shellScreen === 'manual'
+          ? 'manual'
+          : shellScreen === 'listen'
+            ? 'listen'
+            : shellScreen === 'wizard'
+              ? 'wizard'
+              : 'entry';
+  const showChrome =
+    (shellScreen !== 'entry' && shellScreen !== 'stats') || hasAudioError;
 
   return (
     <div className="min-h-full flex flex-col">
@@ -1768,6 +1791,21 @@ export default function App() {
             onAutomatic={chooseAutomatic}
             onManual={chooseManual}
             onTrouble={() => openTroubleshooting('overview')}
+            onOpenSuggestions={() => setSuggestionsOpen(true)}
+            onOpenStats={openStats}
+          />
+        )}
+
+        {shellScreen === 'stats' && (
+          <StatsPage
+            stats={stats}
+            onBack={() => setShellScreen(statsReturn)}
+            onExport={() => downloadCalibrationJson(sessionId)}
+            onClear={() => {
+              clearCalibrationEvents();
+              setStatsTick((n) => n + 1);
+            }}
+            onOpenSuggestions={() => setSuggestionsOpen(true)}
           />
         )}
 
@@ -1828,7 +1866,10 @@ export default function App() {
               )}
             </div>
 
-            <WipAccuracyBanner />
+            <WipAccuracyBanner
+              onOpenSuggestions={() => setSuggestionsOpen(true)}
+              onOpenStats={openStats}
+            />
 
             <RaidContextBar
               sticky
@@ -2126,7 +2167,10 @@ export default function App() {
 
         {shellScreen === 'manual' && (
           <div className="max-w-[960px] mx-auto flex flex-col gap-4">
-            <WipAccuracyBanner />
+            <WipAccuracyBanner
+              onOpenSuggestions={() => setSuggestionsOpen(true)}
+              onOpenStats={openStats}
+            />
             <div className="space-y-1">
               <h2 className="m-0 text-2xl font-medium tracking-tight">Manual Setup</h2>
               <p className="m-0 text-sm text-[var(--muted)]">
@@ -2311,13 +2355,20 @@ export default function App() {
 
       <footer className="mt-auto border-t border-[var(--border)] px-3 py-3 text-center space-y-1.5">
         <div className="text-[11px] tabular-nums text-[var(--muted)]">v{__APP_VERSION__}</div>
-        <div>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
           <button
             type="button"
             onClick={() => setSuggestionsOpen(true)}
             className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
           >
             💡 Suggestions
+          </button>
+          <button
+            type="button"
+            onClick={openStats}
+            className="bg-transparent border-none p-0 text-[11px] text-[var(--accent)] underline-offset-2 hover:underline cursor-pointer"
+          >
+            Stats
           </button>
         </div>
         <p className="m-0 mx-auto max-w-xl text-[10px] leading-snug text-[var(--muted)]">

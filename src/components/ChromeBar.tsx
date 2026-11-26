@@ -1,6 +1,6 @@
 export function ChromeBar(props: {
   mode: 'automatic' | 'manual';
-  screen: 'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting';
+  screen: 'entry' | 'wizard' | 'listen' | 'manual' | 'troubleshooting' | 'stats';
   capturing: boolean;
   /** Keep chrome/recovery visible while verify error overlay is open */
   hasAudioError?: boolean;

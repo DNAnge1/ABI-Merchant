@@ -1,8 +1,6 @@
 import type { MonitorSetup } from '../utils/calibrationStore';
 import type { SensitivityLevel } from '../utils/sensitivity';
 import { StepRow, type WizardStep } from './StepRow';
-import { WipAccuracyBanner } from './WipAccuracyBanner';
-
 export type AutoSettings = {
   soundAlerts: boolean;
   useTts: boolean;
@@ -120,8 +118,6 @@ export function AutoWizard(props: {
           Pick your monitors, then one-click suggested settings — Advanced is optional.
         </p>
       </div>
-
-      <WipAccuracyBanner />
 
       <StepRow
         step={props.step}

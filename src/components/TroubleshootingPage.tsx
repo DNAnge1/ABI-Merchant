@@ -1,6 +1,4 @@
 import { detectBrowser, browserFixSteps } from '../utils/browserAudio';
-import { WipAccuracyBanner } from './WipAccuracyBanner';
-
 export type TroubleSection =
   | 'overview'
   | 'windows'
@@ -103,8 +101,6 @@ export function TroubleshootingPage(props: {
           </button>
         </div>
       </div>
-
-      <WipAccuracyBanner />
 
       <div className="rounded-lg border border-[var(--accent)]/35 bg-[var(--accent-dim)]/15 px-3 py-2.5 text-[12px] text-[var(--text)] leading-relaxed">
         Switched headphones ↔ speakers and capture died? That often ends the audio track (G560 /

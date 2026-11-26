@@ -29,7 +29,6 @@ import {
   TroubleshootingPage,
   type TroubleSection,
 } from './components/TroubleshootingPage';
-import { WipAccuracyBanner, WipHeaderChip } from './components/WipAccuracyBanner';
 import { SuggestionsModal } from './components/SuggestionsModal';
 import { StatsPage } from './components/StatsPage';
 import { MapModePoolsPage } from './components/MapModePoolsPage';
@@ -1839,6 +1838,7 @@ export default function App() {
           onStopListening={() => void stopCapture()}
           onRetest={() => void retestListening()}
           onOpenSuggestions={() => setSuggestionsOpen(true)}
+          onOpenStats={openStats}
         />
       )}
 
@@ -1952,7 +1952,7 @@ export default function App() {
               backLabel="← Settings"
             />
 
-            <div className="relative flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="m-0 text-xl font-medium tracking-tight">Start Scan</h2>
               <span
                 className={[
@@ -1981,14 +1981,6 @@ export default function App() {
                   RED {displayRed}%
                 </span>
               )}
-              <div className="w-full flex justify-center order-last sm:order-none sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:w-auto pointer-events-none sm:top-0">
-                <div className="pointer-events-auto">
-                  <WipHeaderChip
-                    onOpenSuggestions={() => setSuggestionsOpen(true)}
-                    onOpenStats={openStats}
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Circle stays put — results move below, never push the circle down */}
@@ -2248,10 +2240,6 @@ export default function App() {
 
         {shellScreen === 'manual' && (
           <div className="max-w-[960px] mx-auto flex flex-col gap-4">
-            <WipAccuracyBanner
-              onOpenSuggestions={() => setSuggestionsOpen(true)}
-              onOpenStats={openStats}
-            />
             <div className="space-y-1">
               <h2 className="m-0 text-2xl font-medium tracking-tight">Manual Setup</h2>
               <p className="m-0 text-sm text-[var(--muted)]">

@@ -5,6 +5,8 @@ import {
   redLikelihoodPercent,
   type SizeGroup,
 } from '../utils/sizeGroups';
+import { ItemThumb } from './ItemThumb';
+import { rarityHue } from '../utils/itemDisplay';
 
 const RARITY_LABEL: Record<number, string> = {
   1: 'Common',
@@ -58,7 +60,8 @@ function SizeCard(props: { group: SizeGroup }) {
 
       <ul className="m-0 mt-2.5 p-0 list-none grid gap-1.5">
         {group.items.map((item) => {
-          const mythic = item.rarity >= 6;
+          const hue = rarityHue(item);
+          const mythic = hue === 'red';
           const tiers = cargoPriceTiers(item);
           return (
             <li
@@ -67,20 +70,12 @@ function SizeCard(props: { group: SizeGroup }) {
                 'flex gap-2 rounded border px-2 py-1.5',
                 mythic
                   ? 'border-[var(--mythic)]/45 bg-[#1a0c10]'
-                  : 'border-[var(--border)] bg-[var(--bg)]/50',
+                  : hue === 'yellow'
+                    ? 'border-[var(--mythic-gold)]/35 bg-[var(--bg)]/50'
+                    : 'border-[var(--border)] bg-[var(--bg)]/50',
               ].join(' ')}
             >
-              {item.iconUrl ? (
-                <img
-                  src={item.iconUrl}
-                  alt=""
-                  className="h-10 w-10 object-contain rounded bg-black/30 shrink-0"
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="h-10 w-10 rounded bg-black/30 shrink-0" />
-              )}
+              <ItemThumb item={item} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span
@@ -132,12 +127,18 @@ export function SizeGroupedResults(props: {
   onPickAlt?: (soundId: number) => void;
   onClear?: () => void;
   modeLabel?: string;
+  /** Phase 2 hooks for tactical HUD (Phase 3 styles). */
+  lowConfidence?: boolean;
+  redChancePercent?: number;
 }) {
   const groups = groupItemsBySize(props.items);
-  const overallRed = redLikelihoodPercent(props.items);
+  const overallRed =
+    props.redChancePercent != null
+      ? props.redChancePercent
+      : redLikelihoodPercent(props.items);
 
   return (
-    <section className="flex flex-col gap-3" aria-live="polite">
+    <section className="flex flex-col gap-3" aria-live="polite" data-tactical-result="phase12">
       <div
         className={[
           'rounded border px-3 py-3',
@@ -151,9 +152,18 @@ export function SizeGroupedResults(props: {
             <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {props.modeLabel || 'Match'} · Sound ID {props.soundId}
               {props.matchKind ? ` · ${props.matchKind}` : ''}
+              {props.lowConfidence ? ' · best guess' : ''}
             </p>
+            {props.lowConfidence && (
+              <span
+                className="inline-block mt-1 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border border-[var(--warn)]/50 bg-[var(--warn)]/10 text-[var(--warn)]"
+                data-badge="low-confidence"
+              >
+                Low Confidence / Best Guess
+              </span>
+            )}
             <div className="mt-1 flex flex-wrap items-end gap-5">
-              <div>
+              <div data-metric="red-chance">
                 <div
                   className={[
                     'text-3xl font-bold tabular-nums leading-none',
@@ -163,7 +173,7 @@ export function SizeGroupedResults(props: {
                   {overallRed}%
                 </div>
                 <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--mythic-gold)]">
-                  Overall Red / Mythic
+                  Red Chance
                 </div>
                 <p className="m-0 mt-0.5 text-[10px] text-[var(--muted)]">
                   {props.items.filter((i) => i.rarity >= 6).length} of {props.items.length} items
@@ -192,7 +202,7 @@ export function SizeGroupedResults(props: {
         </div>
 
         {props.altMatches && props.altMatches.length > 1 && (
-          <div className="mt-3 flex flex-wrap gap-1.5 items-center">
+          <div className="mt-3 flex flex-wrap gap-1.5 items-center" data-ranked-candidates>
             <span className="text-[10px] text-[var(--muted)]">Also close:</span>
             {props.altMatches.slice(1, 6).map((m) => (
               <button

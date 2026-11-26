@@ -1,4 +1,5 @@
 import type { MerchantItem } from './audioMatcher';
+import { rarityHue, type RarityHue } from './itemDisplay';
 
 export type TierFilter = {
   onlyRed: boolean;
@@ -13,9 +14,15 @@ export type ScoredItem = MerchantItem & {
 
 /** Red (≥6) / Yellow (≥5 & <6) / other — matches live rarity badges. */
 export function itemTier(item: MerchantItem): 'Red' | 'Yellow' | 'Other' {
-  if (item.rarity >= 6) return 'Red';
-  if (item.rarity >= 5) return 'Yellow';
+  const hue = rarityHue(item);
+  if (hue === 'red') return 'Red';
+  if (hue === 'yellow') return 'Yellow';
   return 'Other';
+}
+
+/** HUD hue alias — same mapping as itemDisplay.rarityHue. */
+export function itemRarityHue(item: MerchantItem): RarityHue {
+  return rarityHue(item);
 }
 
 export function passesTier(item: MerchantItem, filter: TierFilter): boolean {

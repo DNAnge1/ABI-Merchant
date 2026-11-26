@@ -10,6 +10,8 @@ import {
   SessionErrorHistory,
   type SessionErrorEntry,
 } from './SessionErrorHistory';
+import { ItemThumb } from './ItemThumb';
+import type { RankedSoundCandidate } from '../utils/rankedGuess';
 
 export interface SessionSlot {
   id: string;
@@ -17,8 +19,13 @@ export interface SessionSlot {
   confidence: number;
   kind: string;
   redPct: number;
+  /** Phase 2: weighted red over ranked pool when available. */
+  redChancePercent?: number;
   items: MerchantItem[];
   ts: number;
+  lowConfidence?: boolean;
+  rankedCandidates?: RankedSoundCandidate[];
+  isolatedItem?: boolean;
 }
 
 function formatPrice(n: number): string {
@@ -33,23 +40,6 @@ function rarityLabel(r: number): string {
   if (r >= 4) return 'Purple';
   if (r >= 3) return 'Blue';
   return 'Common';
-}
-
-function ItemThumb(props: { item: MerchantItem; size?: 'sm' | 'md' | 'lg' }) {
-  const dim =
-    props.size === 'lg' ? 'h-14 w-14' : props.size === 'md' ? 'h-11 w-11' : 'h-9 w-9';
-  if (props.item.iconUrl) {
-    return (
-      <img
-        src={props.item.iconUrl}
-        alt=""
-        className={`${dim} object-contain rounded bg-black/30 shrink-0`}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-      />
-    );
-  }
-  return <div className={`${dim} rounded bg-black/30 shrink-0`} />;
 }
 
 /** Human-readable headline for a locked group (images + names + value). */
@@ -427,6 +417,12 @@ export function ContinuousGrid(props: {
 export function buildSlotFromMatch(
   match: { soundId: number; confidence: number; kind: string },
   allItems: MerchantItem[],
+  opts?: {
+    lowConfidence?: boolean;
+    redChancePercent?: number;
+    rankedCandidates?: RankedSoundCandidate[];
+    isolatedItem?: boolean;
+  },
 ): SessionSlot {
   const slotItems = allItems.filter((i) => i.soundId === match.soundId);
   return {
@@ -435,7 +431,11 @@ export function buildSlotFromMatch(
     confidence: match.confidence,
     kind: match.kind,
     redPct: redLikelihoodPercent(slotItems),
+    redChancePercent: opts?.redChancePercent,
     items: slotItems,
     ts: Date.now(),
+    lowConfidence: opts?.lowConfidence,
+    rankedCandidates: opts?.rankedCandidates,
+    isolatedItem: opts?.isolatedItem,
   };
 }

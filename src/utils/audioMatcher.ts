@@ -168,6 +168,13 @@ export interface BurstPeekResult {
   onsetDurationMs: number;
   sampleRate: number;
   captureMode: CaptureSourceKind | null;
+  /**
+   * Ms of analyser time after the anchored onset (fills toward LIVE300_POST_MS).
+   * Calibration must wait until {@link windowFilled} before logging / clipping.
+   */
+  postOnsetMs: number;
+  /** True when the live300 body has had time to fill (~onset+280ms). */
+  windowFilled: boolean;
 }
 
 /** Result of Stop & Match — always populated so the UI can toast + replay capture. */
@@ -1873,6 +1880,9 @@ export class AudioMatcher {
     }));
 
     if (allMatches.length === 0) return null;
+    const postOnsetMs = Math.max(0, newestT - onsetT);
+    // Slight slack so a tick landing ~10ms early still counts as filled.
+    const windowFilled = postOnsetMs >= LIVE300_POST_MS - 10;
     return {
       matches: allMatches.slice(0, 5),
       allMatches,
@@ -1886,6 +1896,8 @@ export class AudioMatcher {
       onsetDurationMs: LIVE300_PRE_MS + LIVE300_POST_MS,
       sampleRate: this.ctx.sampleRate,
       captureMode: this.captureSource,
+      postOnsetMs,
+      windowFilled,
     };
   }
 
@@ -1904,6 +1916,10 @@ export class AudioMatcher {
   /**
    * Slice ~400ms of burst PCM around a clean onset (ms since burst start).
    * Used by Calibration panel “Download Clip WAV” on logged misses.
+   *
+   * Returns null until PCM has captured the full post-onset body — otherwise
+   * live-onset logging produced truncated ~65–220ms clips that score as
+   * neighbor IDs (#11/#25) instead of the real cargo.
    */
   extractBurstOnsetWav(onsetMs: number, padMs = 80, bodyMs = 320): Blob | null {
     if (!this.ctx) return null;
@@ -1915,11 +1931,11 @@ export class AudioMatcher {
     if (chunks.length === 0) return null;
     const pcm = concatFloat32(chunks);
     const start = Math.max(0, Math.floor(((onsetMs - padMs) / 1000) * sampleRate));
-    const end = Math.min(
-      pcm.length,
-      Math.floor(((onsetMs + bodyMs) / 1000) * sampleRate),
-    );
-    if (end - start < sampleRate * 0.05) return null;
+    const needEnd = Math.floor(((onsetMs + bodyMs) / 1000) * sampleRate);
+    // Require the full body in the buffer (not just 50ms) before exporting.
+    if (pcm.length < needEnd) return null;
+    const end = Math.min(pcm.length, needEnd);
+    if (end - start < sampleRate * 0.3) return null; // ≥~300ms usable
     return encodeWavMono(pcm.subarray(start, end), sampleRate);
   }
 

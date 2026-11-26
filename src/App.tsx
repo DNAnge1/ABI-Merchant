@@ -77,7 +77,6 @@ import {
 } from './utils/calibrationStore';
 import {
   buildMissReport,
-  isCalibrationDebugEnabledFromUrl,
   readCalibrationDebugPref,
   summarizeConfusion,
   writeCalibrationDebugPref,
@@ -256,9 +255,8 @@ export default function App() {
   const [calibrationDebug, setCalibrationDebug] = useState(() =>
     readCalibrationDebugPref(),
   );
-  const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(() =>
-    isCalibrationDebugEnabledFromUrl() || readCalibrationDebugPref(),
-  );
+  /** Advanced onset log stays collapsed by default — expand only on demand. */
+  const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(false);
   const [expectedSoundId, setExpectedSoundId] = useState<number | null>(null);
   const [confusionEvents, setConfusionEvents] = useState<MissReportPayload[]>([]);
   const [confusionClips, setConfusionClips] = useState<Record<string, Blob>>({});
@@ -540,58 +538,6 @@ export default function App() {
         return;
       }
 
-      // Calibration / Confusion: log each new clean onset when ground-truth is set.
-      const expectedId = expectedSoundIdRef.current;
-      if (
-        calibrationDebugRef.current &&
-        expectedId != null &&
-        lastLoggedOnsetRef.current !== peek.onsetMs
-      ) {
-        lastLoggedOnsetRef.current = peek.onsetMs;
-        const ranked =
-          peek.allMatches.length > 0
-            ? peek.allMatches
-            : matchSpectrumAgainstFingerprints(
-                peek.spectrumVector,
-                fingerprints,
-                ALL_SOUND_IDS,
-                'pickup',
-                peek.capturedCentroid,
-              );
-        let clipId: string | undefined;
-        const wav = matcher.extractBurstOnsetWav(peek.onsetMs);
-        if (wav) {
-          clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
-          setConfusionClips((prev) => ({ ...prev, [clipId!]: wav }));
-        }
-        const event = buildMissReport({
-          expectedId,
-          matches: ranked,
-          source: 'live-onset',
-          fingerprints,
-          spectrumVector: peek.spectrumVector,
-          capturedCentroid: peek.capturedCentroid,
-          onsetDurationMs: peek.onsetDurationMs,
-          peakRms: peek.peakRms,
-          meanRms: peek.meanRms,
-          noiseFloor: peek.noiseFloor,
-          rmsBaseline: peek.rmsBaseline,
-          sampleRate: peek.sampleRate,
-          captureMode: peek.captureMode,
-          sessionId,
-          appVersion: __APP_VERSION__,
-          raid: raidSnapshot(),
-          clipId,
-        });
-        setConfusionEvents((prev) => [...prev, event].slice(-200));
-        if (calibrationAutoSaveRef.current) {
-          setAutoSaveStatus('saving');
-          void postMissReport(event).then((ok) => {
-            setAutoSaveStatus(ok ? 'ok' : 'err');
-          });
-        }
-      }
-
       const sizedRaw = applySizeConstrainedFallback(
         peek.matches,
         items,
@@ -602,6 +548,69 @@ export default function App() {
         onsetMs: peek.onsetMs,
       });
       liveConsensusRef.current = next;
+
+      // Calibration / Confusion: log each new clean onset when ground-truth is set.
+      // Wait until the live300 window is filled + PCM clip is full (~400ms) —
+      // logging on the first incomplete peek produced truncated #11/#25 clips.
+      // predictedId follows HUD consensus (not a flickering raw peek top).
+      const expectedId = expectedSoundIdRef.current;
+      if (
+        calibrationDebugRef.current &&
+        expectedId != null &&
+        lastLoggedOnsetRef.current !== peek.onsetMs &&
+        peek.windowFilled
+      ) {
+        const wav = matcher.extractBurstOnsetWav(peek.onsetMs);
+        // Defer until PCM has the full post-onset body (same gate as windowFilled).
+        if (!wav) {
+          // Keep lastLogged unset so the next tick retries once PCM catches up.
+        } else {
+          lastLoggedOnsetRef.current = peek.onsetMs;
+          const ranked =
+            peek.allMatches.length > 0
+              ? peek.allMatches
+              : matchSpectrumAgainstFingerprints(
+                  peek.spectrumVector,
+                  fingerprints,
+                  ALL_SOUND_IDS,
+                  'pickup',
+                  peek.capturedCentroid,
+                );
+          const clipId = `onset-${peek.onsetMs}-${Date.now().toString(36)}`;
+          setConfusionClips((prev) => ({ ...prev, [clipId]: wav }));
+          const hudPredicted =
+            next.soundId ?? ranked[0]?.soundId ?? undefined;
+          const event = buildMissReport({
+            expectedId,
+            matches: ranked,
+            source: 'live-onset',
+            fingerprints,
+            spectrumVector: peek.spectrumVector,
+            capturedCentroid: peek.capturedCentroid,
+            onsetDurationMs: peek.onsetDurationMs,
+            peakRms: peek.peakRms,
+            meanRms: peek.meanRms,
+            noiseFloor: peek.noiseFloor,
+            rmsBaseline: peek.rmsBaseline,
+            sampleRate: peek.sampleRate,
+            captureMode: peek.captureMode,
+            sessionId,
+            appVersion: __APP_VERSION__,
+            raid: raidSnapshot(),
+            clipId,
+            // Bind Pred column to consensus HUD id; top5 stays raw peek ranking.
+            predictedIdOverride: hudPredicted,
+          });
+          setConfusionEvents((prev) => [...prev, event].slice(-200));
+          if (calibrationAutoSaveRef.current) {
+            setAutoSaveStatus('saving');
+            void postMissReport(event).then((ok) => {
+              setAutoSaveStatus(ok ? 'ok' : 'err');
+            });
+          }
+        }
+      }
+
       const sized = next.matches;
       if (!sized.length || next.soundId == null) return;
       const pool = buildBestGuessPool(sized, items, {
@@ -1096,10 +1105,10 @@ export default function App() {
       setConfusionEvents((prev) => [...prev, event].slice(-200));
       // Always POST numbers-only diagnostics for community confusion stats.
       uploadMissReport(event, true);
-      // Surface panel so player can Copy JSON / Download Clip WAV (local).
+      // Enable Advanced logger quietly — keep accordion collapsed (Report issue
+      // is the happy path; power users expand on demand for Copy / WAV).
       setCalibrationDebug(true);
       writeCalibrationDebugPref(true);
-      setCalibrationPanelOpen(true);
     },
     [raidSnapshot, sessionId, uploadMissReport],
   );
@@ -1913,6 +1922,9 @@ export default function App() {
       return;
     }
     const keepMulti = matcherRef.current.isMultiContinuousArmed();
+    // Drop live peek immediately so Report / HUD bind only to Stop & Match lock.
+    setLivePreview(null);
+    liveConsensusRef.current = emptyLiveConsensus();
     setRecordingMove(keepMulti);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
@@ -2074,7 +2086,8 @@ export default function App() {
   function setCalibrationDebugPref(on: boolean) {
     setCalibrationDebug(on);
     writeCalibrationDebugPref(on);
-    if (on) setCalibrationPanelOpen(true);
+    // Stay collapsed by default when enabling — Brent/power users expand on demand.
+    if (!on) setCalibrationPanelOpen(false);
   }
 
   function startOver() {

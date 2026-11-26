@@ -416,10 +416,10 @@ export function LatestLockFeed(props: {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="m-0 text-[15px] font-medium">
           {props.livePreview
-            ? 'Live narrowing'
+            ? 'Live peek (not final)'
             : props.lowConfidence
-              ? 'Best guess'
-              : 'Latest lock'}
+              ? 'Best guess · Stop & Match'
+              : 'Predicted lock · Stop & Match'}
         </h2>
       </div>
 

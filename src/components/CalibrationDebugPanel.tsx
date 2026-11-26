@@ -1,7 +1,8 @@
 /**
- * Phase 1 Calibration / Confusion Debug Panel.
+ * Calibration / Confusion Debug Panel.
  * Progressive disclosure (Advanced Settings) — not a secret flag.
  * Ground-truth Sound ID + live onset confusion logger.
+ * Optional Auto-save posts numbers-only MissReportPayload to Worker (no audio).
  */
 
 import { useMemo, useState } from 'react';
@@ -27,6 +28,10 @@ export function CalibrationDebugPanel(props: {
   listening: boolean;
   clipBlobs: Record<string, Blob>;
   onClear: () => void;
+  /** Optional Worker auto-save (numbers-only; never WAV). */
+  autoSave?: boolean;
+  onAutoSaveChange?: (on: boolean) => void;
+  autoSaveStatus?: 'idle' | 'saving' | 'ok' | 'err';
 }) {
   const [copied, setCopied] = useState(false);
   const neighbors = useMemo(() => {
@@ -86,6 +91,30 @@ export function CalibrationDebugPanel(props: {
           Collapse
         </button>
       </div>
+
+      {props.onAutoSaveChange && (
+        <label className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted)]">
+          <input
+            type="checkbox"
+            checked={Boolean(props.autoSave)}
+            onChange={(e) => props.onAutoSaveChange?.(e.target.checked)}
+            className="accent-[var(--accent)]"
+          />
+          <span>
+            Auto-save to Worker{' '}
+            <span className="text-[10px]">(numbers-only public miss reports — no audio)</span>
+          </span>
+          {props.autoSave && props.autoSaveStatus === 'ok' && (
+            <span className="text-[var(--accent)] text-[10px]">synced</span>
+          )}
+          {props.autoSave && props.autoSaveStatus === 'err' && (
+            <span className="text-[var(--warn)] text-[10px]">offline / rate-limited</span>
+          )}
+          {props.autoSave && props.autoSaveStatus === 'saving' && (
+            <span className="text-[10px]">saving…</span>
+          )}
+        </label>
+      )}
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-[11px]">

@@ -24,17 +24,19 @@ npm run db:migrate:local
 npm run dev
 ```
 
-Endpoints: `POST /vote`, `POST /event`, `GET /stats`, `GET|POST /suggestions`, `POST /suggestions/:id/upvote`, `PATCH /suggestions/:id` (admin). CORS allows `https://dnange1.github.io` and `http://localhost:5173`.
+Endpoints: `POST /vote`, `POST /event`, `GET /stats`, `POST|GET /reports`, `GET /reports/stats`, `PATCH /reports/:id` (admin), `GET|POST /suggestions`, `POST /suggestions/:id/upvote`, `PATCH /suggestions/:id` (admin). CORS allows `https://dnange1.github.io` and `http://localhost:5173`.
 
-Tables: `sound_votes` (+ `scan_count` / `red_count`), `site_counters`, `daily_stats`, `map_mode_counts`, `suggestions`, `suggestion_votes`, `suggestion_rate`. No raw event logs / no raw IPs (SHA-256 hashes only).
+Tables: `sound_votes` (+ `scan_count` / `red_count`), `site_counters`, `daily_stats`, `map_mode_counts`, `miss_reports`, `miss_report_rate`, `suggestions`, `suggestion_votes`, `suggestion_rate`. Miss reports store numbers-only `MissReportPayload` v1 JSON (no audio / spectrum). No raw IPs (SHA-256 hashes only).
 
-### Suggestions secrets (optional)
+### Admin / rate-limit secrets (optional)
 
 ```bash
-npx wrangler secret put ADMIN_KEY      # required for PATCH hide
+npx wrangler secret put ADMIN_KEY      # required for PATCH hide (suggestions + miss reports)
 npx wrangler secret put IP_HASH_SALT   # optional; rotates hashed-IP identity
 ```
 
-`PATCH /suggestions/:id` with header `X-Admin-Key: <ADMIN_KEY>` and body `{ "hidden": true }`.
+`PATCH /suggestions/:id` or `PATCH /reports/:id` with header `X-Admin-Key: <ADMIN_KEY>` and body `{ "hidden": true }`.
+
+`POST /reports` rate limit: 30 / hour / hashed IP. `GET /reports` and `GET /reports/stats` are public (Brent: open confusion summaries).
 
 This folder is **not** part of the Vite / GitHub Pages build.

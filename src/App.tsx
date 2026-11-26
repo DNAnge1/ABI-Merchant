@@ -85,6 +85,11 @@ import {
   type RaidContextSnapshot,
 } from './utils/confusionDebug';
 import {
+  postMissReport,
+  readCalibrationAutoSavePref,
+  writeCalibrationAutoSavePref,
+} from './utils/missReportsApi';
+import {
   postCommunityEvent,
   postCommunityVote,
   trackCommunityMapMode,
@@ -257,11 +262,19 @@ export default function App() {
   const [expectedSoundId, setExpectedSoundId] = useState<number | null>(null);
   const [confusionEvents, setConfusionEvents] = useState<MissReportPayload[]>([]);
   const [confusionClips, setConfusionClips] = useState<Record<string, Blob>>({});
+  const [calibrationAutoSave, setCalibrationAutoSave] = useState(() =>
+    readCalibrationAutoSavePref(),
+  );
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>(
+    'idle',
+  );
   const lastLoggedOnsetRef = useRef<number | null>(null);
   const expectedSoundIdRef = useRef<number | null>(null);
   const calibrationDebugRef = useRef(calibrationDebug);
+  const calibrationAutoSaveRef = useRef(calibrationAutoSave);
   expectedSoundIdRef.current = expectedSoundId;
   calibrationDebugRef.current = calibrationDebug;
+  calibrationAutoSaveRef.current = calibrationAutoSave;
 
   const matcherRef = useRef<AudioMatcher | null>(null);
   const verifyCleanupRef = useRef<(() => void) | null>(null);
@@ -333,10 +346,13 @@ export default function App() {
   }, [mapModeId]);
 
   // Hidden screenshot/demo seed: ?catchDemo=1 jumps to Start Scan with a Group #8 best-guess card.
+  // ?missDemo=1 same lock + opens 👎 “what did you actually get?” modal.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('catchDemo') !== '1') return;
+    const catchDemo = params.get('catchDemo') === '1';
+    const missDemo = params.get('missDemo') === '1';
+    if (!catchDemo && !missDemo) return;
     setMode('automatic');
     setMonitorSetup('single');
     setScanStyle('single');
@@ -377,6 +393,11 @@ export default function App() {
       rankedCandidates: pool.candidates,
       isolatedItem: pool.isolatedItem,
     });
+    if (missDemo) {
+      setMissTarget('locked');
+      setMissOpen(true);
+      setSinglePhase('locked');
+    }
   }, []);
 
   // Hidden QA demo: ?verifyErrorDemo=1 — centered verify/share error modal (+ chip after Close).
@@ -561,6 +582,12 @@ export default function App() {
           clipId,
         });
         setConfusionEvents((prev) => [...prev, event].slice(-200));
+        if (calibrationAutoSaveRef.current) {
+          setAutoSaveStatus('saving');
+          void postMissReport(event).then((ok) => {
+            setAutoSaveStatus(ok ? 'ok' : 'err');
+          });
+        }
       }
 
       const sizedRaw = applySizeConstrainedFallback(
@@ -872,6 +899,18 @@ export default function App() {
     [applyBestGuess, mode],
   );
 
+  /**
+   * Upload numbers-only MissReportPayload (never spectrum / WAV).
+   * Player 👎 always posts; calibration onsets only when Auto-save is on.
+   */
+  const uploadMissReport = useCallback((event: MissReportPayload, force: boolean) => {
+    if (!force && !calibrationAutoSaveRef.current) return;
+    setAutoSaveStatus('saving');
+    void postMissReport(event).then((ok) => {
+      setAutoSaveStatus(ok ? 'ok' : 'err');
+    });
+  }, []);
+
   const logConfusionFromPayload = useCallback(
     (payload: MatchPayload) => {
       const expectedId = expectedSoundIdRef.current;
@@ -913,8 +952,9 @@ export default function App() {
         clipId,
       });
       setConfusionEvents((prev) => [...prev, event].slice(-200));
+      uploadMissReport(event, false);
     },
-    [raidSnapshot, sessionId],
+    [raidSnapshot, sessionId, uploadMissReport],
   );
 
   /** Player 👎 → same MissReportPayload as Calibration logger (local WAV, numbers-only JSON). */
@@ -980,12 +1020,14 @@ export default function App() {
         clipId,
       });
       setConfusionEvents((prev) => [...prev, event].slice(-200));
+      // Always POST numbers-only diagnostics for community confusion stats.
+      uploadMissReport(event, true);
       // Surface panel so player can Copy JSON / Download Clip WAV (local).
       setCalibrationDebug(true);
       writeCalibrationDebugPref(true);
       setCalibrationPanelOpen(true);
     },
-    [raidSnapshot, sessionId],
+    [raidSnapshot, sessionId, uploadMissReport],
   );
 
   const handleMatchPayload = useCallback(
@@ -2590,6 +2632,13 @@ export default function App() {
                 fingerprints={fingerprints}
                 listening={recordingMove || status === 'listening' || status === 'capturing'}
                 clipBlobs={confusionClips}
+                autoSave={calibrationAutoSave}
+                autoSaveStatus={autoSaveStatus}
+                onAutoSaveChange={(on) => {
+                  setCalibrationAutoSave(on);
+                  writeCalibrationAutoSavePref(on);
+                  setAutoSaveStatus('idle');
+                }}
                 onClear={() => {
                   setConfusionEvents([]);
                   setConfusionClips({});

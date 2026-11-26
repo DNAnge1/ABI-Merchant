@@ -1,9 +1,10 @@
 /**
- * Dedicated Stats view — local accuracy + community counters.
+ * Dedicated Stats view — local accuracy + community counters + confusion graphs.
  * Opened from footer or WIP popup; keep out of Catch HUD chrome.
  */
 
 import { AccuracyPanel } from './AccuracyPanel';
+import { ConfusionStatsPanel } from './ConfusionStatsPanel';
 import type { AccuracyStats } from '../utils/calibrationStore';
 
 export function StatsPage(props: {
@@ -19,7 +20,8 @@ export function StatsPage(props: {
         <div>
           <h2 className="m-0 text-2xl font-medium tracking-tight">Stats</h2>
           <p className="m-0 mt-1 text-[13px] text-[var(--muted)]">
-            Local 👍/👎 accuracy plus community counters when the Worker is reachable.
+            Local 👍/👎 accuracy, community counters, and public Top Misidentified when the
+            Worker is reachable.
           </p>
         </div>
         <button
@@ -36,6 +38,8 @@ export function StatsPage(props: {
         onExport={props.onExport}
         onClear={props.onClear}
       />
+
+      <ConfusionStatsPanel />
 
       {props.onOpenSuggestions && (
         <p className="m-0 text-[12px] text-[var(--muted)]">

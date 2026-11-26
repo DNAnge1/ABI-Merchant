@@ -10,23 +10,23 @@ Nothing installs. Audio stays on your device. Not affiliated with Morefun Studio
 
 1. Use **Chrome** or **Edge** on a Windows PC (best for sharing game audio).
 2. Open: **[https://dnange1.github.io/ABI-Merchant/](https://dnange1.github.io/ABI-Merchant/)**
-3. You should see **Catch** (big circle) and **Manual Setup**.
+3. You should see **Start Scan** (big circle) and **Manual Mode**.
 
 If the link 404s, the latest merge may still be deploying — wait a minute and refresh, or check the repo’s **Actions → Deploy GitHub Pages**.
 
 ---
 
-## Quick start (Catch)
+## Quick start (Start Scan)
 
 ### 1. Setup (monitors + style)
 
-1. Click **Catch**.
+1. Click **Start Scan**.
 2. Choose **Single** or **Multi** monitors, then scan style (single item vs continuous / multi).
 3. Finish the short wizard (sensitivity is fine on **Med** to start).
 
 ### 2. Share game audio
 
-1. On the Catch screen, click **Start Listening**.
+1. On the Start Scan screen, click **Start Listening**.
 2. In Chrome/Edge’s share dialog:
    - Prefer the **Window** tab → **Arena Breakout: Infinite**
    - Turn **Share audio** / **Also share system audio** **on**
@@ -67,7 +67,7 @@ Size checkboxes only list sizes in the locked sound group. Wrong size → 0% / e
 
 ---
 
-## Manual Setup
+## Manual Mode
 
 Use when you do not want display capture: pick filters + a Sound ID from the board and audition pickup samples. Same raid context filters apply.
 

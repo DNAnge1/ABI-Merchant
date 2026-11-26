@@ -26,11 +26,11 @@ export function EntryScreen(props: {
               ABI Merchant
             </p>
             <h2 className="m-0 text-[28px] font-medium tracking-tight text-[var(--text)]">
-              Catch or Setup?
+              Field Merchant Scanner
             </h2>
             <p className="m-0 text-sm text-[var(--muted)] leading-relaxed">
-              Catch is the raid HUD — share audio, set map/mode, listen. Setup covers monitors,
-              sensitivity, and troubleshooting. Manual stays available for the sound board.
+              Share game audio, match cargo sounds, and read Red Chance / EV — free and local in your
+              browser.
             </p>
           </div>
 
@@ -40,10 +40,10 @@ export function EntryScreen(props: {
             className="w-[220px] h-[220px] rounded-full border-[1.5px] border-[var(--accent)] bg-[var(--bg-elevated)] flex flex-col items-center justify-center gap-2 hover:bg-[var(--accent-dim)]/20 transition-colors"
           >
             <span className="text-[22px] font-semibold tracking-tight text-[var(--text)]">
-              Catch
+              Start Scan
             </span>
             <span className="text-[12px] text-[var(--muted)] max-w-[140px] leading-snug">
-              Setup wizard → raid listen
+              Wizard → listen at the merchant
             </span>
           </button>
 
@@ -57,7 +57,7 @@ export function EntryScreen(props: {
             onClick={props.onManual}
             className="bg-transparent border-none text-[var(--accent)] text-sm font-medium px-3 py-2 hover:underline"
           >
-            Manual Setup — filters + sound board
+            Manual Mode — filters + sound board
           </button>
 
           <button
@@ -68,7 +68,7 @@ export function EntryScreen(props: {
             Need help? Troubleshooting
           </button>
 
-          {/* FAQ button → modal (keeps Entry short) */}
+          {/* FAQ button → modal (keeps Entry short); not on the live scan HUD */}
           <EntryTrustFaq />
         </div>
       </div>

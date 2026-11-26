@@ -263,7 +263,7 @@ export default function App() {
     if (mapModeId) trackCommunityMapMode(mapModeId);
   }, [mapModeId]);
 
-  // Hidden screenshot/demo seed: ?catchDemo=1 jumps to Catch with a Group #8 best-guess card.
+  // Hidden screenshot/demo seed: ?catchDemo=1 jumps to Start Scan with a Group #8 best-guess card.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -1838,7 +1838,7 @@ export default function App() {
             />
 
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="m-0 text-xl font-medium tracking-tight">Catch</h2>
+              <h2 className="m-0 text-xl font-medium tracking-tight">Start Scan</h2>
               <span
                 className={[
                   'rounded-full px-2.5 py-0.5 text-[11px] font-semibold border',
@@ -2174,7 +2174,7 @@ export default function App() {
             <div className="space-y-1">
               <h2 className="m-0 text-2xl font-medium tracking-tight">Manual Setup</h2>
               <p className="m-0 text-sm text-[var(--muted)]">
-                Filters + sound board — audition pickup IDs by hand. For live raids use Catch
+                Filters + sound board — audition pickup IDs by hand. For live raids use Start Scan
                 (Automatic).
               </p>
             </div>

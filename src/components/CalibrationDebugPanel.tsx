@@ -1,8 +1,7 @@
 /**
- * Calibration / Confusion Debug Panel.
- * Progressive disclosure (Advanced Settings) — not a secret flag.
- * Ground-truth Sound ID + live onset confusion logger.
- * Optional Auto-save posts numbers-only MissReportPayload to Worker (no audio).
+ * Calibration / Confusion Debug Panel (Advanced).
+ * Normal miss flow is post-stop “Report issue” — this panel is for power users
+ * who want live onset logging + Copy Debug JSON while recording.
  */
 
 import { useMemo, useState } from 'react';
@@ -15,6 +14,9 @@ import {
 import { topNeighbors } from '../utils/fingerprintPairwise';
 import type { FingerprintsFile } from '../utils/audioMatcher';
 
+const EMPTY_COPY_MESSAGE =
+  'No calibration entries yet. Steps: (1) set Actual Sound ID, (2) Start Moving / click cargo so rows appear, (3) Copy Debug JSON anytime — even while listening.';
+
 export function CalibrationDebugPanel(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -25,7 +27,10 @@ export function CalibrationDebugPanel(props: {
   summary: ConfusionPairSummary[];
   sessionId: string;
   fingerprints: FingerprintsFile;
+  /** Capture is live (listening / capturing). */
   listening: boolean;
+  /** Burst move is active — onsets are actually being appended. */
+  loggingActive?: boolean;
   clipBlobs: Record<string, Blob>;
   onClear: () => void;
   /** Optional Worker auto-save (numbers-only; never WAV). */
@@ -34,6 +39,7 @@ export function CalibrationDebugPanel(props: {
   autoSaveStatus?: 'idle' | 'saving' | 'ok' | 'err';
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyHint, setCopyHint] = useState<string | null>(null);
   const neighbors = useMemo(() => {
     if (props.expectedId == null) return [];
     return topNeighbors(props.fingerprints, props.expectedId, 5);
@@ -47,7 +53,7 @@ export function CalibrationDebugPanel(props: {
       >
         <summary className="cursor-pointer list-none flex items-center justify-between gap-2 text-[11px] [&::-webkit-details-marker]:hidden">
           <span className="font-semibold uppercase tracking-wider text-[var(--muted)]">
-            Calibration / Confusion
+            Advanced · live onset log
           </span>
           <button
             type="button"
@@ -64,7 +70,46 @@ export function CalibrationDebugPanel(props: {
     );
   }
 
+  const hasEvents = props.events.length > 0;
   const json = exportConfusionDebugJson(props.sessionId, props.expectedId, props.events);
+  const logging = Boolean(props.loggingActive);
+  const listeningOnly = props.listening && !logging;
+
+  async function handleCopy() {
+    if (!hasEvents) {
+      const ok = await copyTextToClipboard(EMPTY_COPY_MESSAGE);
+      setCopied(ok);
+      setCopyHint(
+        ok
+          ? 'Copied empty-state tip — no rows logged yet.'
+          : 'Could not copy — check clipboard permission.',
+      );
+      window.setTimeout(() => {
+        setCopied(false);
+        setCopyHint(null);
+      }, 2200);
+      return;
+    }
+    const ok = await copyTextToClipboard(json);
+    setCopied(ok);
+    setCopyHint(ok ? null : 'Could not copy — check clipboard permission.');
+    window.setTimeout(() => {
+      setCopied(false);
+      setCopyHint(null);
+    }, 1600);
+  }
+
+  function handleDownload() {
+    if (!hasEvents) {
+      setCopyHint('Nothing to download yet — Start Moving / click cargo so entries appear.');
+      window.setTimeout(() => setCopyHint(null), 2200);
+      return;
+    }
+    downloadBlob(
+      new Blob([json], { type: 'application/json' }),
+      `abi-merchant-confusion-${new Date().toISOString().slice(0, 10)}.json`,
+    );
+  }
 
   return (
     <section
@@ -74,13 +119,12 @@ export function CalibrationDebugPanel(props: {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="m-0 text-xs font-semibold uppercase tracking-wider text-[var(--warn)]">
-            Calibration / Confusion
+            Advanced · live onset log
           </h2>
           <p className="m-0 mt-1 text-[11px] text-[var(--muted)] leading-snug">
-            Pick the Sound ID you are actually clicking. Every clean onset logs expected vs
-            predicted (top 5 + expected rank, diagnostics, map/mode). Copy Debug JSON is
-            numbers-only — Download Clip WAV stays on your device (never uploaded). Known
-            collisions: #2→#8, #8→#20/#7.
+            Prefer the simple path after Stop: <strong className="text-[var(--text)]">Report issue</strong>{' '}
+            → pick the real item → Send (numbers only; WAV stays on your device). This panel is
+            optional live logging while you drag cargo.
           </p>
         </div>
         <button
@@ -91,6 +135,21 @@ export function CalibrationDebugPanel(props: {
           Collapse
         </button>
       </div>
+
+      <ol className="m-0 pl-4 space-y-1 text-[11px] text-[var(--muted)] leading-snug">
+        <li>
+          Set <span className="text-[var(--text)] font-semibold">Actual Sound ID</span> (what you
+          are clicking).
+        </li>
+        <li>
+          <span className="text-[var(--text)] font-semibold">Start Moving</span> / click cargo —
+          rows appear below.
+        </li>
+        <li>
+          <span className="text-[var(--text)] font-semibold">Copy Debug JSON anytime</span> (even
+          mid-listen). Empty log copies a tip, never a silent gray button.
+        </li>
+      </ol>
 
       {props.onAutoSaveChange && (
         <label className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted)]">
@@ -119,7 +178,7 @@ export function CalibrationDebugPanel(props: {
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-[11px]">
           <span className="font-semibold text-[var(--muted)] uppercase tracking-wide">
-            Ground-truth Sound ID
+            Actual Sound ID
           </span>
           <select
             value={props.expectedId ?? ''}
@@ -137,13 +196,21 @@ export function CalibrationDebugPanel(props: {
             ))}
           </select>
         </label>
-        <div className="text-[11px] text-[var(--muted)] pb-1.5">
-          {props.listening ? (
-            <span className="text-[var(--listening)] font-semibold">Listening — logging onsets</span>
+        <div className="text-[11px] text-[var(--muted)] pb-1.5 max-w-sm">
+          {logging ? (
+            <span className="text-[var(--listening)] font-semibold">
+              Recording — logging clean onsets
+            </span>
+          ) : listeningOnly ? (
+            <span className="text-[var(--warn)]">
+              Listening, but not logging yet — press Start Moving / Arm Multi, then click cargo
+            </span>
+          ) : props.expectedId == null ? (
+            <span>Pick Actual Sound ID, then Start Moving to log</span>
           ) : (
-            <span>Start Moving / listen to log</span>
+            <span>Ready — Start Moving / click cargo to log</span>
           )}
-          {props.events.length > 0 && (
+          {hasEvents && (
             <span className="ml-2 tabular-nums">· {props.events.length} logged</span>
           )}
         </div>
@@ -179,7 +246,19 @@ export function CalibrationDebugPanel(props: {
         </div>
       )}
 
-      {props.events.length > 0 && (
+      {!hasEvents && (
+        <div
+          className="rounded border border-dashed border-[var(--border)] px-3 py-2 text-[11px] text-[var(--muted)]"
+          data-calibration-empty
+        >
+          No entries yet. After Actual ID + Start Moving, each clean cargo click adds a row. Copy
+          still works now (copies a tip). Wrong lock after Stop? Use{' '}
+          <span className="text-[var(--text)] font-semibold">Report issue</span> on the result —
+          no need for this panel.
+        </div>
+      )}
+
+      {hasEvents && (
         <div className="max-h-48 overflow-auto rounded border border-[var(--border)]">
           <table className="w-full text-[10px] border-collapse">
             <thead className="sticky top-0 bg-[var(--bg-elevated)] text-[var(--muted)]">
@@ -205,40 +284,43 @@ export function CalibrationDebugPanel(props: {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
         <button
           type="button"
-          disabled={props.events.length === 0}
-          onClick={async () => {
-            const ok = await copyTextToClipboard(json);
-            setCopied(ok);
-            window.setTimeout(() => setCopied(false), 1600);
-          }}
-          className="rounded-lg px-3 py-1.5 text-[11px] font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)]/20 disabled:opacity-40"
+          onClick={() => void handleCopy()}
+          className="rounded-lg px-3 py-1.5 text-[11px] font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-dim)]/20"
+          title={
+            hasEvents
+              ? 'Copy numbers-only Debug JSON'
+              : 'Always enabled — copies an empty-state tip when no rows exist'
+          }
         >
           {copied ? 'Copied' : 'Copy Debug JSON'}
         </button>
         <button
           type="button"
-          disabled={props.events.length === 0}
-          onClick={() => {
-            downloadBlob(
-              new Blob([json], { type: 'application/json' }),
-              `abi-merchant-confusion-${new Date().toISOString().slice(0, 10)}.json`,
-            );
-          }}
-          className="rounded-lg px-3 py-1.5 text-[11px] font-semibold border border-[var(--border)] text-[var(--text)] hover:bg-[var(--bg-elevated)] disabled:opacity-40"
+          onClick={handleDownload}
+          className={[
+            'rounded-lg px-3 py-1.5 text-[11px] font-semibold border border-[var(--border)] text-[var(--text)] hover:bg-[var(--bg-elevated)]',
+            !hasEvents ? 'opacity-70' : '',
+          ].join(' ')}
+          title={hasEvents ? 'Download numbers-only JSON' : 'Enabled once at least one row is logged'}
         >
           Download JSON
         </button>
         <button
           type="button"
-          disabled={props.events.length === 0}
+          disabled={!hasEvents}
           onClick={props.onClear}
           className="rounded-lg px-3 py-1.5 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--warn)] disabled:opacity-40"
         >
           Clear log
         </button>
+        {copyHint && (
+          <span className="text-[10px] text-[var(--muted)]" role="status">
+            {copyHint}
+          </span>
+        )}
       </div>
     </section>
   );

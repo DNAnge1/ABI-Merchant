@@ -331,11 +331,17 @@ export function BurstCaptureControls(props: {
   captureDurationMs?: number;
   onPlayCapture?: () => void;
   onDownloadCapture?: () => void;
+  /** Post-stop happy path: wrong result → Report issue (opens miss modal). */
+  onReportIssue?: () => void;
+  showReportIssue?: boolean;
 }) {
   if (!props.captureUrl) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2">
-      <p className="m-0 text-[11px] text-[var(--muted)]">
+    <div
+      className="flex flex-wrap items-center gap-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2"
+      data-burst-capture-controls
+    >
+      <p className="m-0 text-[11px] text-[var(--muted)] grow basis-full sm:basis-auto sm:grow-0">
         Captured burst
         {props.captureDurationMs != null
           ? ` · ${Math.round(props.captureDurationMs)}ms`
@@ -356,6 +362,17 @@ export function BurstCaptureControls(props: {
       >
         Download WAV
       </button>
+      {props.showReportIssue && props.onReportIssue && (
+        <button
+          type="button"
+          onClick={props.onReportIssue}
+          className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)] hover:bg-[var(--mythic)]/30"
+          data-report-issue
+          title="Wrong result? Pick the real item and send diagnostics (no audio upload)"
+        >
+          Report issue
+        </button>
+      )}
     </div>
   );
 }

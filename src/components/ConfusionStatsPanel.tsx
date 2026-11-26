@@ -72,7 +72,7 @@ export function ConfusionStatsPanel() {
           Community confusion
         </h2>
         <p className="m-0 mt-1 text-[11px] text-[var(--muted)] leading-snug">
-          Public Top Misidentified from 👎 Wrong + optional calibration auto-save. Numbers-only
+          Public Top Misidentified from Report issue + optional calibration auto-save. Numbers-only
           diagnostics — never audio.
         </p>
       </div>
@@ -85,7 +85,7 @@ export function ConfusionStatsPanel() {
 
       {!hasData ? (
         <p className="m-0 text-[11px] text-[var(--muted)]">
-          No community miss reports yet — be the first: tap 👎 Wrong after a lock and pick what
+          No community miss reports yet — be the first: after Stop, tap Report issue and pick what
           you actually got.
         </p>
       ) : (

@@ -210,9 +210,11 @@ export function ContinuousGrid(props: {
             <button
               type="button"
               onClick={() => props.onThumbsDown(latest.id)}
-              className="rounded px-3 py-1.5 text-[11px] font-semibold border border-[var(--mythic)]/40 text-[var(--mythic-gold)]"
+              className="rounded-lg px-3.5 py-2 text-[12px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)]"
+              data-report-issue
+              title="Wrong — report issue (pick real item, send diagnostics)"
             >
-              👎 Wrong
+              Report issue
             </button>
             <button
               type="button"

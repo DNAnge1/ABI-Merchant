@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MerchantItem } from '../utils/audioMatcher';
 
 export function MissFeedbackModal(props: {
@@ -7,9 +7,20 @@ export function MissFeedbackModal(props: {
   items: MerchantItem[];
   onCancel: () => void;
   onSubmit: (actual: { soundId: number; itemId?: number; itemName?: string }) => void;
+  /** Optional local WAV download (never uploaded). */
+  onDownloadWav?: () => void;
+  hasCaptureWav?: boolean;
 }) {
   const [soundId, setSoundId] = useState(props.predictedSoundId);
   const [itemId, setItemId] = useState<number | ''>('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (!props.open) return;
+    setSoundId(props.predictedSoundId);
+    setItemId('');
+    setSending(false);
+  }, [props.open, props.predictedSoundId]);
 
   const soundOptions = useMemo(() => {
     const ids = Array.from(new Set(props.items.map((i) => i.soundId))).sort((a, b) => a - b);
@@ -24,15 +35,30 @@ export function MissFeedbackModal(props: {
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Report issue"
+      data-report-issue-modal
+    >
       <div className="w-full max-w-md rounded border border-[var(--border)] bg-[var(--bg-elevated)] p-4 shadow-xl">
-        <h3 className="m-0 text-sm font-semibold text-[var(--text)]">What was it actually?</h3>
-        <p className="m-0 mt-1 text-[11px] text-[var(--muted)]">
-          Predicted Group #{props.predictedSoundId}. Pick the real Sound Group (1–38) and optional
-          item (“what did you actually get?”). We POST a full diagnose-why report to community
-          confusion stats (top 5, expected rank, onset/RMS, map/mode) — numbers only; optional
-          Download Clip WAV stays on your device and is never uploaded.
+        <h3 className="m-0 text-sm font-semibold text-[var(--text)]">Report issue</h3>
+        <p className="m-0 mt-1 text-[11px] text-[var(--muted)] leading-snug">
+          We guessed Group #{props.predictedSoundId}. Pick what you actually got, then Send.
+          We upload diagnostics only (top 5, expected rank, onset/RMS, map/mode) —{' '}
+          <strong className="text-[var(--text)]">no audio leaves your device</strong>.
         </p>
+
+        {props.hasCaptureWav && props.onDownloadWav && (
+          <button
+            type="button"
+            onClick={props.onDownloadWav}
+            className="mt-3 w-full rounded-lg px-3 py-2 text-[11px] font-semibold border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+          >
+            Download WAV (hear what was captured — stays on your PC)
+          </button>
+        )}
 
         <label className="mt-3 flex flex-col gap-1 text-[11px] text-[var(--muted)]">
           Actual Group #
@@ -78,17 +104,19 @@ export function MissFeedbackModal(props: {
           </button>
           <button
             type="button"
+            disabled={sending}
             onClick={() => {
               const item = itemsForSound.find((i) => i.id === itemId);
+              setSending(true);
               props.onSubmit({
                 soundId,
                 itemId: item?.id,
                 itemName: item?.name,
               });
             }}
-            className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)] text-white"
+            className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)] text-white disabled:opacity-60"
           >
-            Log miss
+            {sending ? 'Sending…' : 'Send report'}
           </button>
         </div>
       </div>

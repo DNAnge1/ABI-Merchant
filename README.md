@@ -1,54 +1,132 @@
-# ABI Field Merchant Scanner
+# ABI Merchant — Field Merchant scanner
 
-100% client-side static web app for *Arena Breakout: Infinite* (Season 7). Identify Mystery Cargo by matching in-game pickup/drop audio against the 38 Sound IDs from [abibuilder.com/merchant](https://abibuilder.com/merchant).
+Free, **static** browser tool for *Arena Breakout: Infinite*. It listens to cargo pickup audio on your PC and shows likely items, **Red Chance**, and (when you set raid filters) **expected value / payback**.
 
-**Players need zero install.** Open the hosted site (GitHub Pages / custom domain) in **Chrome** or **Edge**. No `npm`, Playwright, or ffmpeg.
+Nothing installs. Audio stays on your device. Not affiliated with Morefun Studios, Tencent, or ABI Builder.
 
-**Privacy:** audio never leaves the device. No backend.
+---
 
-## Player flow
+## Open the live tool
 
-### Automatic Mode (default)
-1. **Top setup:** Monitor (Single | Dual) + Scan Style (Single Item | Multiple Items Continuous). Single locks Continuous (Alt+Tab grace 1.5s) and unlocks Sound Alerts / Mini-Overlay.
-2. **Verify / Test Audio Access** — `getDisplayMedia` tracks, RMS meter, Chromium/Brave/FF-Safari guides, Manual fallback.
-3. **Start Listening** — share game audio.
-4. **Style A (Single Item):** Ready → lock Group # + confidence → size-grouped Red % → 👍 / 👎 / ⏭️ (Space/Esc). 👎 logs miss + spectral snapshot.
-5. **Style B (Dual Continuous):** ~600ms debounce, live merchant slots with Group #, Red glow, per-slot 👍👎✕, Clear All / New Merchant Refresh.
+1. Use **Chrome** or **Edge** on a Windows PC (best for sharing game audio).
+2. Open: **[https://dnange1.github.io/ABI-Merchant/](https://dnange1.github.io/ABI-Merchant/)**
+3. You should see **Catch** (big circle) and **Manual Setup**.
 
-### Manual Mode + Accuracy
-- Filter pills + 38-ID sound board → size-grouped results
-- **Accuracy Stats** (Total Scans, 👍 Accuracy %, Reds Found) + **Export Calibration Log (JSON)** (`localStorage` schema v1, DB-ready)
+If the link 404s, the latest merge may still be deploying — wait a minute and refresh, or check the repo’s **Actions → Deploy GitHub Pages**.
 
-## Committed static assets (Pages OOTB)
+---
 
-- `src/data/merchantData.json`
-- `src/data/fingerprints.json`
-- `public/sounds/*.ogg` (76 = 38 pickup + 38 drop)
+## Quick start (Catch)
 
-GitHub Pages builds **only** these assets — no scrape/extract in CI.
+### 1. Setup (monitors + style)
 
-## Dev / maintainers
+1. Click **Catch**.
+2. Choose **Single** or **Multi** monitors, then scan style (single item vs continuous / multi).
+3. Finish the short wizard (sensitivity is fine on **Med** to start).
+
+### 2. Share game audio
+
+1. On the Catch screen, click **Start Listening**.
+2. In Chrome/Edge’s share dialog:
+   - Prefer the **Window** tab → **Arena Breakout: Infinite**
+   - Turn **Share audio** / **Also share system audio** **on**
+   - Avoid sharing the whole desktop unless window share has no audio
+3. Click **At Shop** when you are at the Field Merchant.
+
+**Cleaner locks**
+
+- Game SFX volume roughly **80–100%**
+- Turn **off** SteelSeries Sonar / Razer THX / Dolby Atmos / Windows Sonic for the game
+- Hover the cargo, then **click-drag once** (avoid rapid double-clicks)
+- If capture fails after swapping headphones ↔ speakers: **Retest**, or open **Troubleshooting** (top right) for Windows exclusive-mode steps (`Win+R` → `mmsys.cpl` → Playback → Properties → Advanced → uncheck exclusive control)
+
+### 3. Set raid context (Map / Mode + cargo)
+
+Use the sticky **Raid context** bar:
+
+| Control | What it does |
+|---|---|
+| **Map / mode** | Picks the explorer loot **pool** for that raid (e.g. Farm Lockdown) |
+| **Cargo type** | Mystery Cargo, Tools, etc. |
+| **Cargo price** | Tooltip Koen price on the box |
+
+Leave **Any** if you are unsure — sound matching still works; EV/payback is more accurate when type + price are set.
+
+### 4. Read the result card
+
+After a lock (or best guess):
+
+- **Red Chance** — chance the cargo is Mythic / red (rarity ≥ 6), after your size + raid filters
+- **Expected value** — weighted average contact price of remaining candidates
+- **Payback** — EV ÷ cargo price × 100 (**100%** ≈ break-even; higher is better). Needs a cargo price in Raid context
+- Item tiles show **%**, size, and rarity-colored borders
+
+Size checkboxes only list sizes in the locked sound group. Wrong size → 0% / excluded; remaining % are redistributed.
+
+👍 / 👎 / Skip help calibration (optional).
+
+---
+
+## Manual Setup
+
+Use when you do not want display capture: pick filters + a Sound ID from the board and audition pickup samples. Same raid context filters apply.
+
+---
+
+## What runs fully offline (vendored)
+
+Shipped **in this repo** for GitHub Pages — **no live CDN calls required** for normal use:
+
+| Asset | Path | Notes |
+|---|---|---|
+| Item catalog + pools | `src/data/merchantData.json` | Sounds, items, profiles, mapModes, weighted pools |
+| Fingerprints | `src/data/fingerprints.json` | Matcher templates |
+| Pickup/drop audio | `public/sounds/*.ogg` | 76 files |
+| Item thumbnails | `public/icons/{id}.png` | 189 PNGs (mirrored from the public explorer CDN at extract time) |
+
+`iconRemote` in JSON is **maintainer-only** (re-download source). The UI loads **local** `/icons/…` via Vite `base` (`assetUrl`).
+
+### Still remote (optional / not required to play)
+
+| Thing | Why |
+|---|---|
+| Maintainer `npm run extract` against abibuilder / Wayback | Refresh pools when the season changes — **not** used by the live Pages site |
+| External links in the footer / README | Attribution only |
+
+If hexaov91 or abibuilder move or go down, **players are fine** until the next data refresh; only maintainers re-running extract need those hosts.
+
+---
+
+## Privacy & credit
+
+- Audio analysis is **100% local**
+- Catalog structure courtesy of the public explorer: [abibuilder.com/merchant](https://abibuilder.com/merchant)
+- Independent fan tool — not an official partner product
+
+---
+
+## Maintainers
 
 ```bash
 npm install
 npm run dev
 npm run build
+GITHUB_PAGES=1 npm run build   # same as CI
+npm run selftest:audio
 ```
 
-Refresh data (maintainers only):
+Refresh catalog (needs Playwright + ffmpeg; not run in Pages CI):
 
 ```bash
 npx playwright install chromium
-npm run extract   # needs ffmpeg; not used by Pages
+npm run extract
+# or: node scripts/extractMerchantData.js --from-html /path/to/saved-merchant.html
 ```
 
-## Pages build path
+### Versioning
 
-`.github/workflows/deploy-pages.yml` on `main`: verify committed JSON + 76 OGGs → `GITHUB_PAGES=1 npm run build` → deploy `dist/`.
+Footer shows `v{package.json}`. Pre-publish: `0.9.<PR#>`.
 
-## Versioning
+### Pages deploy
 
-Footer shows `v{package.json}` (Vite `__APP_VERSION__`).
-
-- **Pre-publish:** `0.9.<PR_number>` (e.g. PR #30 → `0.9.30`)
-- **After public publish:** `1.0.<PR_number>` per PR
+`.github/workflows/deploy-pages.yml` on `main`: verifies committed JSON + 76 OGGs + 189 icons → `GITHUB_PAGES=1 npm run build` → deploy `dist/`.

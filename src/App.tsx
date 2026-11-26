@@ -70,6 +70,7 @@ import {
   type MonitorSetup,
   type ScanStyle,
 } from './utils/calibrationStore';
+import { postCommunityVote } from './utils/communityVotes';
 import { alertForMatch } from './utils/soundAlerts';
 import { openDocumentPiP, renderPipContent, type PipHandle } from './utils/pipOverlay';
 import { type SensitivityLevel } from './utils/sensitivity';
@@ -297,6 +298,10 @@ export default function App() {
         spectrumVector: opts.spectrumVector ?? opts.predicted.spectrumVector,
         spectralCentroid: opts.capturedCentroid ?? opts.predicted.capturedCentroid,
       });
+      // Global tallies are best-effort; localStorage already recorded above.
+      if (opts.feedback === 'up' || opts.feedback === 'down') {
+        postCommunityVote(opts.predicted.soundId, opts.feedback);
+      }
       setStatsTick((n) => n + 1);
     },
     [mode, sessionId],

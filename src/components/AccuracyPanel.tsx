@@ -1,10 +1,27 @@
+import { useEffect, useState } from 'react';
 import type { AccuracyStats } from '../utils/calibrationStore';
+import {
+  fetchCommunityStats,
+  type CommunityAggregates,
+} from '../utils/communityVotes';
 
 export function AccuracyPanel(props: {
   stats: AccuracyStats;
   onExport: () => void;
   onClear: () => void;
 }) {
+  const [community, setCommunity] = useState<CommunityAggregates | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchCommunityStats().then((stats) => {
+      if (!cancelled && stats) setCommunity(stats.aggregates);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.stats.thumbsUp, props.stats.thumbsDown]);
+
   return (
     <section className="rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -33,9 +50,21 @@ export function AccuracyPanel(props: {
         <Stat label="👍 Accuracy" value={`${props.stats.accuracyPct}%`} accent />
         <Stat label="Reds found" value={String(props.stats.redsFound)} mythic />
       </div>
+      {community != null && community.totalVotes > 0 && (
+        <div className="mt-2 rounded border border-[var(--border)] bg-[var(--bg)]/40 px-2 py-2 text-center">
+          <div className="text-sm font-semibold tabular-nums text-[var(--accent)]">
+            Community {community.accuracyPct}%
+          </div>
+          <div className="text-[9px] uppercase tracking-wide text-[var(--muted)]">
+            Global 👍 {community.totalUp} · 👎 {community.totalDown} ·{' '}
+            {community.totalVotes} votes
+          </div>
+        </div>
+      )}
       <p className="m-0 mt-2 text-[10px] text-[var(--muted)]">
         Stored in localStorage (schema v1) — export JSON to refine fingerprints later or load into a
-        DB. 👍/👎 only; skips counted separately ({props.stats.skips}).
+        DB. 👍/👎 only; skips counted separately ({props.stats.skips}). Community tallies sync in the
+        background when the Worker is reachable.
       </p>
     </section>
   );

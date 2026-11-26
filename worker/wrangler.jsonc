@@ -1,0 +1,13 @@
+{
+  "name": "abi-merchant-counter",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "abi-merchant-stats",
+      "database_id": "9965624d-a44a-43ba-a28e-60aa7e97e5ef",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

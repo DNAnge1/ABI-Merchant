@@ -238,7 +238,7 @@ export default function App() {
   const [selftestReport, setSelftestReport] = useState<SelftestReport | null>(null);
   const [singlePhase, setSinglePhase] = useState<SingleLoopPhase>('ready');
   const [locked, setLocked] = useState<LockedScan | null>(null);
-  /** Live rolling peek while Start Moving / Multi burst (~450ms). */
+  /** Live rolling peek while Start Moving / Multi burst (~250ms pcm300). */
   const [livePreview, setLivePreview] = useState<LockedScan | null>(null);
   /**
    * Onset-anchored consensus for live narrowing:
@@ -527,7 +527,8 @@ export default function App() {
       lastLoggedOnsetRef.current = null;
       return;
     }
-    const LIVE_MS = 450;
+    // ~250ms so the first tick after LIVE_PCM_READY_MS (~200) can publish pcm300.
+    const LIVE_MS = 250;
     const tickGen = stopLockGenRef.current;
     const tick = () => {
       // Final lock wins — never let a stale peek resurrect Live Peek.

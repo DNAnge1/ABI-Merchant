@@ -175,6 +175,11 @@ export interface BurstPeekResult {
   postOnsetMs: number;
   /** True when the live300 body has had time to fill (~onset+280ms). */
   windowFilled: boolean;
+  /**
+   * Same pcm300/lobeVote note Stop & Match uses (e.g. `lobes 3 · lobeVote 3/3→#1`).
+   * Empty when scored on a short single-lobe window.
+   */
+  pcmNote?: string;
 }
 
 /** Result of Stop & Match — always populated so the UI can toast + replay capture. */
@@ -252,6 +257,11 @@ export const LIVE_ONSET_REFRACTORY_MS = 300;
 const LIVE300_PRE_MS = 16;
 /** Post-onset window — same ~300ms body as Stop & Match / fingerprints. */
 const LIVE300_POST_MS = 280;
+/**
+ * Live Peek waits this long after a rising edge before publishing pcm300
+ * lobeVote (avoids early ~80ms analyser peeks that score neighbor IDs).
+ */
+const LIVE_PCM_READY_MS = 200;
 
 export type MultiScanPhase =
   | 'idle'
@@ -1384,6 +1394,208 @@ export function analyzePcmLive300Window(
   };
 }
 
+/** Shared pcm300 lobe detector + lobeVote result (Live Peek + Stop & Match). */
+export type Pcm300LobeVoteResult = {
+  allMatches: MatchResult[];
+  spectrumVector: number[];
+  centroid: number;
+  /** Note fragment after source, e.g. ` · lobes 3 · lobeVote 3/3→#1`. */
+  lobeNote: string;
+  lobes: PcmLive300Lobe[];
+  bestLobeId: number | null;
+  bestLobeN: number;
+  lobeVoteTotal: number;
+  ambientSubtracted: boolean;
+  onsetMs: number;
+  peakRms: number;
+};
+
+/**
+ * Score accumulated burst PCM with the same loudest-lobe + lobeVote path Stop
+ * & Match uses. Residuals / soft size prior are applied by the caller so Stop
+ * can still run spike-majority safety before them.
+ */
+export function scorePcm300LobeVote(
+  samples: Float32Array,
+  sampleRate: number,
+  fingerprints: FingerprintsFile,
+  candidateSoundIds: number[],
+  kind: SoundKind | 'auto' = 'pickup',
+): Pcm300LobeVoteResult | null {
+  let pcmPeak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]);
+    if (a > pcmPeak) pcmPeak = a;
+  }
+  if (samples.length < Math.floor(sampleRate * 0.08) || pcmPeak < 0.002) {
+    return null;
+  }
+
+  const pcmWin = analyzePcmLive300Window(
+    samples,
+    sampleRate,
+    analyserFftSize(sampleRate),
+    fingerprints.vectorBands || 32,
+  );
+  const lobes: PcmLive300Lobe[] =
+    pcmWin.lobes && pcmWin.lobes.length > 0
+      ? pcmWin.lobes
+      : [
+          {
+            spectrumVector: pcmWin.spectrumVector,
+            centroid: pcmWin.centroid,
+            onsetMs: pcmWin.onsetMs,
+            frames: pcmWin.frames,
+            peakRms: pcmPeak,
+          },
+        ];
+
+  const lobeVotes: { soundId: number; confidence: number; lobe: PcmLive300Lobe }[] =
+    [];
+  for (const lobe of lobes.slice(0, 3)) {
+    const ranked = rankMatchesWithPriors(
+      matchSpectrumAgainstFingerprints(
+        lobe.spectrumVector,
+        fingerprints,
+        candidateSoundIds,
+        kind,
+        lobe.centroid,
+      ),
+      lobe.centroid,
+    );
+    if (ranked[0]) {
+      lobeVotes.push({
+        soundId: ranked[0].soundId,
+        confidence: ranked[0].confidence,
+        lobe,
+      });
+    }
+  }
+
+  const lobeCount = new Map<
+    number,
+    { n: number; confSum: number; lobe: PcmLive300Lobe }
+  >();
+  for (const v of lobeVotes) {
+    const prev = lobeCount.get(v.soundId);
+    if (!prev || v.confidence > prev.confSum / Math.max(prev.n, 1)) {
+      lobeCount.set(v.soundId, {
+        n: (prev?.n ?? 0) + 1,
+        confSum: (prev?.confSum ?? 0) + v.confidence,
+        lobe: v.lobe,
+      });
+    } else {
+      lobeCount.set(v.soundId, {
+        n: prev.n + 1,
+        confSum: prev.confSum + v.confidence,
+        lobe: prev.lobe,
+      });
+    }
+  }
+
+  let bestLobeId: number | null = null;
+  let bestLobeN = 0;
+  let bestLobeConf = 0;
+  let bestLobe = lobes[0];
+  for (const [id, info] of lobeCount) {
+    const avgConf = info.confSum / info.n;
+    if (
+      info.n > bestLobeN ||
+      (info.n === bestLobeN && avgConf > bestLobeConf)
+    ) {
+      bestLobeId = id;
+      bestLobeN = info.n;
+      bestLobeConf = avgConf;
+      bestLobe = info.lobe;
+    }
+  }
+
+  const chosenLobe =
+    bestLobeId != null && bestLobeN >= 2 ? bestLobe : lobes[0];
+  const spectrumVector = chosenLobe.spectrumVector;
+  const centroid = chosenLobe.centroid;
+
+  const allMatches = rankMatchesWithPriors(
+    matchSpectrumAgainstFingerprints(
+      spectrumVector,
+      fingerprints,
+      candidateSoundIds,
+      kind,
+      centroid,
+    ),
+    centroid,
+  ).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+
+  const lobeNote =
+    ` · lobes ${lobes.length}` +
+    (pcmWin.ambientSubtracted ? ' · amb-sub' : '') +
+    (bestLobeId != null && bestLobeN >= 2
+      ? ` · lobeVote ${bestLobeN}/${lobeVotes.length}→#${bestLobeId}`
+      : ` · lobe@${Math.round(chosenLobe.onsetMs)}ms`);
+
+  return {
+    allMatches,
+    spectrumVector,
+    centroid,
+    lobeNote,
+    lobes,
+    bestLobeId,
+    bestLobeN,
+    lobeVoteTotal: lobeVotes.length,
+    ambientSubtracted: !!pcmWin.ambientSubtracted,
+    onsetMs: chosenLobe.onsetMs,
+    peakRms: Math.max(chosenLobe.peakRms, pcmPeak),
+  };
+}
+
+/** Residuals + soft size prior shared by Live Peek and Stop & Match. */
+function applyBurstMatchResiduals(
+  allMatches: MatchResult[],
+  spectrumVector: number[],
+  centroid: number,
+  fingerprints: FingerprintsFile,
+  sizePriorSoundIds: Set<number> | null | undefined,
+): MatchResult[] {
+  let next = resolveQuiet19Residual(
+    allMatches,
+    centroid,
+    highBandRatio(spectrumVector),
+  ).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+  next = resolveField10Residual(
+    next,
+    spectrumVector,
+    fingerprints,
+    highBandRatio(spectrumVector),
+  ).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+  next = resolveGlass30VsFuel4(next, spectrumVector, fingerprints).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+  next = resolveMetal6VsLion28(next, spectrumVector, fingerprints).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+  return applySoftSizePrior(next, sizePriorSoundIds).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+}
+
 export function matchSpectrumAgainstFingerprints(
   spectrumVector: number[],
   fingerprints: FingerprintsFile,
@@ -1756,16 +1968,20 @@ export class AudioMatcher {
 
   /**
    * Live rolling preview while a move burst is recording.
-   * Scores the analyser buffer without stopping or clearing it
-   * (PCM live300 tee keeps filling until Stop & Match).
+   * Uses the **same pcm300 lobe detector + lobeVote** as Stop & Match on the
+   * accumulating ScriptProcessor / analyser-hop PCM tee — not a separate
+   * AnalyserNode FFT rolling peek (that scored neighbor IDs like #25 while
+   * Stop locked #1).
    *
-   * Onset-anchored (not trailing-timer):
-   * - Detect rising-edge onsets with {@link LIVE_ONSET_REFRACTORY_MS} so decay
-   *   lobes (~500ms tail) cannot re-trigger a new analysis window.
-   * - Slice [onset−16ms … onset+280ms] — same live300 body as Stop & Match.
-   * - Re-peeks during the window keep scoring that anchored onset (fills in).
+   * Onset-anchored:
+   * - Detect rising-edge onsets with {@link LIVE_ONSET_REFRACTORY_MS}.
+   * - Wait {@link LIVE_PCM_READY_MS} (~200ms) after the edge so the 300ms body
+   *   can fill before publishing (early windows were the #25 flicker).
+   * - Score accumulated PCM via {@link scorePcm300LobeVote}.
+   * - After the window fills, keep returning the solid lobeVote so 450ms UI
+   *   ticks still feed Live Peek + LIVE ONSET LOG (returning null immediately
+   *   past the window made logging miss every onset).
    * - Silence / no rising-edge yet → null so the UI freezes last consensus.
-   * Also returns full rankings + diagnostics for Calibration / Confusion logging.
    */
   peekBurstMatches(): BurstPeekResult | null {
     if (!this.burstRecording || !this.analyser || !this.ctx) return null;
@@ -1821,83 +2037,95 @@ export class AudioMatcher {
       onsetT = risingEdges[risingEdges.length - 1].t;
     }
 
+    // No rising-edge yet → freeze last solid lobeVote on the HUD.
     if (onsetT == null) return null;
 
-    // Past the anchored window and no fresh edge → freeze (do not trail into decay).
     const newestT = frames[frames.length - 1]?.t ?? onsetT;
-    if (newestT > onsetT + LIVE300_POST_MS + 40) {
-      // Still allow scoring if a newer rising edge exists inside refractory window.
-      const fresh = risingEdges
-        .filter((e) => newestT - e.t <= LIVE300_POST_MS + 40)
-        .pop();
-      if (!fresh) return null;
-      onsetT = fresh.t;
+    const postOnsetMs = Math.max(0, newestT - onsetT);
+
+    // Wait ~200–300ms after rising edge before publishing pcm300 (Gemini brief).
+    if (postOnsetMs < LIVE_PCM_READY_MS) return null;
+
+    const sampleRate = this.ctx.sampleRate;
+    let pcmSamples = concatFloat32(this.burstPcmChunks);
+    let pcmPeak = 0;
+    for (let i = 0; i < pcmSamples.length; i++) {
+      pcmPeak = Math.max(pcmPeak, Math.abs(pcmSamples[i]));
+    }
+    // ScriptProcessor often silent while Analyser still sees audio — same backup as Stop.
+    if (pcmSamples.length < sampleRate * 0.08 || pcmPeak < 0.002) {
+      const backup = concatFloat32(this.burstAnalyserPcmChunks);
+      let backupPeak = 0;
+      for (let i = 0; i < backup.length; i++) {
+        backupPeak = Math.max(backupPeak, Math.abs(backup[i]));
+      }
+      if (backup.length >= sampleRate * 0.08 && backupPeak >= 0.002) {
+        pcmSamples = backup;
+        pcmPeak = backupPeak;
+      } else {
+        return null;
+      }
     }
 
-    const anchor =
-      frames.find((f) => Math.abs(f.t - onsetT!) < 25) ??
-      frames.reduce((a, b) =>
-        Math.abs(a.t - onsetT!) <= Math.abs(b.t - onsetT!) ? a : b,
-      );
-    const bands = anchor.spectrum.length;
-    const win = frames.filter(
-      (f) => f.t >= onsetT! - LIVE300_PRE_MS && f.t <= onsetT! + LIVE300_POST_MS,
+    // Need PCM to cover onset + ready gate (tee can lag analyser frames slightly).
+    const needSamples = Math.floor(
+      ((onsetT + LIVE_PCM_READY_MS) / 1000) * sampleRate,
     );
-    const slice = win.length > 0 ? win : [anchor];
-    const avg = new Array(bands).fill(0);
-    let centroidSum = 0;
-    let peakRms = 0;
-    let rmsSum = 0;
-    for (const f of slice) {
-      for (let i = 0; i < bands; i++) avg[i] += f.spectrum[i] || 0;
-      centroidSum += f.centroid;
-      peakRms = Math.max(peakRms, f.rms);
-      rmsSum += f.rms;
-    }
-    for (let i = 0; i < bands; i++) avg[i] /= slice.length;
-    const max = Math.max(...avg, 1e-9);
-    const spectrumVector = avg.map((v) => v / max);
-    const centroid = centroidSum / slice.length;
+    if (pcmSamples.length < needSamples) return null;
+
     const candidates =
       this.candidateSoundIds.length > 0
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    // Full ranking for confusion logger (expected rank may be outside top 5).
-    const allMatches = rankMatchesWithPriors(
-      matchSpectrumAgainstFingerprints(
-        spectrumVector,
-        this.fingerprints,
-        candidates,
-        this.kind,
-        centroid,
-      ),
-      centroid,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
+    const scored = scorePcm300LobeVote(
+      pcmSamples,
+      sampleRate,
+      this.fingerprints,
+      candidates,
+      this.kind,
+    );
+    if (!scored || scored.allMatches.length === 0) return null;
 
+    const allMatches = applyBurstMatchResiduals(
+      scored.allMatches,
+      scored.spectrumVector,
+      scored.centroid,
+      this.fingerprints,
+      this.sizePriorSoundIds,
+    );
     if (allMatches.length === 0) return null;
-    const postOnsetMs = Math.max(0, newestT - onsetT);
+
+    // Mean RMS from analyser frames near the onset (diagnostics only).
+    const near = frames.filter(
+      (f) => f.t >= onsetT! - LIVE300_PRE_MS && f.t <= onsetT! + LIVE300_POST_MS,
+    );
+    const rmsSum = near.reduce((s, f) => s + f.rms, 0);
+    const meanRms =
+      near.length > 0 ? rmsSum / near.length : scored.peakRms;
+    const peakRms = Math.max(
+      scored.peakRms,
+      near.reduce((p, f) => Math.max(p, f.rms), 0),
+    );
+
     // Slight slack so a tick landing ~10ms early still counts as filled.
     const windowFilled = postOnsetMs >= LIVE300_POST_MS - 10;
     return {
       matches: allMatches.slice(0, 5),
       allMatches,
       onsetMs: onsetT,
-      spectrumVector,
-      capturedCentroid: centroid,
+      spectrumVector: scored.spectrumVector,
+      capturedCentroid: scored.centroid,
       peakRms,
-      meanRms: rmsSum / Math.max(slice.length, 1),
+      meanRms,
       noiseFloor: this.noiseFloor,
       rmsBaseline: this.rmsBaseline,
       onsetDurationMs: LIVE300_PRE_MS + LIVE300_POST_MS,
-      sampleRate: this.ctx.sampleRate,
+      sampleRate,
       captureMode: this.captureSource,
       postOnsetMs,
       windowFilled,
+      pcmNote: scored.lobeNote.replace(/^\s·\s/, ''),
     };
   }
 
@@ -2516,7 +2744,7 @@ export class AudioMatcher {
     }
     const majorityOk = majorityId != null && majorityN >= 2 && majorityN > spikeVotes.length / 2;
 
-    let allMatches = rankMatchesWithPriors(
+    let allMatches: MatchResult[] = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
@@ -2563,188 +2791,50 @@ export class AudioMatcher {
     const spikeCentroid = centroid;
 
     // Prefer Self-Test-aligned PCM live300 on the burst WAV tee when present.
-    // AnalyserNode peak windows were the main exact-OGG vs Self-Test skew (#6/#9/#19).
+    // Same {@link scorePcm300LobeVote} path Live Peek uses — no FFT-peek drift.
     let matchSource: 'pcm-live300' | 'analyser-spikes' = 'analyser-spikes';
     let pcmLobeNote = '';
-    const minPcmSamples = Math.floor(pcm.sampleRate * 0.08);
-    if (pcm.samples.length >= minPcmSamples) {
-      let pcmPeak = 0;
-      for (let i = 0; i < pcm.samples.length; i++) {
-        const a = Math.abs(pcm.samples[i]);
-        if (a > pcmPeak) pcmPeak = a;
-      }
-      // Low bar — quiet cargo (#19) still needs pcm300; spike fallback was the skew.
-      if (pcmPeak >= 0.002) {
-        const pcmWin = analyzePcmLive300Window(
-          pcm.samples,
-          pcm.sampleRate,
-          analyserFftSize(pcm.sampleRate),
-          this.fingerprints.vectorBands || 32,
-        );
-        const lobes: PcmLive300Lobe[] =
-          pcmWin.lobes && pcmWin.lobes.length > 0
-            ? pcmWin.lobes
-            : [
-                {
-                  spectrumVector: pcmWin.spectrumVector,
-                  centroid: pcmWin.centroid,
-                  onsetMs: pcmWin.onsetMs,
-                  frames: pcmWin.frames,
-                  peakRms: pcmPeak,
-                },
-              ];
-        // Score each loud lobe; majority among lobes resists one wind/decay window.
-        const lobeVotes: { soundId: number; confidence: number; lobe: PcmLive300Lobe }[] =
-          [];
-        for (const lobe of lobes.slice(0, 3)) {
-          const ranked = rankMatchesWithPriors(
-            matchSpectrumAgainstFingerprints(
-              lobe.spectrumVector,
-              this.fingerprints,
-              candidates,
-              this.kind,
-              lobe.centroid,
-            ),
-            lobe.centroid,
-          );
-          if (ranked[0]) {
-            lobeVotes.push({
-              soundId: ranked[0].soundId,
-              confidence: ranked[0].confidence,
-              lobe,
-            });
-          }
-        }
-        const lobeCount = new Map<number, { n: number; confSum: number; lobe: PcmLive300Lobe }>();
-        for (const v of lobeVotes) {
-          const prev = lobeCount.get(v.soundId);
-          if (!prev || v.confidence > prev.confSum / Math.max(prev.n, 1)) {
-            lobeCount.set(v.soundId, {
-              n: (prev?.n ?? 0) + 1,
-              confSum: (prev?.confSum ?? 0) + v.confidence,
-              lobe: v.lobe,
-            });
-          } else {
-            lobeCount.set(v.soundId, {
-              n: prev.n + 1,
-              confSum: prev.confSum + v.confidence,
-              lobe: prev.lobe,
-            });
-          }
-        }
-        let bestLobeId: number | null = null;
-        let bestLobeN = 0;
-        let bestLobeConf = 0;
-        let bestLobe = lobes[0];
-        for (const [id, info] of lobeCount) {
-          const avgConf = info.confSum / info.n;
-          if (
-            info.n > bestLobeN ||
-            (info.n === bestLobeN && avgConf > bestLobeConf)
-          ) {
-            bestLobeId = id;
-            bestLobeN = info.n;
-            bestLobeConf = avgConf;
-            bestLobe = info.lobe;
-          }
-        }
-        // Prefer majority lobe spectrum; else loudest primary from analyzer.
-        const chosenLobe =
-          bestLobeId != null && bestLobeN >= 2 ? bestLobe : lobes[0];
-        spectrumVector = chosenLobe.spectrumVector;
-        centroid = chosenLobe.centroid;
-        allMatches = rankMatchesWithPriors(
-          matchSpectrumAgainstFingerprints(
-            spectrumVector,
-            this.fingerprints,
-            candidates,
-            this.kind,
-            centroid,
-          ),
-          centroid,
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
-        matchSource = 'pcm-live300';
-        pcmLobeNote =
-          ` · lobes ${lobes.length}` +
-          (pcmWin.ambientSubtracted ? ' · amb-sub' : '') +
-          (bestLobeId != null && bestLobeN >= 2
-            ? ` · lobeVote ${bestLobeN}/${lobeVotes.length}→#${bestLobeId}`
-            : ` · lobe@${Math.round(chosenLobe.onsetMs)}ms`);
+    const pcmScored = scorePcm300LobeVote(
+      pcm.samples,
+      pcm.sampleRate,
+      this.fingerprints,
+      candidates,
+      this.kind,
+    );
+    if (pcmScored) {
+      spectrumVector = pcmScored.spectrumVector;
+      centroid = pcmScored.centroid;
+      allMatches = pcmScored.allMatches;
+      matchSource = 'pcm-live300';
+      pcmLobeNote = pcmScored.lobeNote;
 
-        // Safety: a weak/noisy pcm300 window must not wipe a clear spike majority.
-        if (
-          majorityOk &&
-          majorityId != null &&
-          allMatches[0]?.soundId !== majorityId
-        ) {
-          const pcmTop = allMatches[0];
-          const pcmRunner = allMatches[1];
-          const pcmGap =
-            pcmTop.confidence - (pcmRunner?.confidence ?? 0);
-          const pcmWeak =
-            pcmTop.confidence < 92 || pcmGap < 5;
-          if (pcmWeak) {
-            spectrumVector = spikeSpectrum;
-            centroid = spikeCentroid;
-            allMatches = spikeMatches;
-            matchSource = 'analyser-spikes';
-            pcmLobeNote += ` · keptSpikeMaj#${majorityId}`;
-          }
+      // Safety: a weak/noisy pcm300 window must not wipe a clear spike majority.
+      if (
+        majorityOk &&
+        majorityId != null &&
+        allMatches[0]?.soundId !== majorityId
+      ) {
+        const pcmTop = allMatches[0];
+        const pcmRunner = allMatches[1];
+        const pcmGap = pcmTop.confidence - (pcmRunner?.confidence ?? 0);
+        const pcmWeak = pcmTop.confidence < 92 || pcmGap < 5;
+        if (pcmWeak) {
+          spectrumVector = spikeSpectrum;
+          centroid = spikeCentroid;
+          allMatches = spikeMatches;
+          matchSource = 'analyser-spikes';
+          pcmLobeNote += ` · keptSpikeMaj#${majorityId}`;
         }
       }
     }
 
-    // Quiet toolbox residual (#19 is dull in-game) — only when nothing else self-locks hard.
-    allMatches = resolveQuiet19Residual(
+    allMatches = applyBurstMatchResiduals(
       allMatches,
+      spectrumVector,
       centroid,
-      highBandRatio(spectrumVector),
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    // Field electronics (#10) dulled by mic — promote before weak #32/#21 bury it.
-    allMatches = resolveField10Residual(
-      allMatches,
-      spectrumVector,
       this.fingerprints,
-      highBandRatio(spectrumVector),
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    // Deep glass (#30) vs fuel (#4) — undo mic-dulled pitch steal; shape owns the pair.
-    allMatches = resolveGlass30VsFuel4(
-      allMatches,
-      spectrumVector,
-      this.fingerprints,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    // Car Battery / metal crisp (#6) vs Lion (#28) — shape owns dull-mic steals.
-    allMatches = resolveMetal6VsLion28(
-      allMatches,
-      spectrumVector,
-      this.fingerprints,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    // Soft size prior — demote IDs with no items in checked sizes when conf soft.
-    allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
+      this.sizePriorSoundIds,
+    );
 
     const floor = Math.max(48, this.minConfidence - 8);
     const matches = allMatches.filter((m) => m.confidence >= floor);

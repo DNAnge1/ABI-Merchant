@@ -29,7 +29,8 @@ export function MissFeedbackModal(props: {
         <h3 className="m-0 text-sm font-semibold text-[var(--text)]">What was it actually?</h3>
         <p className="m-0 mt-1 text-[11px] text-[var(--muted)]">
           Predicted Group #{props.predictedSoundId}. Pick the real Sound Group (1–38) and optional
-          item — we log the miss + spectral snapshot for calibration.
+          item. We log a full diagnose-why report (top 5, expected rank, onset/RMS, map/mode) —
+          numbers only; optional Download Clip WAV stays on your device.
         </p>
 
         <label className="mt-3 flex flex-col gap-1 text-[11px] text-[var(--muted)]">

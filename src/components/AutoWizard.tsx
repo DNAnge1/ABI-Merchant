@@ -7,6 +7,8 @@ export type AutoSettings = {
   sensitivity: SensitivityLevel;
   hideImages: boolean;
   focusGuard: boolean;
+  /** Progressive disclosure: show Calibration / Confusion panel on Start Scan. */
+  calibrationDebug: boolean;
 };
 
 type SettingDef = {
@@ -50,6 +52,12 @@ const SINGLE_SETTINGS: SettingDef[] = [
     definition:
       'Images show by default in results. Turn this on only if you want a compact text-only feed.',
   },
+  {
+    id: 'calibrationDebug',
+    label: 'Calibration / Confusion panel',
+    definition:
+      'Shows a ground-truth Sound ID logger on Start Scan — expected vs predicted, top scores, and live confusion summary. Open-source transparency for problem IDs we are fixing.',
+  },
 ];
 
 const MULTI_SETTINGS: SettingDef[] = [
@@ -92,6 +100,12 @@ const MULTI_SETTINGS: SettingDef[] = [
     label: 'Hide cargo images',
     definition:
       'Images show by default in results. Turn this on only if you want a compact text-only feed.',
+  },
+  {
+    id: 'calibrationDebug',
+    label: 'Calibration / Confusion panel',
+    definition:
+      'Shows a ground-truth Sound ID logger on Start Scan — expected vs predicted, top scores, and live confusion summary. Open-source transparency for problem IDs we are fixing.',
   },
 ];
 
@@ -218,6 +232,7 @@ function applySuggestedSettings(
     useTts: false,
     hideImages: false,
     focusGuard: !isMulti,
+    // Leave calibrationDebug as-is — opt-in via Advanced, not Suggested defaults.
   });
 }
 
@@ -255,6 +270,10 @@ function toggleSetting(
   }
   if (s.id === 'focusGuard') {
     onChange({ focusGuard: !settings.focusGuard });
+    return;
+  }
+  if (s.id === 'calibrationDebug') {
+    onChange({ calibrationDebug: !settings.calibrationDebug });
   }
 }
 

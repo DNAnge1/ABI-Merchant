@@ -7,6 +7,10 @@
 
 export interface Env {
   DB: D1Database;
+  /** Optional: PATCH /suggestions/:id with header X-Admin-Key to hide spam */
+  ADMIN_KEY?: string;
+  /** Optional salt for IP hashing; falls back to a stable app constant */
+  IP_HASH_SALT?: string;
 }
 
 const ALLOWED_ORIGINS = new Set([
@@ -19,6 +23,17 @@ const MAX_SOUND_ID = 38;
 const MAX_MAP_MODE_LEN = 64;
 const DAILY_WINDOW_DAYS = 30;
 const TOP_MAP_MODES = 10;
+
+/** Suggestions anti-spam limits */
+const SUGGESTION_MIN_LEN = 8;
+const SUGGESTION_MAX_LEN = 280;
+const SUGGESTION_MIN_DWELL_MS = 2500;
+const SUGGESTION_POST_WINDOW_MS = 60 * 60 * 1000; // 1h
+const SUGGESTION_MAX_POSTS_PER_WINDOW = 3;
+const SUGGESTION_UPVOTE_COOLDOWN_MS = 800; // soft burst guard per IP
+const SUGGESTION_LIST_LIMIT = 50;
+const DEFAULT_IP_HASH_SALT = 'abi-merchant-suggestions-v1';
+const URL_IN_TEXT = /https?:\/\/|www\.|[a-z0-9-]+\.(com|net|org|io|gg|xyz|ru|cn)\b/i;
 
 /** Whitelisted site_counters keys (POST /event). */
 const SITE_COUNTER_KEYS = new Set([
@@ -50,10 +65,44 @@ function corsHeaders(origin: string | null): HeadersInit {
   const allow = origin && ALLOWED_ORIGINS.has(origin) ? origin : '';
   return {
     'Access-Control-Allow-Origin': allow || 'null',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Key',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
+  };
+}
+
+function clientIp(request: Request): string {
+  return (
+    request.headers.get('CF-Connecting-IP') ||
+    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+    '0.0.0.0'
+  );
+}
+
+async function hashIp(ip: string, salt: string): Promise<string> {
+  const data = new TextEncoder().encode(`${salt}:${ip}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function newSuggestionId(): string {
+  return crypto.randomUUID();
+}
+
+interface SuggestionRow {
+  id: string;
+  body: string;
+  created_at: number;
+  upvote_count: number;
+}
+
+function mapSuggestion(row: SuggestionRow) {
+  return {
+    id: row.id,
+    body: row.body,
+    createdAt: row.created_at,
+    upvoteCount: row.upvote_count,
   };
 }
 
@@ -402,6 +451,272 @@ async function handleStats(env: Env, origin: string | null): Promise<Response> {
   );
 }
 
+async function handleListSuggestions(
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const sort = url.searchParams.get('sort') === 'newest' ? 'newest' : 'top';
+  const orderSql =
+    sort === 'newest'
+      ? 'created_at DESC'
+      : 'upvote_count DESC, created_at DESC';
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, body, created_at, upvote_count
+     FROM suggestions
+     WHERE hidden = 0
+     ORDER BY ${orderSql}
+     LIMIT ?`,
+  )
+    .bind(SUGGESTION_LIST_LIMIT)
+    .all<SuggestionRow>();
+
+  return jsonResponse(
+    {
+      sort,
+      suggestions: (results ?? []).map(mapSuggestion),
+    },
+    200,
+    origin,
+    { 'Cache-Control': 'public, max-age=15' },
+  );
+}
+
+async function handleCreateSuggestion(
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, origin);
+  }
+
+  const body = payload as {
+    body?: unknown;
+    honeypot?: unknown;
+    dwellMs?: unknown;
+    website?: unknown; // alt honeypot name
+  };
+
+  // Honeypot: any non-empty value → pretend success (don't tip bots)
+  const honey =
+    (typeof body.honeypot === 'string' && body.honeypot.trim()) ||
+    (typeof body.website === 'string' && body.website.trim());
+  if (honey) {
+    return jsonResponse(
+      {
+        id: newSuggestionId(),
+        body: '',
+        createdAt: Date.now(),
+        upvoteCount: 0,
+        ok: true,
+      },
+      201,
+      origin,
+    );
+  }
+
+  const dwellMs = typeof body.dwellMs === 'number' ? body.dwellMs : Number(body.dwellMs);
+  if (!Number.isFinite(dwellMs) || dwellMs < SUGGESTION_MIN_DWELL_MS) {
+    return jsonResponse(
+      { error: `dwellMs must be ≥ ${SUGGESTION_MIN_DWELL_MS}` },
+      400,
+      origin,
+    );
+  }
+
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  if (text.length < SUGGESTION_MIN_LEN || text.length > SUGGESTION_MAX_LEN) {
+    return jsonResponse(
+      {
+        error: `body must be ${SUGGESTION_MIN_LEN}–${SUGGESTION_MAX_LEN} characters`,
+      },
+      400,
+      origin,
+    );
+  }
+  if (URL_IN_TEXT.test(text)) {
+    return jsonResponse({ error: 'URLs are not allowed in suggestions' }, 400, origin);
+  }
+
+  const salt = env.IP_HASH_SALT || DEFAULT_IP_HASH_SALT;
+  const ipHash = await hashIp(clientIp(request), salt);
+  const now = Date.now();
+
+  const rate = await env.DB.prepare(
+    `SELECT window_start, post_count FROM suggestion_rate WHERE ip_hash = ?`,
+  )
+    .bind(ipHash)
+    .first<{ window_start: number; post_count: number }>();
+
+  let windowStart = rate?.window_start ?? now;
+  let postCount = rate?.post_count ?? 0;
+  if (!rate || now - windowStart > SUGGESTION_POST_WINDOW_MS) {
+    windowStart = now;
+    postCount = 0;
+  }
+  if (postCount >= SUGGESTION_MAX_POSTS_PER_WINDOW) {
+    return jsonResponse({ error: 'Rate limit — try again later' }, 429, origin);
+  }
+
+  const id = newSuggestionId();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO suggestions (id, body, created_at, upvote_count, hidden, author_hash)
+       VALUES (?, ?, ?, 0, 0, ?)`,
+    ).bind(id, text, now, ipHash),
+    env.DB.prepare(
+      `INSERT INTO suggestion_rate (ip_hash, window_start, post_count, last_upvote_at)
+       VALUES (?, ?, ?, 0)
+       ON CONFLICT(ip_hash) DO UPDATE SET
+         window_start = excluded.window_start,
+         post_count = excluded.post_count`,
+    ).bind(ipHash, windowStart, postCount + 1),
+  ]);
+
+  return jsonResponse(
+    { id, body: text, createdAt: now, upvoteCount: 0, ok: true },
+    201,
+    origin,
+  );
+}
+
+async function handleUpvoteSuggestion(
+  suggestionId: string,
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  if (!/^[0-9a-f-]{36}$/i.test(suggestionId)) {
+    return jsonResponse({ error: 'Invalid suggestion id' }, 400, origin);
+  }
+
+  const salt = env.IP_HASH_SALT || DEFAULT_IP_HASH_SALT;
+  const voterHash = await hashIp(clientIp(request), salt);
+  const now = Date.now();
+
+  const existing = await env.DB.prepare(
+    `SELECT id, body, created_at, upvote_count, hidden FROM suggestions WHERE id = ?`,
+  )
+    .bind(suggestionId)
+    .first<SuggestionRow & { hidden: number }>();
+
+  if (!existing || existing.hidden) {
+    return jsonResponse({ error: 'Suggestion not found' }, 404, origin);
+  }
+
+  const already = await env.DB.prepare(
+    `SELECT 1 AS ok FROM suggestion_votes WHERE suggestion_id = ? AND voter_hash = ?`,
+  )
+    .bind(suggestionId, voterHash)
+    .first<{ ok: number }>();
+
+  if (already) {
+    return jsonResponse(
+      { ...mapSuggestion(existing), alreadyVoted: true },
+      200,
+      origin,
+    );
+  }
+
+  const rate = await env.DB.prepare(
+    `SELECT last_upvote_at FROM suggestion_rate WHERE ip_hash = ?`,
+  )
+    .bind(voterHash)
+    .first<{ last_upvote_at: number }>();
+
+  if (rate && now - rate.last_upvote_at < SUGGESTION_UPVOTE_COOLDOWN_MS) {
+    return jsonResponse({ error: 'Slow down' }, 429, origin);
+  }
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO suggestion_votes (suggestion_id, voter_hash, created_at)
+         VALUES (?, ?, ?)`,
+      ).bind(suggestionId, voterHash, now),
+      env.DB.prepare(
+        `UPDATE suggestions SET upvote_count = upvote_count + 1 WHERE id = ? AND hidden = 0`,
+      ).bind(suggestionId),
+      env.DB.prepare(
+        `INSERT INTO suggestion_rate (ip_hash, window_start, post_count, last_upvote_at)
+         VALUES (?, ?, 0, ?)
+         ON CONFLICT(ip_hash) DO UPDATE SET last_upvote_at = excluded.last_upvote_at`,
+      ).bind(voterHash, now, now),
+    ]);
+  } catch {
+    // Unique conflict race — treat as already voted
+    const row = await env.DB.prepare(
+      `SELECT id, body, created_at, upvote_count FROM suggestions WHERE id = ?`,
+    )
+      .bind(suggestionId)
+      .first<SuggestionRow>();
+    return jsonResponse(
+      { ...(row ? mapSuggestion(row) : mapSuggestion(existing)), alreadyVoted: true },
+      200,
+      origin,
+    );
+  }
+
+  const updated = await env.DB.prepare(
+    `SELECT id, body, created_at, upvote_count FROM suggestions WHERE id = ?`,
+  )
+    .bind(suggestionId)
+    .first<SuggestionRow>();
+
+  return jsonResponse(
+    { ...(updated ? mapSuggestion(updated) : mapSuggestion(existing)), alreadyVoted: false },
+    200,
+    origin,
+  );
+}
+
+async function handlePatchSuggestion(
+  suggestionId: string,
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  const adminKey = env.ADMIN_KEY;
+  const provided = request.headers.get('X-Admin-Key') ?? '';
+  if (!adminKey || provided !== adminKey) {
+    return jsonResponse({ error: 'Unauthorized' }, 401, origin);
+  }
+
+  if (!/^[0-9a-f-]{36}$/i.test(suggestionId)) {
+    return jsonResponse({ error: 'Invalid suggestion id' }, 400, origin);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, origin);
+  }
+
+  const body = payload as { hidden?: unknown };
+  if (typeof body.hidden !== 'boolean') {
+    return jsonResponse({ error: 'hidden boolean required' }, 400, origin);
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE suggestions SET hidden = ? WHERE id = ?`,
+  )
+    .bind(body.hidden ? 1 : 0, suggestionId)
+    .run();
+
+  if (!result.meta.changes) {
+    return jsonResponse({ error: 'Suggestion not found' }, 404, origin);
+  }
+
+  return jsonResponse({ id: suggestionId, hidden: body.hidden, ok: true }, 200, origin);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
@@ -426,11 +741,37 @@ export default {
       return handleStats(env, origin);
     }
 
+    if (url.pathname === '/suggestions' && request.method === 'GET') {
+      return handleListSuggestions(request, env, origin);
+    }
+
+    if (url.pathname === '/suggestions' && request.method === 'POST') {
+      return handleCreateSuggestion(request, env, origin);
+    }
+
+    const upvoteMatch = url.pathname.match(/^\/suggestions\/([0-9a-f-]{36})\/upvote$/i);
+    if (upvoteMatch && request.method === 'POST') {
+      return handleUpvoteSuggestion(upvoteMatch[1], request, env, origin);
+    }
+
+    const patchMatch = url.pathname.match(/^\/suggestions\/([0-9a-f-]{36})$/i);
+    if (patchMatch && request.method === 'PATCH') {
+      return handlePatchSuggestion(patchMatch[1], request, env, origin);
+    }
+
     if (url.pathname === '/' && request.method === 'GET') {
       return jsonResponse(
         {
           name: 'abi-merchant-counter',
-          endpoints: ['POST /vote', 'POST /event', 'GET /stats'],
+          endpoints: [
+            'POST /vote',
+            'POST /event',
+            'GET /stats',
+            'GET /suggestions',
+            'POST /suggestions',
+            'POST /suggestions/:id/upvote',
+            'PATCH /suggestions/:id',
+          ],
         },
         200,
         origin,

@@ -124,6 +124,11 @@ export interface MatchResult {
    * over Gold Lion (#28) after mic-dulled pitch stole the lock.
    */
   metal6Residual?: boolean;
+  /**
+   * Set when {@link resolveId2VsId8} restored Big Metal (#2) over Med Wood (#8)
+   * after a near-twin cosine steal (FP pair cos 0.94; field live often #8@~98 vs #2@~96.5).
+   */
+  id2Residual?: boolean;
 }
 
 export interface MatchPayload {
@@ -403,6 +408,28 @@ export function highBandRatio(vec: number[]): number {
   const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
   const upper = vec.slice(16).reduce((s, v) => s + v, 0);
   return upper / total;
+}
+
+/**
+ * Share of energy in the lowest 4 log-bands (big-metal thud vs mid-wood knock).
+ * Field Oil Drum (#2) ~0.26; Acoustic Panel (#8) ~0.18–0.21.
+ */
+export function bassLobeRatio(vec: number[]): number {
+  const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
+  let bass = 0;
+  for (let i = 0; i < Math.min(4, vec.length); i++) bass += vec[i];
+  return bass / total;
+}
+
+/**
+ * Share of energy in mid log-bands 4–9 (wood/body resonance).
+ * #8 FP ~0.40; #2 FP ~0.37 — secondary cue beside {@link bassLobeRatio}.
+ */
+export function midLobeRatio(vec: number[]): number {
+  const total = vec.reduce((s, v) => s + v, 0) || 1e-9;
+  let mid = 0;
+  for (let i = 4; i <= 9 && i < vec.length; i++) mid += vec[i];
+  return mid / total;
 }
 
 /**
@@ -932,6 +959,80 @@ export function resolveMetal6VsLion28(
   return [promoted, ...others];
 }
 
+/**
+ * Soft/force-lock: Big Metal (#2 Oil Drum) over Med Wood (#8 Acoustic Panel).
+ * Near-twin FP pair (cos 0.94). Field live often tops #8 @ ~98 with #2 @ ~96.5
+ * while raw shape + bass lobe still prefer metal; Stop on the full burst locks #2.
+ * True #8 self-locks with shape preferring wood (+0.05+) and quieter bass (~0.19).
+ */
+export function isId2VsId8SoftLock(
+  topSoundId: number,
+  runnerSoundId: number | undefined,
+  topConfidence: number,
+): boolean {
+  return topSoundId === 2 && runnerSoundId === 8 && topConfidence >= 88;
+}
+
+/**
+ * Restore #2 (Big Metal) when #8 stole a near-tie via centroid prior / wood neighbor.
+ * Shape + bass lobe own this pair — live centroid alone is unreliable (FP Δcent only ~84 Hz).
+ * True #8 @ high conf with wood-preferring shape is left alone.
+ */
+export function resolveId2VsId8(
+  matches: MatchResult[],
+  spectrumVector: number[],
+  fingerprints: FingerprintsFile,
+): MatchResult[] {
+  if (!spectrumVector || matches.length < 2) return matches;
+  const top = matches[0];
+  const m2 = matches.find((m) => m.soundId === 2);
+  const m8 = matches.find((m) => m.soundId === 8);
+  if (!m2 || !m8) return matches;
+
+  const fp2 = fingerprints.fingerprints['2']?.pickup;
+  const fp8 = fingerprints.fingerprints['8']?.pickup;
+  if (!fp2?.spectrumVector || !fp8?.spectrumVector) return matches;
+
+  const s2 = cosineSimilarity(spectrumVector, fp2.spectrumVector);
+  const s8 = cosineSimilarity(spectrumVector, fp8.spectrumVector);
+  const c2 = centeredCosine(spectrumVector, fp2.spectrumVector);
+  const c8 = centeredCosine(spectrumVector, fp8.spectrumVector);
+  // Field Oil Drum clips: raw +0.04–0.05 for #2; pristine #8: raw −0.05+ (wood wins).
+  const shapePrefers2 = s2 >= s8 + 0.025 && c2 >= c8 - 0.015;
+  const bass = bassLobeRatio(spectrumVector);
+  // Big-metal thud keeps more sub-mid energy than med-wood knock.
+  const bassPrefers2 = bass >= 0.23;
+  const metalEvidence = shapePrefers2 && (bassPrefers2 || s2 >= s8 + 0.04);
+
+  if (top.soundId === 2 && matches[1]?.soundId === 8) {
+    if (top.id2Residual) return matches;
+    if (metalEvidence || top.confidence >= 94) {
+      return [{ ...top, id2Residual: true }, ...matches.slice(1)];
+    }
+    return matches;
+  }
+
+  if (top.soundId !== 8) return matches;
+  // Hard wood self-lock with shape on #8 — do not steal true Acoustic Panel.
+  if (!shapePrefers2 && m8.confidence >= 96) return matches;
+  if (!metalEvidence) return matches;
+  // Only flip near-ties (Brent live ~1.5pt; never a clear #8 lead of 5+).
+  if (m8.confidence - m2.confidence > 4) return matches;
+  if (!matches.slice(0, 8).some((m) => m.soundId === 2)) return matches;
+
+  const others = matches.filter((m) => m.soundId !== 2);
+  const bestOther =
+    others.length > 0
+      ? others.reduce((a, b) => (a.confidence >= b.confidence ? a : b)).confidence
+      : undefined;
+  const promoted: MatchResult = {
+    ...m2,
+    confidence: Math.max(m2.confidence, (bestOther ?? 0) + 1),
+    id2Residual: true,
+  };
+  return [promoted, ...others];
+}
+
 /** Match → pitch prior → directed sinks → near-tie pitch runner (burst + Self-Test). */
 export function rankMatchesWithPriors(
   matches: MatchResult[],
@@ -1453,15 +1554,20 @@ export function scorePcm300LobeVote(
   const lobeVotes: { soundId: number; confidence: number; lobe: PcmLive300Lobe }[] =
     [];
   for (const lobe of lobes.slice(0, 3)) {
-    const ranked = rankMatchesWithPriors(
-      matchSpectrumAgainstFingerprints(
-        lobe.spectrumVector,
-        fingerprints,
-        candidateSoundIds,
-        kind,
+    // Shape/bass #2↔#8 tie-break per lobe so Live lobeVote matches Stop.
+    const ranked = resolveId2VsId8(
+      rankMatchesWithPriors(
+        matchSpectrumAgainstFingerprints(
+          lobe.spectrumVector,
+          fingerprints,
+          candidateSoundIds,
+          kind,
+          lobe.centroid,
+        ),
         lobe.centroid,
       ),
-      lobe.centroid,
+      lobe.spectrumVector,
+      fingerprints,
     );
     if (ranked[0]) {
       lobeVotes.push({
@@ -1515,15 +1621,19 @@ export function scorePcm300LobeVote(
   const spectrumVector = chosenLobe.spectrumVector;
   const centroid = chosenLobe.centroid;
 
-  const allMatches = rankMatchesWithPriors(
-    matchSpectrumAgainstFingerprints(
-      spectrumVector,
-      fingerprints,
-      candidateSoundIds,
-      kind,
+  const allMatches = resolveId2VsId8(
+    rankMatchesWithPriors(
+      matchSpectrumAgainstFingerprints(
+        spectrumVector,
+        fingerprints,
+        candidateSoundIds,
+        kind,
+        centroid,
+      ),
       centroid,
     ),
-    centroid,
+    spectrumVector,
+    fingerprints,
   ).map((m) => ({
     ...m,
     spectrumVector,
@@ -1585,6 +1695,11 @@ function applyBurstMatchResiduals(
     capturedCentroid: centroid,
   }));
   next = resolveMetal6VsLion28(next, spectrumVector, fingerprints).map((m) => ({
+    ...m,
+    spectrumVector,
+    capturedCentroid: centroid,
+  }));
+  next = resolveId2VsId8(next, spectrumVector, fingerprints).map((m) => ({
     ...m,
     spectrumVector,
     capturedCentroid: centroid,
@@ -1722,11 +1837,20 @@ export class AudioMatcher {
       glass30VsFuel4?: boolean;
       /** Metal crisp #6 vs Lion #28 — skip margin after shape restore. */
       metal6VsLion?: boolean;
+      /** Big Metal #2 vs Med Wood #8 — skip margin after shape/bass restore. */
+      id2VsId8?: boolean;
     },
   ): number {
-    // Residual #19 / field #10 / GoldChain / Glass#30→Fuel#4 / Metal#6→Lion#28: force-lock.
+    // Residual #19 / field #10 / GoldChain / Glass#30→Fuel#4 / Metal#6→Lion#28 / #2→#8: force-lock.
     if (opts?.quiet19Residual || opts?.field10Residual) return 0;
-    if (opts?.goldChainVsCoin || opts?.glass30VsFuel4 || opts?.metal6VsLion) return 0;
+    if (
+      opts?.goldChainVsCoin ||
+      opts?.glass30VsFuel4 ||
+      opts?.metal6VsLion ||
+      opts?.id2VsId8
+    ) {
+      return 0;
+    }
     if (opts?.nearTwinMajority) return 2;
     const twin = opts?.runnerIsNearTwin === true;
     if (topConfidence >= 94) return twin ? 3 : 2;
@@ -2900,6 +3024,9 @@ export class AudioMatcher {
       metal6VsLion:
         top.metal6Residual === true ||
         isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence),
+      id2VsId8:
+        top.id2Residual === true ||
+        isId2VsId8SoftLock(top.soundId, runner?.soundId, top.confidence),
     });
     // Same top again with at least a 3pt lead → lock (field: #1 needs 2–3 tries).
     const streakOk =
@@ -2958,6 +3085,15 @@ export class AudioMatcher {
           spectrumVector,
           capturedCentroid: centroid,
         }));
+        allMatches = resolveId2VsId8(
+          allMatches,
+          spectrumVector,
+          this.fingerprints,
+        ).map((m) => ({
+          ...m,
+          spectrumVector,
+          capturedCentroid: centroid,
+        }));
         top = allMatches[0];
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
@@ -2984,6 +3120,13 @@ export class AudioMatcher {
           metal6VsLion:
             top.metal6Residual === true ||
             isMetal6VsLionSoftLock(
+              top.soundId,
+              runner?.soundId,
+              top.confidence,
+            ),
+          id2VsId8:
+            top.id2Residual === true ||
+            isId2VsId8SoftLock(
               top.soundId,
               runner?.soundId,
               top.confidence,
@@ -3022,6 +3165,9 @@ export class AudioMatcher {
     const metal6Lock =
       top.metal6Residual === true ||
       isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence);
+    const id2Lock =
+      top.id2Residual === true ||
+      isId2VsId8SoftLock(top.soundId, runner?.soundId, top.confidence);
     if (
       margin < needGap &&
       !streakOk &&
@@ -3030,7 +3176,8 @@ export class AudioMatcher {
       !residual10Lock &&
       !goldChainLock &&
       !glass30Lock &&
-      !metal6Lock
+      !metal6Lock &&
+      !id2Lock
     ) {
       this.lastBurstTopId = top.soundId;
       const tip =
@@ -3537,6 +3684,15 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
+    allMatches = resolveId2VsId8(
+      allMatches,
+      spectrumVector,
+      this.fingerprints,
+    ).map((m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }));
     allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
       ...m,
       spectrumVector,
@@ -3581,6 +3737,9 @@ export class AudioMatcher {
     const metal6Lock =
       top.metal6Residual === true ||
       isMetal6VsLionSoftLock(top.soundId, runner?.soundId, top.confidence);
+    const id2Lock =
+      top.id2Residual === true ||
+      isId2VsId8SoftLock(top.soundId, runner?.soundId, top.confidence);
     const needGap = this.lockMarginRequired(top.confidence, {
       runnerIsNearTwin,
       quiet19Residual: residual19Lock,
@@ -3588,6 +3747,7 @@ export class AudioMatcher {
       goldChainVsCoin: goldChainLock,
       glass30VsFuel4: glass30Lock,
       metal6VsLion: metal6Lock,
+      id2VsId8: id2Lock,
     });
     if (
       margin < needGap &&
@@ -3595,7 +3755,8 @@ export class AudioMatcher {
       !residual10Lock &&
       !goldChainLock &&
       !glass30Lock &&
-      !metal6Lock
+      !metal6Lock &&
+      !id2Lock
     ) {
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,

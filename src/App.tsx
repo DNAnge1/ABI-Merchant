@@ -70,7 +70,13 @@ import {
   type MonitorSetup,
   type ScanStyle,
 } from './utils/calibrationStore';
-import { postCommunityVote } from './utils/communityVotes';
+import {
+  postCommunityEvent,
+  postCommunityVote,
+  trackCommunityMapMode,
+  trackCommunityScan,
+  trackCommunityVisit,
+} from './utils/communityVotes';
 import { alertForMatch } from './utils/soundAlerts';
 import { openDocumentPiP, renderPipContent, type PipHandle } from './utils/pipOverlay';
 import { type SensitivityLevel } from './utils/sensitivity';
@@ -230,11 +236,24 @@ export default function App() {
   cargoPriceRef.current = cargoPrice;
   const mapModeIdRef = useRef(mapModeId);
   mapModeIdRef.current = mapModeId;
+  const captureSourceRef = useRef(captureSource);
+  captureSourceRef.current = captureSource;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const stats = useMemo(() => {
     void statsTick;
     return computeAccuracyStats(listCalibrationEvents());
   }, [statsTick]);
+
+  // Community visit ≈ unique tab session (sessionStorage dedupe).
+  useEffect(() => {
+    trackCommunityVisit();
+  }, []);
+
+  useEffect(() => {
+    if (mapModeId) trackCommunityMapMode(mapModeId);
+  }, [mapModeId]);
 
   const stopVerifySession = useCallback(() => {
     verifyCleanupRef.current?.();
@@ -458,6 +477,13 @@ export default function App() {
       const applied = applyBestGuess(matches, meta);
       if (!applied) return;
       const { lockedScan, pool } = applied;
+
+      trackCommunityScan({
+        soundId: lockedScan.match.soundId,
+        mode: modeRef.current,
+        captureSource: captureSourceRef.current,
+        redChancePercent: pool.redChancePercent,
+      });
 
       // Multi keeps recordingMove true (re-arms after cooldown); single stops.
       if (!(scanStyleRef.current === 'continuous' && monitorRef.current === 'dual')) {
@@ -1050,7 +1076,9 @@ export default function App() {
       prepareMatcherSession();
       await matcherRef.current?.startCapture();
       setCapturing(true);
-      setCaptureSource(matcherRef.current?.getCaptureSource() ?? 'display');
+      const src = matcherRef.current?.getCaptureSource() ?? 'display';
+      setCaptureSource(src);
+      postCommunityEvent(src === 'microphone' ? 'capture_mic' : 'capture_display');
     } catch (err) {
       setCapturing(false);
       setCaptureSource(null);
@@ -1085,6 +1113,7 @@ export default function App() {
       setCapturing(true);
       setCaptureSource('microphone');
       setSuggestMicFallback(false);
+      postCommunityEvent('capture_mic');
     } catch (err) {
       setCapturing(false);
       setCaptureSource(null);
@@ -1350,6 +1379,7 @@ export default function App() {
     const handle = await openDocumentPiP({ width: 360, height: 220 });
     if (handle) {
       pipRef.current = handle;
+      postCommunityEvent('pip_opens');
       renderPipContent(handle.window, {
         group: locked?.match.soundId ?? 0,
         confidence: locked?.match.confidence ?? 0,

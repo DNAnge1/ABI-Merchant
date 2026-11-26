@@ -1,4 +1,3 @@
-import { SizeGroupedResults } from './SizeGroupedResults';
 import type { MatchResult, MerchantItem } from '../utils/audioMatcher';
 import {
   ActiveSessionError,
@@ -6,6 +5,12 @@ import {
   SessionErrorHistory,
   type SessionErrorEntry,
 } from './SessionErrorHistory';
+import { TacticalResultCard } from './TacticalResultCard';
+import {
+  filterScoredFeed,
+  scoreWithinSizes,
+} from '../utils/resultProbability';
+import { redLikelihoodPercent } from '../utils/sizeGroups';
 
 export type SingleLoopPhase = 'ready' | 'locked';
 
@@ -27,6 +32,9 @@ export function SingleItemLoop(props: {
   onDownloadCapture?: () => void;
   sessionErrors?: SessionErrorEntry[];
   onClearSessionErrors?: () => void;
+  lowConfidence?: boolean;
+  redChancePercent?: number;
+  isolatedItem?: boolean;
 }) {
   const activeError = props.sessionErrors?.[0] ?? null;
   const captureAndErrors = (
@@ -138,15 +146,36 @@ export function SingleItemLoop(props: {
         </div>
       </div>
 
-      <SizeGroupedResults
+      <TacticalResultCard
+        items={filterScoredFeed(scoreWithinSizes(props.resultItems, []), {
+          onlyRed: false,
+          onlyYellow: false,
+        })}
+        redChancePercent={
+          props.redChancePercent ?? redLikelihoodPercent(props.resultItems)
+        }
         soundId={props.match.soundId}
-        items={props.resultItems}
-        matchConfidence={props.match.confidence}
-        matchKind={props.match.kind}
-        altMatches={props.altMatches}
-        onPickAlt={props.onPickAlt}
-        modeLabel="Single-item lock"
-      />
+        audioConfidence={props.match.confidence}
+        lowConfidence={props.lowConfidence}
+        isolatedItem={props.isolatedItem ?? props.resultItems.length === 1}
+        meta="Single-item lock"
+      >
+        {props.altMatches && props.altMatches.length > 1 && (
+          <div className="mt-3 flex flex-wrap gap-1.5 items-center border-t border-white/8 pt-3">
+            <span className="text-[10px] text-[var(--muted)]">Also close:</span>
+            {props.altMatches.slice(1, 6).map((m) => (
+              <button
+                key={m.soundId}
+                type="button"
+                onClick={() => props.onPickAlt?.(m.soundId)}
+                className="rounded px-2 py-0.5 text-[10px] border border-[var(--border)] hover:border-[var(--accent)]"
+              >
+                #{m.soundId} {m.confidence}%
+              </button>
+            ))}
+          </div>
+        )}
+      </TacticalResultCard>
     </div>
   );
 }

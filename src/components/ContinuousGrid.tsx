@@ -1,8 +1,4 @@
-import {
-  groupItemsBySize,
-  redLikelihoodPercent,
-  sortRedsFirst,
-} from '../utils/sizeGroups';
+import { redLikelihoodPercent } from '../utils/sizeGroups';
 import type { MerchantItem } from '../utils/audioMatcher';
 import {
   ActiveSessionError,
@@ -10,8 +6,9 @@ import {
   SessionErrorHistory,
   type SessionErrorEntry,
 } from './SessionErrorHistory';
-import { ItemThumb } from './ItemThumb';
 import type { RankedSoundCandidate } from '../utils/rankedGuess';
+import { TacticalResultCard, TacticalSlotChip } from './TacticalResultCard';
+import { scoreWithinSizes, filterScoredFeed } from '../utils/resultProbability';
 
 export interface SessionSlot {
   id: string;
@@ -26,111 +23,6 @@ export interface SessionSlot {
   lowConfidence?: boolean;
   rankedCandidates?: RankedSoundCandidate[];
   isolatedItem?: boolean;
-}
-
-function formatPrice(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
-  return String(n);
-}
-
-function rarityLabel(r: number): string {
-  if (r >= 6) return 'Red';
-  if (r >= 5) return 'Yellow';
-  if (r >= 4) return 'Purple';
-  if (r >= 3) return 'Blue';
-  return 'Common';
-}
-
-/** Human-readable headline for a locked group (images + names + value). */
-function SlotValueSummary(props: { slot: SessionSlot; featured?: boolean }) {
-  const sorted = sortRedsFirst(props.slot.items);
-  const headline = sorted[0];
-  const reds = sorted.filter((i) => i.rarity >= 6);
-  const show = sorted.slice(0, props.featured ? 8 : 4);
-  const more = sorted.length - show.length;
-
-  return (
-    <div className={props.featured ? 'space-y-2 min-w-0 flex-1' : 'space-y-1 min-w-0 flex-1'}>
-      <div className="flex gap-3 items-start min-w-0">
-        {headline && <ItemThumb item={headline} size={props.featured ? 'lg' : 'md'} />}
-        <div className="min-w-0">
-          <div
-            className={[
-              'font-bold text-[var(--accent)]',
-              props.featured ? 'text-2xl' : 'text-sm',
-            ].join(' ')}
-          >
-            {headline ? headline.name : `Group #${props.slot.soundId}`}
-          </div>
-          {headline && (
-            <div
-              className={[
-                'text-[var(--muted)]',
-                props.featured ? 'text-sm' : 'text-[10px]',
-              ].join(' ')}
-            >
-              Group #{props.slot.soundId} · {props.slot.confidence}% · {headline.size}
-              {headline.contactPrice > 0 ? ` · ${headline.contactPrice.toLocaleString()} Koen` : ''}
-              {reds.length > 0
-                ? ` · ${reds.length} Red`
-                : ` · ${rarityLabel(headline.rarity)}`}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {props.featured && show.length > 0 && (
-        <ul className="m-0 p-0 list-none grid gap-1.5 sm:grid-cols-2">
-          {show.map((item) => {
-            const mythic = item.rarity >= 6;
-            return (
-              <li
-                key={item.id}
-                className={[
-                  'flex gap-2 items-center rounded border px-2 py-1.5',
-                  mythic
-                    ? 'border-[var(--mythic)]/45 bg-[#1a0c10]'
-                    : 'border-[var(--border)] bg-[var(--bg)]/50',
-                ].join(' ')}
-              >
-                <ItemThumb item={item} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div
-                    className={[
-                      'text-[11px] font-semibold truncate',
-                      mythic ? 'text-[var(--mythic-gold)]' : 'text-[var(--text)]',
-                    ].join(' ')}
-                  >
-                    {item.name}
-                  </div>
-                  <div className="text-[10px] text-[var(--muted)] truncate">
-                    {item.size}
-                    {item.contactPrice > 0 ? ` · ${formatPrice(item.contactPrice)}` : ''}
-                    {mythic ? ' · RED' : ''}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-          {more > 0 && (
-            <li className="text-[10px] text-[var(--muted)] self-center px-1">+{more} more</li>
-          )}
-        </ul>
-      )}
-
-      {!props.featured && show.length > 1 && (
-        <div className="flex gap-1 flex-wrap">
-          {show.slice(1, 4).map((item) => (
-            <ItemThumb key={item.id} item={item} size="sm" />
-          ))}
-          {more > 0 && (
-            <span className="text-[10px] text-[var(--muted)] self-center">+{more}</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function ContinuousGrid(props: {
@@ -277,50 +169,19 @@ export function ContinuousGrid(props: {
       />
 
       {latest && (
-        <div
-          className={[
-            'rounded border px-4 py-3',
-            latest.redPct > 0
-              ? 'border-[var(--mythic-gold)]/70 bg-gradient-to-br from-[#2a1210] to-[#1a1608]'
-              : 'border-[var(--accent)] bg-[var(--bg-elevated)]',
-          ].join(' ')}
+        <TacticalResultCard
+          items={filterScoredFeed(scoreWithinSizes(latest.items, []), {
+            onlyRed: false,
+            onlyYellow: false,
+          })}
+          redChancePercent={latest.redChancePercent ?? latest.redPct}
+          soundId={latest.soundId}
+          audioConfidence={latest.confidence}
+          lowConfidence={latest.lowConfidence}
+          isolatedItem={latest.isolatedItem}
+          meta="Latest Multi lock"
         >
-          <p className="m-0 text-[10px] uppercase tracking-wider text-[var(--muted)] font-semibold">
-            Latest lock · what you matched
-          </p>
-          <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
-            <SlotValueSummary slot={latest} featured />
-            <div className="text-right shrink-0">
-              <div
-                className={[
-                  'text-3xl font-bold tabular-nums',
-                  latest.redPct > 0 ? 'text-[var(--mythic)]' : 'text-[var(--muted)]',
-                ].join(' ')}
-              >
-                {latest.redPct}%
-              </div>
-              <div className="text-[10px] uppercase text-[var(--mythic-gold)]">Red chance</div>
-            </div>
-          </div>
-          <ul className="m-0 mt-3 p-0 list-none flex flex-wrap gap-2">
-            {groupItemsBySize(latest.items).map((g) => {
-              const top = sortRedsFirst(g.items)[0];
-              return (
-                <li
-                  key={g.size}
-                  className="rounded border border-[var(--border)] bg-[var(--bg)]/60 px-2 py-1 text-[10px] text-[var(--muted)] flex items-center gap-1.5"
-                >
-                  {top && <ItemThumb item={top} size="sm" />}
-                  <span>
-                    <span className="text-[var(--text)] font-medium">{g.size}</span>
-                    {top ? ` · ${top.name}` : ''}
-                    {g.redPct > 0 ? ` · Red ${g.redPct}%` : ''}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-white/8 pt-3">
             <button
               type="button"
               onClick={() => props.onThumbsUp(latest.id)}
@@ -343,10 +204,7 @@ export function ContinuousGrid(props: {
               Dismiss
             </button>
           </div>
-          <p className="m-0 mt-2 text-[10px] text-[var(--muted)]">
-            Optional hide-images / high-ticket-only filter come in the simple GUI rebuild.
-          </p>
-        </div>
+        </TacticalResultCard>
       )}
 
       {props.slots.length > 1 ? (
@@ -356,32 +214,21 @@ export function ContinuousGrid(props: {
           </p>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {props.slots.slice(1).map((slot) => {
-              const mythicPossible = slot.redPct > 0;
+              const scored = filterScoredFeed(scoreWithinSizes(slot.items, []), {
+                onlyRed: false,
+                onlyYellow: false,
+              });
               return (
-                <article
-                  key={slot.id}
-                  className={[
-                    'rounded border p-2.5',
-                    mythicPossible
-                      ? 'border-[var(--mythic-gold)]/50 bg-[var(--bg-panel)]'
-                      : 'border-[var(--border)] bg-[var(--bg-panel)]',
-                  ].join(' ')}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <SlotValueSummary slot={slot} />
-                    <div className="text-right shrink-0">
-                      <div
-                        className={[
-                          'text-lg font-bold tabular-nums',
-                          mythicPossible ? 'text-[var(--mythic)]' : 'text-[var(--muted)]',
-                        ].join(' ')}
-                      >
-                        {slot.redPct}%
-                      </div>
-                      <div className="text-[9px] uppercase text-[var(--mythic-gold)]">Red</div>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex gap-1.5">
+                <div key={slot.id} className="space-y-1.5">
+                  <TacticalSlotChip
+                    soundId={slot.soundId}
+                    confidence={slot.confidence}
+                    items={scored}
+                    redChancePercent={slot.redChancePercent ?? slot.redPct}
+                    lowConfidence={slot.lowConfidence}
+                    onDismiss={() => props.onDismiss(slot.id)}
+                  />
+                  <div className="flex gap-1.5">
                     <button
                       type="button"
                       onClick={() => props.onThumbsUp(slot.id)}
@@ -396,15 +243,8 @@ export function ContinuousGrid(props: {
                     >
                       👎
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => props.onDismiss(slot.id)}
-                      className="rounded px-2 py-1 text-[11px] border border-[var(--border)] text-[var(--muted)]"
-                    >
-                      ✕
-                    </button>
                   </div>
-                </article>
+                </div>
               );
             })}
           </div>

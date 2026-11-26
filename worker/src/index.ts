@@ -2,12 +2,13 @@
  * abi-merchant-counter — global community tallies for ABI Merchant.
  * Bound to D1 `abi-merchant-stats` via `DB`.
  *
- * Free-tier light: coarse counters + daily rollups; no raw event logs.
+ * Free-tier light: coarse counters + daily rollups; miss_reports store
+ * numbers-only MissReportPayload v1 (no audio / no spectrum).
  */
 
 export interface Env {
   DB: D1Database;
-  /** Optional: PATCH /suggestions/:id with header X-Admin-Key to hide spam */
+  /** Optional: PATCH hide for suggestions / miss_reports with X-Admin-Key */
   ADMIN_KEY?: string;
   /** Optional salt for IP hashing; falls back to a stable app constant */
   IP_HASH_SALT?: string;
@@ -34,6 +35,15 @@ const SUGGESTION_UPVOTE_COOLDOWN_MS = 800; // soft burst guard per IP
 const SUGGESTION_LIST_LIMIT = 50;
 const DEFAULT_IP_HASH_SALT = 'abi-merchant-suggestions-v1';
 const URL_IN_TEXT = /https?:\/\/|www\.|[a-z0-9-]+\.(com|net|org|io|gg|xyz|ru|cn)\b/i;
+
+/** Miss reports (MissReportPayload schemaVersion 1) */
+const MISS_REPORT_SCHEMA_VERSION = 1;
+const MISS_REPORT_SOURCES = new Set(['live-onset', 'auto', 'burst', 'player-miss']);
+const MISS_REPORT_POST_WINDOW_MS = 60 * 60 * 1000; // 1h
+const MISS_REPORT_MAX_POSTS_PER_WINDOW = 30;
+const MISS_REPORT_LIST_LIMIT = 50;
+const MISS_REPORT_TOP_PAIRS = 15;
+const MISS_REPORT_MAX_PAYLOAD_CHARS = 12_000;
 
 /** Whitelisted site_counters keys (POST /event). */
 const SITE_COUNTER_KEYS = new Set([
@@ -717,6 +727,449 @@ async function handlePatchSuggestion(
   return jsonResponse({ id: suggestionId, hidden: body.hidden, ok: true }, 200, origin);
 }
 
+interface MissReportRow {
+  id: string;
+  created_at: number;
+  day: string;
+  schema_version: number;
+  source: string;
+  expected_id: number;
+  predicted_id: number;
+  is_match: number;
+  expected_rank: number | null;
+  expected_score: number | null;
+  predicted_score: number | null;
+  map_mode_id: string | null;
+  app_version: string | null;
+  payload: string;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseOptionalScore(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
+function parseOptionalRank(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SOUND_ID) return null;
+  return n;
+}
+
+/** Reject audio / local-only fields; keep numbers-only MissReportPayload v1. */
+function sanitizeMissReportPayload(
+  raw: unknown,
+): { ok: true; payload: Record<string, unknown> } | { ok: false; error: string } {
+  if (!isPlainObject(raw)) return { ok: false, error: 'Body must be a JSON object' };
+
+  if (
+    'spectrumVector' in raw ||
+    'clipId' in raw ||
+    'clipAvailable' in raw ||
+    'audio' in raw ||
+    'wav' in raw ||
+    'blob' in raw
+  ) {
+    return { ok: false, error: 'Audio / spectrum / clip fields are not accepted' };
+  }
+
+  const schemaVersion = Number(raw.schemaVersion);
+  if (schemaVersion !== MISS_REPORT_SCHEMA_VERSION) {
+    return { ok: false, error: `schemaVersion must be ${MISS_REPORT_SCHEMA_VERSION}` };
+  }
+
+  const source = typeof raw.source === 'string' ? raw.source : '';
+  if (!MISS_REPORT_SOURCES.has(source)) {
+    return {
+      ok: false,
+      error: `source must be one of ${[...MISS_REPORT_SOURCES].join(', ')}`,
+    };
+  }
+
+  const expectedId = parseSoundId(raw.expectedId);
+  const predictedId = parseSoundId(raw.predictedId);
+  if (expectedId == null || predictedId == null) {
+    return {
+      ok: false,
+      error: `expectedId and predictedId must be integers ${MIN_SOUND_ID}–${MAX_SOUND_ID}`,
+    };
+  }
+
+  if (!Array.isArray(raw.top5) || raw.top5.length > 5) {
+    return { ok: false, error: 'top5 must be an array of up to 5 rows' };
+  }
+  for (const row of raw.top5) {
+    if (!isPlainObject(row) || parseSoundId(row.soundId) == null) {
+      return { ok: false, error: 'top5 rows need valid soundId' };
+    }
+  }
+
+  if (!isPlainObject(raw.diagnostics)) {
+    return { ok: false, error: 'diagnostics object required' };
+  }
+
+  const id =
+    typeof raw.id === 'string' && raw.id.length >= 8 && raw.id.length <= 64
+      ? raw.id
+      : crypto.randomUUID();
+
+  const ts =
+    typeof raw.ts === 'string' && raw.ts.length >= 10
+      ? raw.ts
+      : new Date().toISOString();
+
+  const match = Boolean(raw.match ?? expectedId === predictedId);
+
+  const cleaned: Record<string, unknown> = {
+    ...raw,
+    id,
+    ts,
+    schemaVersion: MISS_REPORT_SCHEMA_VERSION,
+    source,
+    expectedId,
+    predictedId,
+    match,
+    expectedRank: parseOptionalRank(raw.expectedRank),
+    expectedScore: parseOptionalScore(raw.expectedScore),
+    predictedScore: parseOptionalScore(raw.predictedScore),
+    mapModeId:
+      typeof raw.mapModeId === 'string' && raw.mapModeId.length <= MAX_MAP_MODE_LEN
+        ? raw.mapModeId
+        : null,
+    mapModeLabel:
+      typeof raw.mapModeLabel === 'string' && raw.mapModeLabel.length <= 128
+        ? raw.mapModeLabel
+        : null,
+    cargoType:
+      typeof raw.cargoType === 'string' && raw.cargoType.length <= 64
+        ? raw.cargoType
+        : null,
+    cargoPrice:
+      typeof raw.cargoPrice === 'number' && Number.isFinite(raw.cargoPrice)
+        ? raw.cargoPrice
+        : null,
+    appVersion:
+      typeof raw.appVersion === 'string' && raw.appVersion.length <= 32
+        ? raw.appVersion
+        : null,
+    sessionId:
+      typeof raw.sessionId === 'string' && raw.sessionId.length <= 64
+        ? raw.sessionId
+        : 'unknown',
+  };
+
+  // Drop accidental local-only keys if present under other names
+  delete cleaned.spectrumVector;
+  delete cleaned.clipId;
+  delete cleaned.clipAvailable;
+
+  const encoded = JSON.stringify(cleaned);
+  if (encoded.length > MISS_REPORT_MAX_PAYLOAD_CHARS) {
+    return { ok: false, error: 'Payload too large' };
+  }
+
+  return { ok: true, payload: cleaned };
+}
+
+async function handleCreateMissReport(
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, origin);
+  }
+
+  const sanitized = sanitizeMissReportPayload(raw);
+  if (!sanitized.ok) {
+    return jsonResponse({ error: sanitized.error }, 400, origin);
+  }
+
+  const salt = env.IP_HASH_SALT || DEFAULT_IP_HASH_SALT;
+  const ipHash = await hashIp(clientIp(request), salt);
+  const now = Date.now();
+
+  const rate = await env.DB.prepare(
+    `SELECT window_start, post_count FROM miss_report_rate WHERE ip_hash = ?`,
+  )
+    .bind(ipHash)
+    .first<{ window_start: number; post_count: number }>();
+
+  let windowStart = rate?.window_start ?? now;
+  let postCount = rate?.post_count ?? 0;
+  if (!rate || now - windowStart > MISS_REPORT_POST_WINDOW_MS) {
+    windowStart = now;
+    postCount = 0;
+  }
+  if (postCount >= MISS_REPORT_MAX_POSTS_PER_WINDOW) {
+    return jsonResponse({ error: 'Rate limit — try again later' }, 429, origin);
+  }
+
+  const p = sanitized.payload;
+  const id = String(p.id);
+  const day = utcDay(new Date(typeof p.ts === 'string' ? p.ts : now));
+  const expectedId = Number(p.expectedId);
+  const predictedId = Number(p.predictedId);
+  const isMatch = p.match ? 1 : 0;
+  const payloadJson = JSON.stringify(p);
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO miss_reports (
+           id, created_at, day, schema_version, source,
+           expected_id, predicted_id, is_match,
+           expected_rank, expected_score, predicted_score,
+           map_mode_id, app_version, author_hash, hidden, payload
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      ).bind(
+        id,
+        now,
+        day,
+        MISS_REPORT_SCHEMA_VERSION,
+        String(p.source),
+        expectedId,
+        predictedId,
+        isMatch,
+        p.expectedRank ?? null,
+        p.expectedScore ?? null,
+        p.predictedScore ?? null,
+        p.mapModeId ?? null,
+        p.appVersion ?? null,
+        ipHash,
+        payloadJson,
+      ),
+      env.DB.prepare(
+        `INSERT INTO miss_report_rate (ip_hash, window_start, post_count)
+         VALUES (?, ?, ?)
+         ON CONFLICT(ip_hash) DO UPDATE SET
+           window_start = excluded.window_start,
+           post_count = excluded.post_count`,
+      ).bind(ipHash, windowStart, postCount + 1),
+    ]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/UNIQUE|constraint/i.test(msg)) {
+      return jsonResponse({ id, ok: true, duplicate: true }, 200, origin);
+    }
+    return jsonResponse({ error: 'Failed to store report' }, 500, origin);
+  }
+
+  return jsonResponse(
+    {
+      id,
+      ok: true,
+      expectedId,
+      predictedId,
+      match: Boolean(isMatch),
+    },
+    201,
+    origin,
+  );
+}
+
+async function handleListMissReports(
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const limitRaw = Number(url.searchParams.get('limit') ?? MISS_REPORT_LIST_LIMIT);
+  const limit = Number.isFinite(limitRaw)
+    ? Math.min(Math.max(1, Math.floor(limitRaw)), 100)
+    : MISS_REPORT_LIST_LIMIT;
+  const missesOnly = url.searchParams.get('misses') === '1';
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, created_at, day, schema_version, source,
+            expected_id, predicted_id, is_match,
+            expected_rank, expected_score, predicted_score,
+            map_mode_id, app_version, payload
+     FROM miss_reports
+     WHERE hidden = 0 ${missesOnly ? 'AND is_match = 0' : ''}
+     ORDER BY created_at DESC
+     LIMIT ?`,
+  )
+    .bind(limit)
+    .all<MissReportRow>();
+
+  const reports = (results ?? []).map((row) => {
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(row.payload);
+    } catch {
+      payload = null;
+    }
+    return {
+      id: row.id,
+      createdAt: row.created_at,
+      day: row.day,
+      schemaVersion: row.schema_version,
+      source: row.source,
+      expectedId: row.expected_id,
+      predictedId: row.predicted_id,
+      match: row.is_match === 1,
+      expectedRank: row.expected_rank,
+      expectedScore: row.expected_score,
+      predictedScore: row.predicted_score,
+      mapModeId: row.map_mode_id,
+      appVersion: row.app_version,
+      payload,
+    };
+  });
+
+  return jsonResponse(
+    { reports, count: reports.length },
+    200,
+    origin,
+    { 'Cache-Control': 'public, max-age=15' },
+  );
+}
+
+async function handleMissReportStats(
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  const sinceDay = utcDay(new Date(Date.now() - DAILY_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+
+  const [totalsRes, pairRes, dailyRes, predictedRes] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN is_match = 0 THEN 1 ELSE 0 END) AS misses,
+         SUM(CASE WHEN is_match = 1 THEN 1 ELSE 0 END) AS hits
+       FROM miss_reports WHERE hidden = 0`,
+    ),
+    env.DB.prepare(
+      `SELECT expected_id, predicted_id, COUNT(*) AS hits
+       FROM miss_reports
+       WHERE hidden = 0 AND is_match = 0
+       GROUP BY expected_id, predicted_id
+       ORDER BY hits DESC, expected_id ASC, predicted_id ASC
+       LIMIT ?`,
+    ).bind(MISS_REPORT_TOP_PAIRS),
+    env.DB.prepare(
+      `SELECT day,
+              COUNT(*) AS total,
+              SUM(CASE WHEN is_match = 0 THEN 1 ELSE 0 END) AS misses
+       FROM miss_reports
+       WHERE hidden = 0 AND day >= ?
+       GROUP BY day
+       ORDER BY day ASC`,
+    ).bind(sinceDay),
+    env.DB.prepare(
+      `SELECT predicted_id, COUNT(*) AS hits
+       FROM miss_reports
+       WHERE hidden = 0 AND is_match = 0
+       GROUP BY predicted_id
+       ORDER BY hits DESC, predicted_id ASC
+       LIMIT 10`,
+    ),
+  ]);
+
+  const totalsRow = (totalsRes.results?.[0] ?? {
+    total: 0,
+    misses: 0,
+    hits: 0,
+  }) as { total: number; misses: number; hits: number };
+
+  const topPairs = ((pairRes.results ?? []) as {
+    expected_id: number;
+    predicted_id: number;
+    hits: number;
+  }[]).map((r) => ({
+    expectedId: r.expected_id,
+    predictedId: r.predicted_id,
+    hits: r.hits,
+    label: `#${r.expected_id} → #${r.predicted_id}`,
+  }));
+
+  const daily = ((dailyRes.results ?? []) as {
+    day: string;
+    total: number;
+    misses: number;
+  }[]).map((r) => ({
+    day: r.day,
+    total: r.total,
+    misses: r.misses,
+  }));
+
+  const topPredicted = ((predictedRes.results ?? []) as {
+    predicted_id: number;
+    hits: number;
+  }[]).map((r) => ({
+    soundId: r.predicted_id,
+    hits: r.hits,
+  }));
+
+  return jsonResponse(
+    {
+      totals: {
+        total: totalsRow.total ?? 0,
+        misses: totalsRow.misses ?? 0,
+        hits: totalsRow.hits ?? 0,
+      },
+      topMisidentified: topPairs,
+      topPredictedAsWrong: topPredicted,
+      daily,
+      windowDays: DAILY_WINDOW_DAYS,
+    },
+    200,
+    origin,
+    { 'Cache-Control': 'public, max-age=30' },
+  );
+}
+
+async function handlePatchMissReport(
+  reportId: string,
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> {
+  const adminKey = env.ADMIN_KEY;
+  const provided = request.headers.get('X-Admin-Key') ?? '';
+  if (!adminKey || provided !== adminKey) {
+    return jsonResponse({ error: 'Unauthorized' }, 401, origin);
+  }
+
+  if (!reportId || reportId.length > 64) {
+    return jsonResponse({ error: 'Invalid report id' }, 400, origin);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, origin);
+  }
+
+  const body = payload as { hidden?: unknown };
+  if (typeof body.hidden !== 'boolean') {
+    return jsonResponse({ error: 'hidden boolean required' }, 400, origin);
+  }
+
+  const result = await env.DB.prepare(
+    `UPDATE miss_reports SET hidden = ? WHERE id = ?`,
+  )
+    .bind(body.hidden ? 1 : 0, reportId)
+    .run();
+
+  if (!result.meta.changes) {
+    return jsonResponse({ error: 'Report not found' }, 404, origin);
+  }
+
+  return jsonResponse({ id: reportId, hidden: body.hidden, ok: true }, 200, origin);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
@@ -739,6 +1192,23 @@ export default {
 
     if (url.pathname === '/stats' && request.method === 'GET') {
       return handleStats(env, origin);
+    }
+
+    if (url.pathname === '/reports' && request.method === 'POST') {
+      return handleCreateMissReport(request, env, origin);
+    }
+
+    if (url.pathname === '/reports' && request.method === 'GET') {
+      return handleListMissReports(request, env, origin);
+    }
+
+    if (url.pathname === '/reports/stats' && request.method === 'GET') {
+      return handleMissReportStats(env, origin);
+    }
+
+    const missPatchMatch = url.pathname.match(/^\/reports\/([^/]+)$/i);
+    if (missPatchMatch && request.method === 'PATCH') {
+      return handlePatchMissReport(decodeURIComponent(missPatchMatch[1]), request, env, origin);
     }
 
     if (url.pathname === '/suggestions' && request.method === 'GET') {
@@ -767,6 +1237,10 @@ export default {
             'POST /vote',
             'POST /event',
             'GET /stats',
+            'POST /reports',
+            'GET /reports',
+            'GET /reports/stats',
+            'PATCH /reports/:id',
             'GET /suggestions',
             'POST /suggestions',
             'POST /suggestions/:id/upvote',

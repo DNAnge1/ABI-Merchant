@@ -39,9 +39,11 @@ const FAQ: { q: string; a: ReactNode }[] = [
     a: (
       <>
         Matching runs on your device. Shared display/mic audio is processed in the browser for
-        fingerprint comparison and is not uploaded as recordings. Optional community 👍/👎 and
-        Suggestions send only coarse tallies / short text to a Cloudflare Worker when online —
-        never your audio stream.
+        fingerprint comparison and is <strong className="font-semibold text-[var(--text)]">never
+        uploaded</strong> as recordings or WAV clips. Optional community 👍/👎 tallies, Suggestions
+        text, and public miss / confusion reports (numbers-only: top 5 scores, expected rank,
+        onset/RMS, map/mode) go to a Cloudflare Worker when online — never your audio stream.
+        Calibration “Download Clip WAV” stays on your device only.
       </>
     ),
   },

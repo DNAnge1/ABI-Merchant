@@ -132,6 +132,6 @@ Footer shows `v{package.json}`. Pre-publish: `0.9.<PR#>`.
 
 `.github/workflows/deploy-pages.yml` on `main`: verifies committed JSON + 76 OGGs + 189 icons → `GITHUB_PAGES=1 npm run build` → deploy `dist/`. The `/worker` folder is ignored by Vite (not part of Pages).
 
-### Cloudflare Worker (community votes)
+### Cloudflare Worker (community votes + miss reports)
 
-See [`worker/README.md`](worker/README.md). Brent deploys with `wrangler` (login + D1 migrate + deploy); no tokens live in this repo.
+See [`worker/README.md`](worker/README.md). Votes, Suggestions, and public miss / confusion reports (numbers-only — never audio) live on `abi-merchant-counter` + D1. Brent deploys with `wrangler` (login + D1 migrate + deploy); no tokens live in this repo.

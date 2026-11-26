@@ -3,6 +3,8 @@
  * JSON keeps numeric `rarity` + `iconUrl`; UI maps hue / image via these helpers.
  */
 
+import { assetUrl } from './assetUrl';
+
 export type RarityHue = 'red' | 'yellow' | 'blue';
 
 export type ItemDisplaySource = {
@@ -21,10 +23,11 @@ export function rarityHue(item: { rarity: number }): RarityHue {
   return 'blue';
 }
 
-/** Prefer `image`, then `iconUrl`. Null → caller should render placeholder. */
+/** Prefer `image`, then `iconUrl`. Local `/icons/…` paths get Vite `base` via assetUrl. */
 export function itemImage(item: { iconUrl?: string; image?: string }): string | null {
   const src = item.image?.trim() || item.iconUrl?.trim();
-  return src || null;
+  if (!src) return null;
+  return assetUrl(src);
 }
 
 /** Initials for placeholder tiles (up to 2 chars from name words). */

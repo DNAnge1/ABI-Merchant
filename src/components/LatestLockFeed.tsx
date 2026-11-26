@@ -1,14 +1,20 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { MerchantItem } from '../utils/audioMatcher';
 import {
   filterScoredFeed,
-  scoreWithinSizes,
   sizesInGroup,
   type ScoredItem,
   type TierFilter,
 } from '../utils/resultProbability';
 import type { RankedSoundCandidate } from '../utils/rankedGuess';
 import { redLikelihoodPercent } from '../utils/sizeGroups';
+import {
+  computeEvSummary,
+  scoreWithinRaidFilter,
+  weightedRedChanceFromScored,
+  type MapModeOption,
+  type RaidFilter,
+} from '../utils/raidPools';
 import {
   TacticalResultCard,
   TacticalSlotChip,
@@ -144,6 +150,10 @@ export function LatestLockFeed(props: {
   onlyRed: boolean;
   onlyYellow: boolean;
   selectedSizes: string[];
+  mapModes?: MapModeOption[];
+  mapModeId?: string;
+  cargoType?: string;
+  cargoPrice?: number | '';
   onToggleSize: (size: string) => void;
   onOnlyRed: (v: boolean) => void;
   onOnlyYellow: (v: boolean) => void;
@@ -169,19 +179,35 @@ export function LatestLockFeed(props: {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const tier: TierFilter = { onlyRed: props.onlyRed, onlyYellow: props.onlyYellow };
   const groupSizes = sizesInGroup(props.items);
-  const scored = scoreWithinSizes(props.items, props.selectedSizes);
+  const raidFilter: RaidFilter = useMemo(
+    () => ({
+      mapModeId: props.mapModeId || undefined,
+      sizes: props.selectedSizes,
+      cargoType: props.cargoType || undefined,
+      cargoPrice: props.cargoPrice,
+    }),
+    [props.mapModeId, props.selectedSizes, props.cargoType, props.cargoPrice],
+  );
+  const mapModes = props.mapModes ?? [];
+  const scored = scoreWithinRaidFilter(props.items, raidFilter, mapModes);
   const feed = filterScoredFeed(scored, tier);
   const showEmpty = feed.length === 0;
   const sizeLabel =
     props.selectedSizes.length === 0
       ? 'all group sizes'
       : props.selectedSizes.join(' + ');
+  const ev = computeEvSummary(scored, props.cargoPrice);
+  const poolRed = weightedRedChanceFromScored(
+    feed.length ? (feed as typeof scored) : scored,
+  );
 
-  // Prefer pool-weighted red chance; fall back to equal-share within filtered feed.
+  // Prefer raid-pool red chance; fall back to matcher pool / equal-share.
   const redChance =
-    props.redChancePercent != null
-      ? props.redChancePercent
-      : redLikelihoodPercent(feed);
+    props.mapModeId || props.cargoType || props.cargoPrice
+      ? poolRed
+      : props.redChancePercent != null
+        ? props.redChancePercent
+        : poolRed || redLikelihoodPercent(feed);
   const ranked = props.rankedCandidates ?? [];
 
   const filters: ReactNode = (
@@ -195,8 +221,8 @@ export function LatestLockFeed(props: {
       />
       <div className="space-y-1.5">
         <p className="m-0 text-xs text-[var(--muted)] leading-snug">
-          Cargo sizes in this sound group only. After you check sizes, probabilities are
-          redistributed over remaining items.
+          Cargo sizes in this sound group only. After you check sizes (and raid cargo
+          filters), probabilities are redistributed over remaining weighted pool items.
         </p>
         <div className="flex flex-wrap gap-3.5">
           {groupSizes.map((size) => (
@@ -284,6 +310,8 @@ export function LatestLockFeed(props: {
           isolatedItem={props.isolatedItem}
           hideImages={props.hideImages}
           meta={`Match % within ${sizeLabel}`}
+          expectedValue={ev.expectedValue}
+          paybackPercent={ev.paybackPercent}
         >
           <FeedbackRow
             onThumbsUp={props.onThumbsUp}
@@ -298,7 +326,8 @@ export function LatestLockFeed(props: {
               <div className="mt-2 space-y-1.5">
                 <div className="text-[13px] font-semibold">Full size-grouped list</div>
                 <p className="m-0 text-xs text-[var(--muted)]">
-                  Survivors share equal match % (sum 100%). Off-size rows stay 0% / excluded.
+                  Survivors share pool-weighted match % (sum 100%). Off-size / off-raid
+                  rows stay 0% / excluded.
                 </p>
                 <DetailsList items={scored} />
               </div>
@@ -314,7 +343,7 @@ export function LatestLockFeed(props: {
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
             {props.earlier.map((slot) => {
-              const slotScored = scoreWithinSizes(slot.items, []);
+              const slotScored = scoreWithinRaidFilter(slot.items, raidFilter, mapModes);
               const slotFeed = filterScoredFeed(slotScored, {
                 onlyRed: false,
                 onlyYellow: false,
@@ -326,7 +355,9 @@ export function LatestLockFeed(props: {
                   confidence={slot.confidence}
                   items={slotFeed.length ? slotFeed : slotScored}
                   redChancePercent={
-                    slot.redChancePercent ?? redLikelihoodPercent(slot.items)
+                    slot.redChancePercent ??
+                    weightedRedChanceFromScored(slotScored) ??
+                    redLikelihoodPercent(slot.items)
                   }
                   lowConfidence={slot.lowConfidence}
                   hideImages={props.hideImages}

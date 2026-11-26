@@ -40,14 +40,32 @@ export async function openDocumentPiP(opts?: {
 
 export function renderPipContent(
   pipWindow: Window,
-  data: { group: number; confidence: number; redPct: number; status: string },
+  data: {
+    group: number;
+    confidence: number;
+    redPct: number;
+    status: string;
+    expectedValue?: number | null;
+    paybackPercent?: number | null;
+  },
 ) {
   const doc = pipWindow.document;
+  const ev =
+    data.expectedValue != null && data.expectedValue >= 0
+      ? data.expectedValue >= 1_000_000
+        ? `${(data.expectedValue / 1_000_000).toFixed(1)}M`
+        : data.expectedValue >= 1_000
+          ? `${Math.round(data.expectedValue / 1000)}k`
+          : String(data.expectedValue)
+      : null;
+  const pay =
+    data.paybackPercent != null ? `${data.paybackPercent}%` : null;
   doc.head.innerHTML = `<style>
     body{margin:0;font:12px/1.4 system-ui,sans-serif;background:#0b0e12;color:#e8edf5;padding:12px}
     .red{color:#ff3b4a;font-size:28px;font-weight:700}
     .muted{color:#8b97a8}
     .ok{color:#3dd6c6}
+    .ev{color:#3dd6c6;font-size:18px;font-weight:700}
   </style>`;
   doc.body.innerHTML = `
     <div class="muted">${data.status}</div>
@@ -55,5 +73,11 @@ export function renderPipContent(
       · ${data.confidence}% audio</div>
     <div class="red" style="margin-top:6px">${data.redPct}%</div>
     <div class="muted">Red / Mythic chance</div>
+    ${
+      ev
+        ? `<div class="ev" style="margin-top:8px">${ev}</div>
+    <div class="muted">Expected value${pay ? ` · Payback ${pay}` : ''}</div>`
+        : ''
+    }
   `;
 }

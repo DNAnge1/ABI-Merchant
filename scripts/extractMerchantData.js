@@ -11,13 +11,18 @@
  * - Audio files at /audio/merchant/*.ogg are publicly fetchable without CF.
  */
 
-import { chromium } from 'playwright';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { spawnSync } from 'child_process';
+
+/** Lazy — fingerprints-only does not need Playwright installed. */
+async function loadChromium() {
+  const { chromium } = await import('playwright');
+  return chromium;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -164,6 +169,7 @@ async function fetchText(url) {
 
 async function scrapeWithPlaywright(url) {
   console.log(`[scrape] Playwright → ${url}`);
+  const chromium = await loadChromium();
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -552,11 +558,61 @@ function fft(re, im) {
 }
 
 const LIVE_SLICE_MS = 300;
+const CONTRAST_EPS = 1e-12;
+
+/** Within-band spectral contrast (log p90 − log p10) over 32 log-bands. */
+function withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands = 32) {
+  const half = magnitudes.length;
+  const buckets = Array.from({ length: bands }, () => []);
+  const minF = 80;
+  const maxF = Math.min(sampleRate / 2, 8000);
+  for (let i = 1; i < half; i++) {
+    const freq = (i * sampleRate) / fftSize;
+    if (freq < minF || freq > maxF) continue;
+    const t = Math.log(freq / minF) / Math.log(maxF / minF);
+    const bi = Math.min(bands - 1, Math.floor(t * bands));
+    buckets[bi].push(magnitudes[i]);
+  }
+  return buckets.map((bins) => {
+    if (bins.length === 0) return 0;
+    if (bins.length === 1) return Math.log(bins[0] + CONTRAST_EPS);
+    const sorted = bins.slice().sort((a, b) => a - b);
+    const lo = sorted[Math.max(0, Math.floor(sorted.length * 0.1))];
+    const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    return Math.log(hi + CONTRAST_EPS) - Math.log(Math.max(lo, CONTRAST_EPS));
+  });
+}
+
+function removeMeanAndTilt(vec) {
+  const n = vec.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumXY = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += vec[i];
+    sumXX += i * i;
+    sumXY += i * vec[i];
+  }
+  const den = n * sumXX - sumX * sumX || 1e-9;
+  const slope = (n * sumXY - sumX * sumY) / den;
+  const intercept = (sumY - slope * sumX) / n;
+  return vec.map((v, i) => v - intercept - slope * i);
+}
+
+function l2Normalize(vec) {
+  let n = 0;
+  for (const x of vec) n += x * x;
+  const norm = Math.sqrt(n) || 1e-9;
+  return vec.map((x) => x / norm);
+}
 
 /**
  * Live-aligned analysis: find first energetic onset, then average ~300ms of
  * FFT frames (mirrors AudioMatcher.captureAndMatch / offlineSelftest live300).
- * Field Merchant players only hear pickup — fingerprints are built from that window.
+ * Step 2: spectrumVector = within-band contrast + per-clip mean/tilt (L2);
+ * energyVector = peak-norm band averages for lobe/tilt cues.
  */
 function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   const window = hannWindow(fftSize);
@@ -590,11 +646,12 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   const hop = Math.floor(fftSize / 4); // denser hops like rAF analyser polls
   const re = new Float64Array(fftSize);
   const im = new Float64Array(fftSize);
+  const magAccum = new Float64Array(half);
   const bandAccum = new Array(32).fill(0);
   const centroids = [];
   let frames = 0;
 
-  const frameBandsAndCentroid = (start) => {
+  const frameMagAndBands = (start) => {
     re.fill(0);
     im.fill(0);
     for (let i = 0; i < fftSize; i++) {
@@ -616,12 +673,9 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
       bandVec[bi] += mag[i];
       bandCounts[bi] += 1;
     }
-    // Average bins per log-band (raw += inflates highs).
     for (let bi = 0; bi < bands; bi++) {
       if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
     }
-    const bandMax = Math.max(...bandVec, 1e-9);
-    const normalized = bandVec.map((v) => v / bandMax);
     let num = 0;
     let den = 0;
     for (let i = 1; i < half; i++) {
@@ -629,13 +683,14 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
       num += freq * mag[i];
       den += mag[i];
     }
-    return { normalized, centroid: den > 0 ? num / den : 0, mag };
+    return { bandVec, centroid: den > 0 ? num / den : 0, mag };
   };
 
   let lastMag = null;
   for (let start = onset; start + fftSize <= end; start += hop) {
-    const { normalized, centroid, mag } = frameBandsAndCentroid(start);
-    for (let i = 0; i < 32; i++) bandAccum[i] += normalized[i];
+    const { bandVec, centroid, mag } = frameMagAndBands(start);
+    for (let i = 0; i < half; i++) magAccum[i] += mag[i];
+    for (let i = 0; i < 32; i++) bandAccum[i] += bandVec[i];
     centroids.push(centroid);
     lastMag = mag;
     frames++;
@@ -643,16 +698,21 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
 
   if (frames === 0) {
     const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
-    const { normalized, centroid, mag } = frameBandsAndCentroid(start);
-    for (let i = 0; i < 32; i++) bandAccum[i] = normalized[i];
+    const { bandVec, centroid, mag } = frameMagAndBands(start);
+    for (let i = 0; i < half; i++) magAccum[i] = mag[i];
+    for (let i = 0; i < 32; i++) bandAccum[i] = bandVec[i];
     centroids.push(centroid);
     lastMag = mag;
     frames = 1;
   }
 
+  for (let i = 0; i < half; i++) magAccum[i] /= frames;
   for (let i = 0; i < 32; i++) bandAccum[i] /= frames;
   const bandMax = Math.max(...bandAccum, 1e-9);
-  const spectrumVector = bandAccum.map((v) => Number((v / bandMax).toFixed(5)));
+  const energyVector = bandAccum.map((v) => Number((v / bandMax).toFixed(5)));
+  const spectrumVector = l2Normalize(
+    removeMeanAndTilt(withinBandSpectralContrast(magAccum, sampleRate, fftSize, 32)),
+  ).map((v) => Number(v.toFixed(6)));
   const spectralCentroid = centroids.reduce((a, b) => a + b, 0) / centroids.length;
 
   const magnitudes = lastMag || new Float64Array(half);
@@ -683,6 +743,7 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
     dominantPeaks,
     durationEnvelope,
     spectrumVector,
+    energyVector,
   };
 }
 
@@ -733,7 +794,7 @@ function generateFingerprints(merchant) {
     vectorBands: 32,
     windowMs: LIVE_SLICE_MS,
     matchSide: 'pickup',
-    analysis: 'live300-post-onset-binavg',
+    analysis: 'live300-contrast-mean-tilt',
     fingerprints,
   };
 }

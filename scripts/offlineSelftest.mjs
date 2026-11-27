@@ -128,7 +128,7 @@ function interpolateEmptyBands(bandVec, bandCounts) {
   }
 }
 
-function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
+function magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands = BANDS) {
   const half = magnitudes.length;
   const bandVec = new Array(bands).fill(0);
   const bandCounts = new Array(bands).fill(0);
@@ -146,8 +146,68 @@ function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
     if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
   interpolateEmptyBands(bandVec, bandCounts);
+  return bandVec;
+}
+
+function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  const bandVec = magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
+}
+
+const CONTRAST_EPS = 1e-12;
+
+function withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  const half = magnitudes.length;
+  const buckets = Array.from({ length: bands }, () => []);
+  const minF = 80;
+  const maxF = Math.min(sampleRate / 2, 8000);
+  for (let i = 1; i < half; i++) {
+    const freq = (i * sampleRate) / fftSize;
+    if (freq < minF || freq > maxF) continue;
+    const t = Math.log(freq / minF) / Math.log(maxF / minF);
+    const bi = Math.min(bands - 1, Math.floor(t * bands));
+    buckets[bi].push(magnitudes[i]);
+  }
+  return buckets.map((bins) => {
+    if (!bins.length) return 0;
+    if (bins.length === 1) return Math.log(bins[0] + CONTRAST_EPS);
+    const sorted = bins.slice().sort((a, b) => a - b);
+    const lo = sorted[Math.max(0, Math.floor(sorted.length * 0.1))];
+    const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    return Math.log(hi + CONTRAST_EPS) - Math.log(Math.max(lo, CONTRAST_EPS));
+  });
+}
+
+function removeMeanAndTilt(vec) {
+  const n = vec.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumXY = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += vec[i];
+    sumXX += i * i;
+    sumXY += i * vec[i];
+  }
+  const den = n * sumXX - sumX * sumX || 1e-9;
+  const slope = (n * sumXY - sumX * sumY) / den;
+  const intercept = (sumY - slope * sumX) / n;
+  return vec.map((v, i) => v - intercept - slope * i);
+}
+
+function l2Normalize(vec) {
+  let n = 0;
+  for (const x of vec) n += x * x;
+  const norm = Math.sqrt(n) || 1e-9;
+  return vec.map((x) => x / norm);
+}
+
+function contrastMeanTiltSpectrum(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  return l2Normalize(
+    removeMeanAndTilt(withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands)),
+  );
 }
 
 function spectralCentroidHz(magnitudes, sampleRate, fftSize) {
@@ -215,10 +275,12 @@ function matchSpectrumAgainstFingerprints(
   candidateSoundIds,
   kind = 'pickup',
   capturedCentroid,
+  energyVector,
 ) {
   const results = [];
   const kinds = kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
-  const capturedHighRatio = highBandRatio(spectrumVector);
+  const liveEnergy = energyVector?.length ? energyVector : spectrumVector;
+  const capturedHighRatio = highBandRatio(liveEnergy);
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -228,13 +290,14 @@ function matchSpectrumAgainstFingerprints(
       if (!side?.spectrumVector) continue;
       const rawCos = cosineSimilarity(spectrumVector, side.spectrumVector);
       const shapeCos = centeredCosine(spectrumVector, side.spectrumVector);
-      const fpHighRatio = highBandRatio(side.spectrumVector);
+      const fpEnergy = side.energyVector?.length ? side.energyVector : side.spectrumVector;
+      const fpHighRatio = highBandRatio(fpEnergy);
       const tiltPenalty = Math.max(0, 1 - Math.abs(capturedHighRatio - fpHighRatio) * 1.8);
       let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
       if (capturedCentroid != null && side.spectralCentroid) {
         const delta = Math.abs(capturedCentroid - side.spectralCentroid);
-        const prior = Math.max(0, 1 - delta / 1500);
-        score = score * 0.75 + prior * 0.25;
+        const prior = Math.max(0, 1 - delta / 1400);
+        score = score * 0.72 + prior * 0.28;
       }
       results.push({
         soundId,
@@ -290,16 +353,17 @@ function extractReextract(samples, sampleRate = FP_SAMPLE_RATE) {
     frames = 1;
   }
   const magnitudes = Array.from(magAccum, (v) => v / frames);
+  const energy = magnitudeToBands(magnitudes, sampleRate, FFT_SIZE, BANDS);
   return {
-    spectrumVector: magnitudeToBands(magnitudes, sampleRate, FFT_SIZE, BANDS),
+    spectrumVector: contrastMeanTiltSpectrum(magnitudes, sampleRate, FFT_SIZE, BANDS),
+    energyVector: energy,
     centroid: spectralCentroidHz(magnitudes, sampleRate, FFT_SIZE),
     frames,
   };
 }
 
 /**
- * Live-like: find first energetic hop, then average ~300ms of frames
- * (mirrors AudioMatcher captureAndMatch slice averaging).
+ * Live-like: mean-mag over ~300ms post-onset, then Step-2 contrast + mean/tilt.
  */
 function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
   const window = hannWindow(FFT_SIZE);
@@ -325,12 +389,15 @@ function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
 
   const sliceSamples = Math.floor((LIVE_SLICE_MS / 1000) * sampleRate);
   const end = Math.min(samples.length, onset + sliceSamples);
+  const half = FFT_SIZE / 2;
+  const magAccum = new Float64Array(half);
   const bandAccum = new Array(BANDS).fill(0);
   const centroids = [];
   let frames = 0;
   for (let start = onset; start + FFT_SIZE <= end; start += hop) {
     const mag = frameMagnitude(samples, start, window, FFT_SIZE);
-    const bands = magnitudeToBands(mag, sampleRate, FFT_SIZE, BANDS);
+    for (let i = 0; i < half; i++) magAccum[i] += mag[i];
+    const bands = magnitudeToBandsRaw(mag, sampleRate, FFT_SIZE, BANDS);
     for (let i = 0; i < BANDS; i++) bandAccum[i] += bands[i];
     centroids.push(spectralCentroidHz(mag, sampleRate, FFT_SIZE));
     frames++;
@@ -338,23 +405,26 @@ function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
   if (frames === 0) {
     return extractReextract(samples, sampleRate);
   }
+  for (let i = 0; i < half; i++) magAccum[i] /= frames;
   for (let i = 0; i < BANDS; i++) bandAccum[i] /= frames;
   const max = Math.max(...bandAccum, 1e-9);
   return {
-    spectrumVector: bandAccum.map((v) => v / max),
+    spectrumVector: contrastMeanTiltSpectrum(magAccum, sampleRate, FFT_SIZE, BANDS),
+    energyVector: bandAccum.map((v) => v / max),
     centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
     frames,
     onsetMs: (onset / sampleRate) * 1000,
   };
 }
 
-function scoreOne(vec, centroid, fingerprints, ids, matchKind) {
+function scoreOne(vec, centroid, fingerprints, ids, matchKind, energyVector) {
   const ranked = matchSpectrumAgainstFingerprints(
     vec,
     fingerprints,
     ids,
     matchKind,
     centroid,
+    energyVector,
   );
   const top = ranked[0];
   const second = ranked[1];
@@ -404,7 +474,14 @@ function main() {
     // Sanity: stored fingerprint vector vs DB (should be ~100% to self)
     const stored = fingerprints.fingerprints[String(expected)]?.[kind];
     if (stored?.spectrumVector) {
-      const s = scoreOne(stored.spectrumVector, stored.spectralCentroid, fingerprints, allIds, 'pickup');
+      const s = scoreOne(
+        stored.spectrumVector,
+        stored.spectralCentroid,
+        fingerprints,
+        allIds,
+        'pickup',
+        stored.energyVector,
+      );
       row.stored = s;
       storedN++;
       if (s.topId === expected) storedHit++;
@@ -415,13 +492,27 @@ function main() {
 
       // "Re-extract" now means live300 (same window fingerprints were built with).
       const rex = extractLive300(pcm, FP_SAMPLE_RATE);
-      const rAuto = scoreOne(rex.spectrumVector, rex.centroid, fingerprints, allIds, 'pickup');
+      const rAuto = scoreOne(
+        rex.spectrumVector,
+        rex.centroid,
+        fingerprints,
+        allIds,
+        'pickup',
+        rex.energyVector,
+      );
       row.reextract = { ...rAuto, frames: rex.frames, onsetMs: rex.onsetMs };
       reextractN++;
       if (rAuto.topId === expected) reextractHit++;
 
       const live = extractLive300(pcm, FP_SAMPLE_RATE);
-      const lAuto = scoreOne(live.spectrumVector, live.centroid, fingerprints, allIds, 'pickup');
+      const lAuto = scoreOne(
+        live.spectrumVector,
+        live.centroid,
+        fingerprints,
+        allIds,
+        'pickup',
+        live.energyVector,
+      );
       row.live300 = {
         ...lAuto,
         frames: live.frames,

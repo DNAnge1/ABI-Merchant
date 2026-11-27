@@ -43,7 +43,16 @@ export interface FingerprintSide {
   spectralCentroid: number;
   dominantPeaks: { frequencyHz: number; magnitude: number }[];
   durationEnvelope: number[];
+  /**
+   * Match features: within-band spectral contrast + per-clip mean/tilt removal
+   * (L2-normalized; may be signed). Used by cosine / centeredCosine.
+   */
   spectrumVector: number[];
+  /**
+   * Peak-normalized log-band energy averages — lobe / tilt cues for residuals
+   * (bassLobeRatio, highBandRatio). Omitted on legacy fingerprints.
+   */
+  energyVector?: number[];
   /** Present on live300-aligned fingerprints */
   windowMs?: number;
   onsetMs?: number;
@@ -289,7 +298,10 @@ export interface MultiScanProgress {
 interface BurstFrame {
   t: number;
   rms: number;
+  /** Peak-norm band energy (lobe / tilt cues + legacy). */
   spectrum: number[];
+  /** Linear FFT magnitudes for Step-2 contrast + mean/tilt (half fftSize). */
+  mag: Float32Array;
   centroid: number;
 }
 
@@ -514,6 +526,96 @@ export function magnitudeToBands(
   const bandVec = magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
+}
+
+const CONTRAST_EPS = 1e-12;
+
+/**
+ * Within-band spectral contrast over log-frequency bands.
+ * For each band: log(p90) − log(p10) of FFT magnitudes in that band
+ * (single-bin bands fall back to log(mag)).
+ */
+export function withinBandSpectralContrast(
+  magnitudes: Float32Array | Float64Array | number[],
+  sampleRate: number,
+  fftSize: number,
+  bands = 32,
+): number[] {
+  const half = magnitudes.length;
+  const buckets: number[][] = Array.from({ length: bands }, () => []);
+  const minF = 80;
+  const maxF = Math.min(sampleRate / 2, 8000);
+  for (let i = 1; i < half; i++) {
+    const freq = (i * sampleRate) / fftSize;
+    if (freq < minF || freq > maxF) continue;
+    const t = Math.log(freq / minF) / Math.log(maxF / minF);
+    const bi = Math.min(bands - 1, Math.floor(t * bands));
+    buckets[bi].push(magnitudes[i]);
+  }
+  return buckets.map((bins) => {
+    if (bins.length === 0) return 0;
+    if (bins.length === 1) return Math.log(bins[0] + CONTRAST_EPS);
+    const sorted = bins.slice().sort((a, b) => a - b);
+    const lo = sorted[Math.max(0, Math.floor(sorted.length * 0.1))];
+    const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    return Math.log(hi + CONTRAST_EPS) - Math.log(Math.max(lo, CONTRAST_EPS));
+  });
+}
+
+/** Subtract per-clip mean + linear spectral tilt (least-squares vs band index). */
+export function removeMeanAndTilt(vec: number[]): number[] {
+  const n = vec.length;
+  if (n === 0) return [];
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumXY = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += vec[i];
+    sumXX += i * i;
+    sumXY += i * vec[i];
+  }
+  const den = n * sumXX - sumX * sumX || 1e-9;
+  const slope = (n * sumXY - sumX * sumY) / den;
+  const intercept = (sumY - slope * sumX) / n;
+  return vec.map((v, i) => v - intercept - slope * i);
+}
+
+export function l2Normalize(vec: number[]): number[] {
+  let n = 0;
+  for (const x of vec) n += x * x;
+  const norm = Math.sqrt(n) || 1e-9;
+  return vec.map((x) => x / norm);
+}
+
+/**
+ * Step-2 match features from a mean FFT magnitude spectrum:
+ * within-band spectral contrast → per-clip mean/tilt removal → L2 normalize.
+ */
+export function contrastMeanTiltSpectrum(
+  magnitudes: Float32Array | Float64Array | number[],
+  sampleRate: number,
+  fftSize: number,
+  bands = 32,
+): number[] {
+  return l2Normalize(
+    removeMeanAndTilt(
+      withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands),
+    ),
+  );
+}
+
+/** Prefer energyVector for lobe / brightness cues; fall back to spectrumVector. */
+export function energyOrSpectrum(
+  side: { spectrumVector?: number[]; energyVector?: number[] } | null | undefined,
+  liveEnergy?: number[] | null,
+  liveSpectrum?: number[] | null,
+): number[] {
+  if (liveEnergy && liveEnergy.length) return liveEnergy;
+  if (side?.energyVector && side.energyVector.length) return side.energyVector;
+  if (liveSpectrum && liveSpectrum.length) return liveSpectrum;
+  return side?.spectrumVector ?? [];
 }
 
 /**
@@ -1004,6 +1106,8 @@ export function resolveId2VsId8(
   matches: MatchResult[],
   spectrumVector: number[],
   fingerprints: FingerprintsFile,
+  /** Peak-norm energy for bass/mid lobes (Step-2 match vectors are signed). */
+  energyVector?: number[],
 ): MatchResult[] {
   if (!spectrumVector || matches.length < 2) return matches;
   const top = matches[0];
@@ -1026,8 +1130,9 @@ export function resolveId2VsId8(
   const shapePrefers2 = s2 >= s8 + 0.025 && c2 >= c8 - 0.015;
   // Wood clearly owns shape — protect true #8 even on a close conf race.
   const shapePrefers8 = s8 >= s2 + 0.02 && c8 >= c2 - 0.015;
-  const bass = bassLobeRatio(spectrumVector);
-  const mid = midLobeRatio(spectrumVector);
+  const lobeVec = energyVector?.length ? energyVector : spectrumVector;
+  const bass = bassLobeRatio(lobeVec);
+  const mid = midLobeRatio(lobeVec);
   // Big-metal thud: high bass and/or suppressed mid-body (FP #2 mid~0.37; #8~0.40).
   const bassPrefers2 = bass >= 0.23 || (bass >= 0.205 && mid <= 0.375);
   const metalEvidence = shapePrefers2 && (bassPrefers2 || s2 >= s8 + 0.04);
@@ -1331,10 +1436,13 @@ export function resolveField10Residual(
   }
   if (top.confidence >= 90) return matches;
 
-  const hi3 = upperThirdRatio(spectrumVector);
+  // Lobe/brightness cues need peak-norm energy — Step-2 match vectors are signed.
+  const energy = spectrumVector.some((v) => v < 0)
+    ? spectrumVector.map((v) => Math.abs(v))
+    : spectrumVector;
+  const hi3 = upperThirdRatio(energy);
   if (hi3 < 0.3) return matches;
-  const high =
-    capturedHighRatio ?? highBandRatio(spectrumVector);
+  const high = capturedHighRatio ?? highBandRatio(energy);
   if (high < 0.52 || high > 0.78) return matches;
 
   const fp10 = fingerprints.fingerprints['10']?.pickup;
@@ -1368,7 +1476,10 @@ export function resolveField10Residual(
 }
 
 export type PcmLive300Lobe = {
+  /** Match features (contrast + mean/tilt, L2). */
   spectrumVector: number[];
+  /** Peak-norm band energy for lobe / tilt residuals. */
+  energyVector: number[];
   centroid: number;
   onsetMs: number;
   frames: number;
@@ -1377,6 +1488,7 @@ export type PcmLive300Lobe = {
 
 export type PcmLive300Result = {
   spectrumVector: number[];
+  energyVector?: number[];
   centroid: number;
   onsetMs: number;
   frames: number;
@@ -1409,18 +1521,16 @@ function extractPcmLobeWindow(
     1,
     Math.floor(fftSize / (end - onsetSample < fftSize * 2 ? 8 : 4)),
   );
+  const half = fftSize >> 1;
+  const magAccum = new Float64Array(half);
   const bandAccum = new Array(bands).fill(0);
   const centroids: number[] = [];
   let frames = 0;
   const scratch = new Float32Array(fftSize);
   let peakRms = 0;
 
-  for (let start = onsetSample; start + fftSize <= end; start += hop) {
-    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
-    let e = 0;
-    for (let i = 0; i < fftSize; i++) e += scratch[i] * scratch[i];
-    peakRms = Math.max(peakRms, Math.sqrt(e / fftSize));
-    const linMag = fftLinearMagnitudes(scratch);
+  const accumulateFrame = (linMag: Float32Array) => {
+    for (let i = 0; i < half; i++) magAccum[i] += linMag[i];
     const raw = magnitudeToBandsRaw(linMag, sampleRate, fftSize, bands);
     for (let i = 0; i < bands; i++) {
       const v =
@@ -1431,6 +1541,14 @@ function extractPcmLobeWindow(
     }
     centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
     frames += 1;
+  };
+
+  for (let start = onsetSample; start + fftSize <= end; start += hop) {
+    for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
+    let e = 0;
+    for (let i = 0; i < fftSize; i++) e += scratch[i] * scratch[i];
+    peakRms = Math.max(peakRms, Math.sqrt(e / fftSize));
+    accumulateFrame(fftLinearMagnitudes(scratch));
   }
   if (frames === 0) {
     const start = Math.max(
@@ -1438,22 +1556,16 @@ function extractPcmLobeWindow(
       Math.min(onsetSample, Math.max(0, samples.length - fftSize)),
     );
     for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
-    const linMag = fftLinearMagnitudes(scratch);
-    const raw = magnitudeToBandsRaw(linMag, sampleRate, fftSize, bands);
-    for (let i = 0; i < bands; i++) {
-      bandAccum[i] =
-        ambientRaw != null
-          ? Math.max(0, raw[i] - ambientRaw[i] * 0.85)
-          : raw[i];
-    }
-    centroids.push(spectralCentroidHz(linMag, sampleRate, fftSize));
-    frames = 1;
+    accumulateFrame(fftLinearMagnitudes(scratch));
+    if (frames === 0) frames = 1;
   }
 
+  for (let i = 0; i < half; i++) magAccum[i] /= frames;
   for (let i = 0; i < bands; i++) bandAccum[i] /= frames;
   const max = Math.max(...bandAccum, 1e-9);
   return {
-    spectrumVector: bandAccum.map((v) => v / max),
+    spectrumVector: contrastMeanTiltSpectrum(magAccum, sampleRate, fftSize, bands),
+    energyVector: bandAccum.map((v) => v / max),
     centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
     onsetMs: (onsetSample / sampleRate) * 1000,
     frames,
@@ -1576,6 +1688,7 @@ export function analyzePcmLive300Window(
   const primary = lobes[0];
   return {
     spectrumVector: primary.spectrumVector,
+    energyVector: primary.energyVector,
     centroid: primary.centroid,
     onsetMs: primary.onsetMs,
     frames: primary.frames,
@@ -1588,6 +1701,7 @@ export function analyzePcmLive300Window(
 export type Pcm300LobeVoteResult = {
   allMatches: MatchResult[];
   spectrumVector: number[];
+  energyVector: number[];
   centroid: number;
   /** Note fragment after source, e.g. ` · lobes 3 · lobeVote 3/3→#1`. */
   lobeNote: string;
@@ -1633,6 +1747,7 @@ export function scorePcm300LobeVote(
       : [
           {
             spectrumVector: pcmWin.spectrumVector,
+            energyVector: pcmWin.energyVector ?? pcmWin.spectrumVector,
             centroid: pcmWin.centroid,
             onsetMs: pcmWin.onsetMs,
             frames: pcmWin.frames,
@@ -1652,11 +1767,13 @@ export function scorePcm300LobeVote(
           candidateSoundIds,
           kind,
           lobe.centroid,
+          lobe.energyVector,
         ),
         lobe.centroid,
       ),
       lobe.spectrumVector,
       fingerprints,
+      lobe.energyVector,
     );
     if (ranked[0]) {
       lobeVotes.push({
@@ -1708,6 +1825,7 @@ export function scorePcm300LobeVote(
   const chosenLobe =
     bestLobeId != null && bestLobeN >= 2 ? bestLobe : lobes[0];
   const spectrumVector = chosenLobe.spectrumVector;
+  const energyVector = chosenLobe.energyVector;
   const centroid = chosenLobe.centroid;
 
   const allMatches = resolveId2VsId8(
@@ -1718,11 +1836,13 @@ export function scorePcm300LobeVote(
         candidateSoundIds,
         kind,
         centroid,
+        energyVector,
       ),
       centroid,
     ),
     spectrumVector,
     fingerprints,
+    energyVector,
   ).map((m) => ({
     ...m,
     spectrumVector,
@@ -1739,6 +1859,7 @@ export function scorePcm300LobeVote(
   return {
     allMatches,
     spectrumVector,
+    energyVector,
     centroid,
     lobeNote,
     lobes,
@@ -1758,26 +1879,22 @@ function applyBurstMatchResiduals(
   centroid: number,
   fingerprints: FingerprintsFile,
   sizePriorSoundIds: Set<number> | null | undefined,
+  energyVector?: number[],
 ): MatchResult[] {
-  let next = resolveQuiet19Residual(
-    allMatches,
-    centroid,
-    highBandRatio(spectrumVector),
-  ).map((m) => ({
+  const energy = energyVector?.length ? energyVector : spectrumVector;
+  const hi = highBandRatio(energy);
+  let next = resolveQuiet19Residual(allMatches, centroid, hi).map((m) => ({
     ...m,
     spectrumVector,
     capturedCentroid: centroid,
   }));
-  next = resolveField10Residual(
-    next,
-    spectrumVector,
-    fingerprints,
-    highBandRatio(spectrumVector),
-  ).map((m) => ({
-    ...m,
-    spectrumVector,
-    capturedCentroid: centroid,
-  }));
+  next = resolveField10Residual(next, spectrumVector, fingerprints, hi).map(
+    (m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }),
+  );
   next = resolveGlass30VsFuel4(next, spectrumVector, fingerprints).map((m) => ({
     ...m,
     spectrumVector,
@@ -1788,11 +1905,13 @@ function applyBurstMatchResiduals(
     spectrumVector,
     capturedCentroid: centroid,
   }));
-  next = resolveId2VsId8(next, spectrumVector, fingerprints).map((m) => ({
-    ...m,
-    spectrumVector,
-    capturedCentroid: centroid,
-  }));
+  next = resolveId2VsId8(next, spectrumVector, fingerprints, energy).map(
+    (m) => ({
+      ...m,
+      spectrumVector,
+      capturedCentroid: centroid,
+    }),
+  );
   return applySoftSizePrior(next, sizePriorSoundIds).map((m) => ({
     ...m,
     spectrumVector,
@@ -1806,12 +1925,15 @@ export function matchSpectrumAgainstFingerprints(
   candidateSoundIds: number[],
   kind: SoundKind | 'auto' = 'pickup',
   capturedCentroid?: number,
+  /** Peak-norm energy bands for brightness tilt; defaults to spectrumVector. */
+  energyVector?: number[],
 ): MatchResult[] {
   const results: MatchResult[] = [];
   // Field Merchant: players only hear pickup. Default / 'auto' → pickup only.
   const kinds: SoundKind[] =
     kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
-  const capturedHighRatio = highBandRatio(spectrumVector);
+  const liveEnergy = energyVector?.length ? energyVector : spectrumVector;
+  const capturedHighRatio = highBandRatio(liveEnergy);
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -1822,7 +1944,10 @@ export function matchSpectrumAgainstFingerprints(
 
       const rawCos = cosineSimilarity(spectrumVector, side.spectrumVector);
       const shapeCos = centeredCosine(spectrumVector, side.spectrumVector);
-      const fpHighRatio = highBandRatio(side.spectrumVector);
+      const fpEnergy = side.energyVector?.length
+        ? side.energyVector
+        : side.spectrumVector;
+      const fpHighRatio = highBandRatio(fpEnergy);
       // Penalize dark/bass (#4 ~0.35) vs bright/gritty (#5 ~0.68) tilt mismatches.
       const tiltPenalty = Math.max(0, 1 - Math.abs(capturedHighRatio - fpHighRatio) * 1.8);
 
@@ -2418,6 +2543,7 @@ export class AudioMatcher {
       scored.centroid,
       this.fingerprints,
       this.sizePriorSoundIds,
+      scored.energyVector,
     );
     if (allMatches.length === 0) return null;
 
@@ -3032,8 +3158,17 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    type SpikeVote = { soundId: number; confidence: number; spectrum: number[]; centroid: number };
+    type SpikeVote = {
+      soundId: number;
+      confidence: number;
+      spectrum: number[];
+      energy: number[];
+      centroid: number;
+    };
     const spikeVotes: SpikeVote[] = [];
+    const fftSize = this.analyser?.fftSize || 2048;
+    const sampleRate = this.ctx?.sampleRate || 22050;
+    const magHalf = fftSize >> 1;
 
     for (const c of chosen) {
       const win = frames.filter(
@@ -3041,10 +3176,17 @@ export class AudioMatcher {
       );
       const slice = win.length > 0 ? win : [c];
       const local = new Array(bands).fill(0);
+      const magAccum = new Float64Array(magHalf);
       let localCentroid = 0;
+      let magFrames = 0;
       for (const f of slice) {
         for (let i = 0; i < bands; i++) local[i] += f.spectrum[i] || 0;
         localCentroid += f.centroid;
+        if (f.mag?.length) {
+          const n = Math.min(magHalf, f.mag.length);
+          for (let i = 0; i < n; i++) magAccum[i] += f.mag[i];
+          magFrames += 1;
+        }
       }
       for (let i = 0; i < bands; i++) {
         local[i] /= slice.length;
@@ -3055,7 +3197,17 @@ export class AudioMatcher {
       windowsUsed += 1;
 
       const localMax = Math.max(...local, 1e-9);
-      const spikeSpectrum = local.map((v) => v / localMax);
+      const spikeEnergy = local.map((v) => v / localMax);
+      let spikeSpectrum = spikeEnergy;
+      if (magFrames > 0) {
+        for (let i = 0; i < magHalf; i++) magAccum[i] /= magFrames;
+        spikeSpectrum = contrastMeanTiltSpectrum(
+          magAccum,
+          sampleRate,
+          fftSize,
+          bands,
+        );
+      }
       const spikeRank = rankMatchesWithPriors(
         matchSpectrumAgainstFingerprints(
           spikeSpectrum,
@@ -3063,6 +3215,7 @@ export class AudioMatcher {
           candidates,
           this.kind,
           spikeCentroid,
+          spikeEnergy,
         ),
         spikeCentroid,
       );
@@ -3071,6 +3224,7 @@ export class AudioMatcher {
           soundId: spikeRank[0].soundId,
           confidence: spikeRank[0].confidence,
           spectrum: spikeSpectrum,
+          energy: spikeEnergy,
           centroid: spikeCentroid,
         });
       }
@@ -3078,7 +3232,34 @@ export class AudioMatcher {
     const denom = Math.max(windowsUsed, 1);
     for (let i = 0; i < bands; i++) avg[i] /= denom;
     const max = Math.max(...avg, 1e-9);
-    let spectrumVector = avg.map((v) => v / max);
+    let energyVector = avg.map((v) => v / max);
+    // Prefer mean-mag contrast+MT across all chosen spike windows when mags exist.
+    let spectrumVector = energyVector;
+    {
+      const magAccum = new Float64Array(magHalf);
+      let magFrames = 0;
+      for (const c of chosen) {
+        const win = frames.filter(
+          (f) => f.t >= c.t - LIVE300_PRE_MS && f.t <= c.t + LIVE300_POST_MS,
+        );
+        const slice = win.length > 0 ? win : [c];
+        for (const f of slice) {
+          if (!f.mag?.length) continue;
+          const n = Math.min(magHalf, f.mag.length);
+          for (let i = 0; i < n; i++) magAccum[i] += f.mag[i];
+          magFrames += 1;
+        }
+      }
+      if (magFrames > 0) {
+        for (let i = 0; i < magHalf; i++) magAccum[i] /= magFrames;
+        spectrumVector = contrastMeanTiltSpectrum(
+          magAccum,
+          sampleRate,
+          fftSize,
+          bands,
+        );
+      }
+    }
     let centroid = centroidSum / denom;
     const peakMs = Math.round(peakRms * 1000);
 
@@ -3113,6 +3294,7 @@ export class AudioMatcher {
         candidates,
         this.kind,
         centroid,
+        energyVector,
       ),
       centroid,
     ).map((m) => ({
@@ -3129,6 +3311,7 @@ export class AudioMatcher {
         .sort((a, b) => b.confidence - a.confidence)[0];
       if (bestSpike) {
         spectrumVector = bestSpike.spectrum;
+        energyVector = bestSpike.energy;
         centroid = bestSpike.centroid;
         allMatches = rankMatchesWithPriors(
           matchSpectrumAgainstFingerprints(
@@ -3137,6 +3320,7 @@ export class AudioMatcher {
             candidates,
             this.kind,
             centroid,
+            energyVector,
           ),
           centroid,
         ).map((m) => ({
@@ -3150,6 +3334,7 @@ export class AudioMatcher {
     // Snapshot spike-majority ranking before pcm300 may overwrite it.
     const spikeMatches = allMatches;
     const spikeSpectrum = spectrumVector;
+    const spikeEnergy = energyVector;
     const spikeCentroid = centroid;
 
     // Prefer Self-Test-aligned PCM live300 on the burst WAV tee when present.
@@ -3165,6 +3350,7 @@ export class AudioMatcher {
     );
     if (pcmScored) {
       spectrumVector = pcmScored.spectrumVector;
+      energyVector = pcmScored.energyVector;
       centroid = pcmScored.centroid;
       allMatches = pcmScored.allMatches;
       matchSource = 'pcm-live300';
@@ -3194,6 +3380,7 @@ export class AudioMatcher {
           spikeTop != null && hardRejectDullSink(spikeTop) != null;
         if (pcmWeak && !spikeIsRejectableDull) {
           spectrumVector = spikeSpectrum;
+          energyVector = spikeEnergy;
           centroid = spikeCentroid;
           allMatches = spikeMatches;
           matchSource = 'analyser-spikes';
@@ -3210,6 +3397,7 @@ export class AudioMatcher {
       centroid,
       this.fingerprints,
       this.sizePriorSoundIds,
+      energyVector,
     );
 
     const floor = Math.max(48, this.minConfidence - 8);
@@ -3304,52 +3492,14 @@ export class AudioMatcher {
           capturedCentroid: centroid,
         }));
         // Re-apply residual — pitch may have moved onto wood/#2 mid scores.
-        allMatches = resolveQuiet19Residual(
+        allMatches = applyBurstMatchResiduals(
           allMatches,
+          spectrumVector,
           centroid,
-          highBandRatio(spectrumVector),
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
-        allMatches = resolveField10Residual(
-          allMatches,
-          spectrumVector,
           this.fingerprints,
-          highBandRatio(spectrumVector),
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
-        allMatches = resolveGlass30VsFuel4(
-          allMatches,
-          spectrumVector,
-          this.fingerprints,
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
-        allMatches = resolveMetal6VsLion28(
-          allMatches,
-          spectrumVector,
-          this.fingerprints,
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
-        allMatches = resolveId2VsId8(
-          allMatches,
-          spectrumVector,
-          this.fingerprints,
-        ).map((m) => ({
-          ...m,
-          spectrumVector,
-          capturedCentroid: centroid,
-        }));
+          this.sizePriorSoundIds,
+          energyVector,
+        );
         top = allMatches[0];
         runner = allMatches[1];
         pitchLock = top.soundId === pitchedTop.soundId;
@@ -3692,7 +3842,13 @@ export class AudioMatcher {
         this.analyser.fftSize,
       );
       const tRel = now - this.burstStartedAt;
-      this.burstFrames.push({ t: tRel, rms, spectrum, centroid });
+      this.burstFrames.push({
+        t: tRel,
+        rms,
+        spectrum,
+        mag: new Float32Array(linMag),
+        centroid,
+      });
       // Cap ~20s of recording
       if (this.burstFrames.length > 1200) this.burstFrames.shift();
       // Non-overlapping hop of new samples for PCM-live300 backup (~1/raf advance).
@@ -3801,12 +3957,14 @@ export class AudioMatcher {
       `Checking sound… peak~${peakMs} · flux=${(onsetFlux ?? 0).toFixed(3)}`,
     );
 
-    const frames: number[][] = [];
+    const energyFrames: number[][] = [];
     const centroids: number[] = [];
     const envelope: number[] = [];
     const start = performance.now();
     const timeFloat = new Float32Array(this.analyser.fftSize);
     const timeByte = new Uint8Array(this.analyser.fftSize);
+    const magAccum = new Float64Array(this.analyser.fftSize >> 1);
+    let magFrames = 0;
     let peakRms = 0;
     let peakAtMs = 0;
 
@@ -3823,7 +3981,7 @@ export class AudioMatcher {
         peakRms = frameRms;
         peakAtMs = elapsed;
       }
-      frames.push(
+      energyFrames.push(
         magnitudeToBands(
           linMag,
           this.ctx.sampleRate,
@@ -3831,6 +3989,8 @@ export class AudioMatcher {
           this.fingerprints.vectorBands || 32,
         ),
       );
+      for (let i = 0; i < magAccum.length; i++) magAccum[i] += linMag[i];
+      magFrames += 1;
       centroids.push(
         spectralCentroidHz(linMag, this.ctx.sampleRate, this.analyser.fftSize),
       );
@@ -3885,16 +4045,25 @@ export class AudioMatcher {
 
     this.setStatus('matching', 'Matching…');
 
-    // Equal-average over the live300 slice (linear FFT). Attack/decay shape is
-    // gated above; extra front-weighting hurt #36 vs near-neighbors on real clips.
-    const bands = frames[0]?.length || 32;
+    // Equal-average energy over the live300 slice; match features from mean mag
+    // contrast + per-clip mean/tilt (Step 2).
+    const bands = energyFrames[0]?.length || 32;
     const avg = new Array(bands).fill(0);
-    for (const f of frames) {
+    for (const f of energyFrames) {
       for (let i = 0; i < bands; i++) avg[i] += f[i] || 0;
     }
-    for (let i = 0; i < bands; i++) avg[i] /= Math.max(frames.length, 1);
+    for (let i = 0; i < bands; i++) avg[i] /= Math.max(energyFrames.length, 1);
     const max = Math.max(...avg, 1e-9);
-    const spectrumVector = avg.map((v) => v / max);
+    const energyVector = avg.map((v) => v / max);
+    for (let i = 0; i < magAccum.length; i++) {
+      magAccum[i] /= Math.max(magFrames, 1);
+    }
+    const spectrumVector = contrastMeanTiltSpectrum(
+      magAccum,
+      this.ctx.sampleRate,
+      this.analyser.fftSize,
+      bands,
+    );
     const centroid =
       centroids.reduce((a, b) => a + b, 0) / Math.max(centroids.length, 1);
 
@@ -3903,13 +4072,14 @@ export class AudioMatcher {
         ? this.candidateSoundIds
         : Object.keys(this.fingerprints.fingerprints).map(Number);
 
-    let allMatches = rankMatchesWithPriors(
+    let allMatches: MatchResult[] = rankMatchesWithPriors(
       matchSpectrumAgainstFingerprints(
         spectrumVector,
         this.fingerprints,
         candidates,
         this.kind,
         centroid,
+        energyVector,
       ),
       centroid,
     ).map((m) => ({
@@ -3917,57 +4087,14 @@ export class AudioMatcher {
       spectrumVector,
       capturedCentroid: centroid,
     }));
-    allMatches = resolveQuiet19Residual(
+    allMatches = applyBurstMatchResiduals(
       allMatches,
+      spectrumVector,
       centroid,
-      highBandRatio(spectrumVector),
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    allMatches = resolveField10Residual(
-      allMatches,
-      spectrumVector,
       this.fingerprints,
-      highBandRatio(spectrumVector),
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    allMatches = resolveGlass30VsFuel4(
-      allMatches,
-      spectrumVector,
-      this.fingerprints,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    allMatches = resolveMetal6VsLion28(
-      allMatches,
-      spectrumVector,
-      this.fingerprints,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    allMatches = resolveId2VsId8(
-      allMatches,
-      spectrumVector,
-      this.fingerprints,
-    ).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
-    allMatches = applySoftSizePrior(allMatches, this.sizePriorSoundIds).map((m) => ({
-      ...m,
-      spectrumVector,
-      capturedCentroid: centroid,
-    }));
+      this.sizePriorSoundIds,
+      energyVector,
+    );
 
     // Auto path: stricter floor + require clear winner vs runner-up (heal/ambient often ties ~95%).
     const autoFloor = Math.max(this.minConfidence, 68);

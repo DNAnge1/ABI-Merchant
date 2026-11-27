@@ -1,7 +1,7 @@
 {
   "name": "abi-merchant",
   "private": true,
-  "version": "0.9.79",
+  "version": "0.9.80",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "extract": "node scripts/extractMerchantData.js",
     "fingerprints": "node scripts/extractMerchantData.js --fingerprints-only",
-    "selftest:audio": "node scripts/offlineSelftest.mjs"
+    "selftest:audio": "node scripts/offlineSelftest.mjs",
+    "selftest:scoreboard": "node scripts/fingerprintScoreboard.mjs"
   },
   "dependencies": {
     "react": "^19.3.1",

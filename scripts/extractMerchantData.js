@@ -558,6 +558,9 @@ function fft(re, im) {
 }
 
 const LIVE_SLICE_MS = 300;
+const PEAK_ANCHOR_PRE_MS = 40;
+const PEAK_BURST_SEARCH_MS = 500;
+const PEAK_FRAME_ENERGY_GATE = 0.2;
 const CONTRAST_EPS = 1e-12;
 
 /** Within-band spectral contrast (log p90 − log p10) over 32 log-bands. */
@@ -609,9 +612,8 @@ function l2Normalize(vec) {
 }
 
 /**
- * Live-aligned analysis: find first energetic onset, then average ~300ms of
- * FFT frames (mirrors AudioMatcher.captureAndMatch / offlineSelftest live300).
- * Step 2: spectrumVector = within-band contrast + per-clip mean/tilt (L2);
+ * Live-aligned analysis: peak-anchored ~300ms window (Step 3) with energy-gated
+ * FFT frames. Match features = within-band contrast + per-clip mean/tilt (L2);
  * energyVector = peak-norm band averages for lobe/tilt cues.
  */
 function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
@@ -632,13 +634,28 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   let maxRms = 0;
   for (const r of envelope) maxRms = Math.max(maxRms, r);
   const floor = Math.max(0.02, maxRms * 0.25);
-  let onset = 0;
+  let first = 0;
   for (let i = 0; i < envelope.length; i++) {
     if (envelope[i] >= floor) {
-      onset = i * hopEnv;
+      first = i;
       break;
     }
   }
+  const searchHops = Math.max(
+    1,
+    Math.ceil(((PEAK_BURST_SEARCH_MS / 1000) * sampleRate) / hopEnv),
+  );
+  let peakI = first;
+  let peakRms = envelope[first] || 0;
+  for (let i = first; i < Math.min(envelope.length, first + searchHops); i++) {
+    if (envelope[i] > peakRms) {
+      peakRms = envelope[i];
+      peakI = i;
+    }
+  }
+  const peakSample = peakI * hopEnv;
+  const preSamples = Math.floor((PEAK_ANCHOR_PRE_MS / 1000) * sampleRate);
+  const onset = Math.max(0, peakSample - preSamples);
 
   const sliceSamples = Math.floor((LIVE_SLICE_MS / 1000) * sampleRate);
   const end = Math.min(samples.length, onset + sliceSamples);
@@ -650,6 +667,7 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   const bandAccum = new Array(32).fill(0);
   const centroids = [];
   let frames = 0;
+  const energyGate = Math.max(1e-6, peakRms * PEAK_FRAME_ENERGY_GATE);
 
   const frameMagAndBands = (start) => {
     re.fill(0);
@@ -660,6 +678,12 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
     fft(re, im);
     const mag = new Float64Array(half);
     for (let i = 0; i < half; i++) mag[i] = Math.hypot(re[i], im[i]);
+    let frameEnergy = 0;
+    for (let i = 0; i < fftSize; i++) {
+      const v = samples[start + i] || 0;
+      frameEnergy += v * v;
+    }
+    const frameRms = Math.sqrt(frameEnergy / fftSize);
     const bands = 32;
     const bandVec = new Array(bands).fill(0);
     const bandCounts = new Array(bands).fill(0);
@@ -683,12 +707,13 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
       num += freq * mag[i];
       den += mag[i];
     }
-    return { bandVec, centroid: den > 0 ? num / den : 0, mag };
+    return { bandVec, centroid: den > 0 ? num / den : 0, mag, frameRms };
   };
 
   let lastMag = null;
   for (let start = onset; start + fftSize <= end; start += hop) {
-    const { bandVec, centroid, mag } = frameMagAndBands(start);
+    const { bandVec, centroid, mag, frameRms } = frameMagAndBands(start);
+    if (frameRms < energyGate) continue;
     for (let i = 0; i < half; i++) magAccum[i] += mag[i];
     for (let i = 0; i < 32; i++) bandAccum[i] += bandVec[i];
     centroids.push(centroid);
@@ -697,7 +722,7 @@ function analyzePcmLive300(samples, sampleRate = 22050, fftSize = 2048) {
   }
 
   if (frames === 0) {
-    const start = Math.max(0, Math.min(onset, Math.max(0, samples.length - fftSize)));
+    const start = Math.max(0, Math.min(peakSample, Math.max(0, samples.length - fftSize)));
     const { bandVec, centroid, mag } = frameMagAndBands(start);
     for (let i = 0; i < half; i++) magAccum[i] = mag[i];
     for (let i = 0; i < 32; i++) bandAccum[i] = bandVec[i];
@@ -794,7 +819,7 @@ function generateFingerprints(merchant) {
     vectorBands: 32,
     windowMs: LIVE_SLICE_MS,
     matchSide: 'pickup',
-    analysis: 'live300-contrast-mean-tilt',
+    analysis: 'live300-peak-anchored-contrast-mt',
     fingerprints,
   };
 }

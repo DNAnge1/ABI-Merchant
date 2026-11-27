@@ -606,6 +606,58 @@ export function contrastMeanTiltSpectrum(
   );
 }
 
+/** Step 3: peak-anchored live300 window (pre-roll before envelope peak). */
+export const PEAK_ANCHOR_PRE_MS = 40;
+export const PEAK_ANCHOR_WINDOW_MS = 300;
+/** Skip FFT frames below this fraction of in-window peak RMS. */
+export const PEAK_FRAME_ENERGY_GATE = 0.2;
+/** After first energy crossing, search this long for the burst peak. */
+export const PEAK_BURST_SEARCH_MS = 500;
+
+/**
+ * Peak-anchored window start: first hop above 25% maxRms, then peak within
+ * {@link PEAK_BURST_SEARCH_MS}, then back up {@link PEAK_ANCHOR_PRE_MS}.
+ */
+export function peakAnchoredWindowStart(
+  envelope: number[],
+  hopEnv: number,
+  sampleRate: number,
+  opts?: { searchFromHop?: number; searchHops?: number },
+): { startSample: number; peakSample: number; peakRms: number } {
+  let maxRms = 0;
+  for (const r of envelope) if (r > maxRms) maxRms = r;
+  const floor = Math.max(0.02, maxRms * 0.25);
+  let first = opts?.searchFromHop ?? 0;
+  if (opts?.searchFromHop == null) {
+    first = 0;
+    for (let i = 0; i < envelope.length; i++) {
+      if (envelope[i] >= floor) {
+        first = i;
+        break;
+      }
+    }
+  }
+  const searchHops =
+    opts?.searchHops ??
+    Math.max(1, Math.ceil((PEAK_BURST_SEARCH_MS / 1000) * sampleRate) / hopEnv);
+  const searchEnd = Math.min(envelope.length, first + Math.ceil(searchHops));
+  let peakI = first;
+  let peakRms = envelope[first] || 0;
+  for (let i = first; i < searchEnd; i++) {
+    if (envelope[i] > peakRms) {
+      peakRms = envelope[i];
+      peakI = i;
+    }
+  }
+  const peakSample = peakI * hopEnv;
+  const preSamples = Math.floor((PEAK_ANCHOR_PRE_MS / 1000) * sampleRate);
+  return {
+    startSample: Math.max(0, peakSample - preSamples),
+    peakSample,
+    peakRms,
+  };
+}
+
 /** Prefer energyVector for lobe / brightness cues; fall back to spectrumVector. */
 export function energyOrSpectrum(
   side: { spectrumVector?: number[]; energyVector?: number[] } | null | undefined,
@@ -1515,11 +1567,34 @@ function extractPcmLobeWindow(
   onsetSample: number,
   ambientRaw: number[] | null,
 ): PcmLive300Lobe {
-  const sliceSamples = Math.floor((300 / 1000) * sampleRate);
-  const end = Math.min(samples.length, onsetSample + sliceSamples);
+  // Step 3: peak-anchor inside the lobe — find loudest hop in the next ~500ms,
+  // then take PRE+WINDOW from that peak (not the rising foot alone).
+  const hopEnv = Math.max(1, Math.floor(sampleRate * 0.01));
+  const searchEnd = Math.min(
+    samples.length,
+    onsetSample + Math.floor((PEAK_BURST_SEARCH_MS / 1000) * sampleRate),
+  );
+  let peakSample = onsetSample;
+  let lobePeakRms = 0;
+  for (let i = onsetSample; i + hopEnv <= searchEnd; i += hopEnv) {
+    let sum = 0;
+    for (let k = 0; k < hopEnv; k++) {
+      const v = samples[i + k] || 0;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / hopEnv);
+    if (rms > lobePeakRms) {
+      lobePeakRms = rms;
+      peakSample = i;
+    }
+  }
+  const preSamples = Math.floor((PEAK_ANCHOR_PRE_MS / 1000) * sampleRate);
+  const windowStart = Math.max(0, peakSample - preSamples);
+  const sliceSamples = Math.floor((PEAK_ANCHOR_WINDOW_MS / 1000) * sampleRate);
+  const end = Math.min(samples.length, windowStart + sliceSamples);
   const hop = Math.max(
     1,
-    Math.floor(fftSize / (end - onsetSample < fftSize * 2 ? 8 : 4)),
+    Math.floor(fftSize / (end - windowStart < fftSize * 2 ? 8 : 4)),
   );
   const half = fftSize >> 1;
   const magAccum = new Float64Array(half);
@@ -1528,6 +1603,7 @@ function extractPcmLobeWindow(
   let frames = 0;
   const scratch = new Float32Array(fftSize);
   let peakRms = 0;
+  const energyGate = Math.max(1e-6, lobePeakRms * PEAK_FRAME_ENERGY_GATE);
 
   const accumulateFrame = (linMag: Float32Array) => {
     for (let i = 0; i < half; i++) magAccum[i] += linMag[i];
@@ -1543,17 +1619,20 @@ function extractPcmLobeWindow(
     frames += 1;
   };
 
-  for (let start = onsetSample; start + fftSize <= end; start += hop) {
+  for (let start = windowStart; start + fftSize <= end; start += hop) {
     for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
     let e = 0;
     for (let i = 0; i < fftSize; i++) e += scratch[i] * scratch[i];
-    peakRms = Math.max(peakRms, Math.sqrt(e / fftSize));
+    const frameRms = Math.sqrt(e / fftSize);
+    peakRms = Math.max(peakRms, frameRms);
+    // Energy gate: skip quiet tail / pre-roll frames in the 300ms window.
+    if (frameRms < energyGate) continue;
     accumulateFrame(fftLinearMagnitudes(scratch));
   }
   if (frames === 0) {
     const start = Math.max(
       0,
-      Math.min(onsetSample, Math.max(0, samples.length - fftSize)),
+      Math.min(peakSample, Math.max(0, samples.length - fftSize)),
     );
     for (let i = 0; i < fftSize; i++) scratch[i] = samples[start + i] || 0;
     accumulateFrame(fftLinearMagnitudes(scratch));
@@ -1567,20 +1646,20 @@ function extractPcmLobeWindow(
     spectrumVector: contrastMeanTiltSpectrum(magAccum, sampleRate, fftSize, bands),
     energyVector: bandAccum.map((v) => v / max),
     centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
-    onsetMs: (onsetSample / sampleRate) * 1000,
+    onsetMs: (windowStart / sampleRate) * 1000,
     frames,
-    peakRms,
+    peakRms: Math.max(peakRms, lobePeakRms),
   };
 }
 
 /**
- * PCM live300 window — onset+~300ms bin-average aligned with fingerprint extract /
- * offline selftest ({@link fftLinearMagnitudes}).
+ * PCM live300 window — peak-anchored ~300ms (Step 3) aligned with fingerprint
+ * extract / offline selftest ({@link fftLinearMagnitudes}).
  *
  * Long/noisy bursts: pick up to 3 **loudest** transient lobes (not the first hop
  * above 25% maxRms — that scored raid wind at t=0). When quiet-floor is live
  * (raid ambience), subtract quiet-frame raw bands before normalize.
- * Short clean OGG / Self-Test buffers keep a single first-onset window.
+ * Short clean OGG / Self-Test: single peak-anchored, energy-gated window.
  */
 export function analyzePcmLive300Window(
   samples: Float32Array,
@@ -1660,17 +1739,10 @@ export function analyzePcmLive300Window(
     }
   }
 
-  // Short clean OGG / no clear multi-lobe: classic first-threshold onset.
+  // Short clean OGG / no clear multi-lobe: peak-anchored first burst (Step 3).
   if (lobeOnsets.length === 0) {
-    const floor = Math.max(0.02, maxRms * 0.25);
-    let onset = 0;
-    for (let i = 0; i < envelope.length; i++) {
-      if (envelope[i] >= floor) {
-        onset = i * hopEnv;
-        break;
-      }
-    }
-    lobeOnsets.push(onset);
+    const anchored = peakAnchoredWindowStart(envelope, hopEnv, sampleRate);
+    lobeOnsets.push(anchored.startSample);
   }
 
   const lobes = lobeOnsets.map((onsetSample) =>

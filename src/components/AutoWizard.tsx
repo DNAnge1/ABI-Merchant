@@ -9,6 +9,11 @@ export type AutoSettings = {
   focusGuard: boolean;
   /** Progressive disclosure: show Calibration / Confusion panel on Start Scan. */
   calibrationDebug: boolean;
+  /**
+   * Advanced Troubleshoot dry-run — field testing without wasting raids.
+   * Not Suggested Settings. Continuous session WAV + hard-reject best-guess HUD.
+   */
+  troubleshootMode: boolean;
 };
 
 type SettingDef = {
@@ -58,6 +63,12 @@ const SINGLE_SETTINGS: SettingDef[] = [
     definition:
       'Optional power-user logger on Start Scan (Actual Sound ID → Start Moving → Copy Debug JSON). Everyday misses: after Stop, use Report issue — no need for this panel.',
   },
+  {
+    id: 'troubleshootMode',
+    label: 'Troubleshoot mode (dry-run)',
+    definition:
+      'Field testing without wasting raids. Always shows best-guess top IDs + confidence (even hard-reject / below lock). Keeps one continuous session WAV across soft stop / Next item. Not the default player path.',
+  },
 ];
 
 const MULTI_SETTINGS: SettingDef[] = [
@@ -106,6 +117,12 @@ const MULTI_SETTINGS: SettingDef[] = [
     label: 'Advanced · live onset log',
     definition:
       'Optional power-user logger on Start Scan (Actual Sound ID → Start Moving → Copy Debug JSON). Everyday misses: after Stop, use Report issue — no need for this panel.',
+  },
+  {
+    id: 'troubleshootMode',
+    label: 'Troubleshoot mode (dry-run)',
+    definition:
+      'Field testing without wasting raids. Always shows best-guess top IDs + confidence (even hard-reject / below lock). Keeps one continuous session WAV across soft stop / Next item. Not the default player path.',
   },
 ];
 
@@ -232,7 +249,7 @@ function applySuggestedSettings(
     useTts: false,
     hideImages: false,
     focusGuard: !isMulti,
-    // Leave calibrationDebug as-is — opt-in via Advanced, not Suggested defaults.
+    // Leave calibrationDebug / troubleshootMode as-is — opt-in via Advanced only.
   });
 }
 
@@ -274,6 +291,10 @@ function toggleSetting(
   }
   if (s.id === 'calibrationDebug') {
     onChange({ calibrationDebug: !settings.calibrationDebug });
+    return;
+  }
+  if (s.id === 'troubleshootMode') {
+    onChange({ troubleshootMode: !settings.troubleshootMode });
   }
 }
 

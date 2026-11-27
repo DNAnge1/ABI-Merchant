@@ -27,6 +27,10 @@ import {
 } from './sensitivity';
 import { assetUrl } from './assetUrl';
 import { concatFloat32, encodeWavMono } from './browserAudio';
+import {
+  formatTopIdsDebug,
+  SESSION_PCM_MAX_SECONDS,
+} from './troubleshootMode';
 
 export type SoundKind = 'pickup' | 'drop';
 
@@ -1959,6 +1963,15 @@ export class AudioMatcher {
   private burstProcessor: ScriptProcessorNode | null = null;
   /** Zero-gain → destination keeps ScriptProcessor alive without audible output. */
   private burstMute: GainNode | null = null;
+  /**
+   * Advanced Troubleshoot: continuous session PCM across soft stop / Next item.
+   * Independent of burst tee — never cleared by Stop & Match or soft pause.
+   */
+  private troubleshootMode = false;
+  private sessionPcmChunks: Float32Array[] = [];
+  private sessionProcessor: ScriptProcessorNode | null = null;
+  private sessionMute: GainNode | null = null;
+  private sessionStartedAt = 0;
   /** Dual+Multi: count spikes → auto Stop & Match (same pcm300 path). */
   private multiContinuousArmed = false;
   private multiSpikeCount = 0;
@@ -2116,6 +2129,7 @@ export class AudioMatcher {
   /**
    * Pause analysis without tearing down the shared capture device.
    * Circle Stop Listening → keep stream so Start Listening can resume.
+   * Troubleshoot: session PCM tee stays up (do not drop the test buffer).
    */
   pauseCaptureKeepStream(detail?: string): void {
     if (this.burstRecording) {
@@ -2133,11 +2147,109 @@ export class AudioMatcher {
     this.shopCalibrating = false;
     this.shopPhase = 'in-raid';
     this.lastBurstTopId = null;
+    // Soft pause must NOT tear session PCM when Troubleshoot is gathering evidence.
+    if (this.troubleshootMode && this.hasActiveCapture()) {
+      this.ensureSessionPcmCapture();
+    }
     if (this.hasActiveCapture()) {
       this.setStatus(
         'idle',
-        detail ?? 'Paused — capture held. Start Listening again (same device).',
+        detail ??
+          (this.troubleshootMode
+            ? 'Paused — capture + session WAV held (Troubleshoot). Start Listening to resume.'
+            : 'Paused — capture held. Start Listening again (same device).'),
       );
+    }
+  }
+
+  isTroubleshootMode() {
+    return this.troubleshootMode;
+  }
+
+  /**
+   * Advanced Troubleshoot dry-run. Opt-in only — default player path unchanged.
+   * Enables continuous session PCM + hard-reject best-guess HUD.
+   */
+  setTroubleshootMode(on: boolean) {
+    this.troubleshootMode = on;
+    if (on) {
+      if (this.hasActiveCapture()) this.ensureSessionPcmCapture();
+    } else {
+      this.stopSessionPcmCapture({ clear: true });
+    }
+  }
+
+  /** Seconds of session PCM currently buffered (Troubleshoot). */
+  getSessionDurationMs(): number {
+    const sampleRate = this.ctx?.sampleRate ?? 48000;
+    let samples = 0;
+    for (const c of this.sessionPcmChunks) samples += c.length;
+    return sampleRate > 0 ? (samples / sampleRate) * 1000 : 0;
+  }
+
+  getSessionSampleCount(): number {
+    let samples = 0;
+    for (const c of this.sessionPcmChunks) samples += c.length;
+    return samples;
+  }
+
+  /** One continuous session WAV for the whole Troubleshoot test (local only). */
+  exportSessionWav(): Blob | null {
+    if (this.sessionPcmChunks.length === 0 || !this.ctx) return null;
+    const samples = concatFloat32(this.sessionPcmChunks);
+    if (samples.length < this.ctx.sampleRate * 0.05) return null;
+    return encodeWavMono(samples, this.ctx.sampleRate);
+  }
+
+  clearSessionPcm() {
+    this.sessionPcmChunks = [];
+    this.sessionStartedAt = this.sessionProcessor ? performance.now() : 0;
+  }
+
+  /** Keep / start the independent session PCM tee (does not touch burst buffers). */
+  private ensureSessionPcmCapture(): void {
+    if (!this.troubleshootMode || !this.ctx || !this.source) return;
+    if (this.sessionProcessor) return;
+    const proc = this.ctx.createScriptProcessor(4096, 1, 1);
+    const mute = this.ctx.createGain();
+    mute.gain.value = 0;
+    const maxSamples = Math.floor(
+      (this.ctx.sampleRate || 48000) * SESSION_PCM_MAX_SECONDS,
+    );
+    proc.onaudioprocess = (ev) => {
+      if (!this.troubleshootMode) return;
+      const input = ev.inputBuffer.getChannelData(0);
+      this.sessionPcmChunks.push(new Float32Array(input));
+      let samples = 0;
+      for (const c of this.sessionPcmChunks) samples += c.length;
+      while (samples > maxSamples && this.sessionPcmChunks.length > 1) {
+        samples -= this.sessionPcmChunks.shift()!.length;
+      }
+    };
+    this.source.connect(proc);
+    proc.connect(mute);
+    mute.connect(this.ctx.destination);
+    this.sessionProcessor = proc;
+    this.sessionMute = mute;
+    if (this.sessionStartedAt <= 0) this.sessionStartedAt = performance.now();
+  }
+
+  private stopSessionPcmCapture(opts?: { clear?: boolean }): void {
+    try {
+      this.sessionProcessor?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.sessionMute?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    this.sessionProcessor = null;
+    this.sessionMute = null;
+    if (opts?.clear) {
+      this.sessionPcmChunks = [];
+      this.sessionStartedAt = 0;
     }
   }
 
@@ -2153,11 +2265,15 @@ export class AudioMatcher {
     this.shopPhase = 'in-raid';
     this.armFocusGrace();
     this.startGraceUntil = performance.now() + this.startGraceMs;
+    // Soft resume must keep Troubleshoot session WAV accumulating.
+    if (this.troubleshootMode) this.ensureSessionPcmCapture();
     const via =
       this.captureSource === 'microphone' ? 'via mic/loopback' : 'via screen share';
     this.setStatus(
       'listening',
-      `In Raid (gate closed) · ${via} · capture reused — At Shop when ready`,
+      this.troubleshootMode
+        ? `In Raid · ${via} · Troubleshoot session WAV held — At Shop when ready`
+        : `In Raid (gate closed) · ${via} · capture reused — At Shop when ready`,
     );
     if (!this.raf) this.loop();
     return true;
@@ -2871,17 +2987,33 @@ export class AudioMatcher {
         if (chosen.length >= MAX_SPIKES) break;
       }
     }
-    // No under-threshold invent: quiet buffer stays a soft fail / empty match path.
+    // No under-threshold invent on the default player path (freeze / soft fail).
+    // Troubleshoot dry-run: score loudest frames anyway so HUD never blanks.
+    let troubleshootInvent = false;
     if (!chosen.length) {
-      return this.failBurst({
-        ...empty,
-        threshold,
-        reason: `Stop & Match: no real onset above noise (silence). (${diagFor(
-          Math.max(...frames.map((f) => f.rms), 0),
-          0,
-        )}) Wait for a cargo click, then Stop & Match.`,
-      });
+      if (this.troubleshootMode) {
+        const loud = [...frames].sort((a, b) => b.rms - a.rms || b.t - a.t);
+        for (const f of loud) {
+          if (chosen.some((c) => Math.abs(c.t - f.t) < 60)) continue;
+          chosen.push(f);
+          if (chosen.length >= MAX_SPIKES) break;
+        }
+        troubleshootInvent = chosen.length > 0;
+      }
+      if (!chosen.length) {
+        return this.failBurst({
+          ...empty,
+          threshold,
+          reason: `Stop & Match: no real onset above noise (silence). (${diagFor(
+            Math.max(...frames.map((f) => f.rms), 0),
+            0,
+          )}) Wait for a cargo click, then Stop & Match.`,
+        });
+      }
     }
+    const inventNote = troubleshootInvent
+      ? ' · Troubleshoot invent (under-threshold loudest)'
+      : '';
 
     const peakRms = Math.max(...chosen.map((c) => c.rms), ...frames.map((f) => f.rms), 0);
     const quiet = peakRms < effectiveBaseline + 0.003;
@@ -3092,7 +3224,7 @@ export class AudioMatcher {
         ? `pcm300/${pcm.pcmSource}`
         : 'spikes-only';
     const voteNote =
-      matchSource === 'pcm-live300'
+      (matchSource === 'pcm-live300'
         ? ` · ${sourceNote}${pcmLobeNote}`
         : ` · ${sourceNote}` +
           (majorityOk && majorityId != null
@@ -3100,23 +3232,27 @@ export class AudioMatcher {
             : spikeVotes.length
               ? ` · votes ${[...voteCount.entries()].map(([id, i]) => `#${id}×${i.n}`).join(',')}`
               : '') +
-          pcmLobeNote;
+          pcmLobeNote) + inventNote;
 
     if (!top) {
       const quietNote = quiet
         ? ' Too quiet vs shop floor — check mic/loopback level, then Play captured audio.'
         : '';
+      const topDebug = formatTopIdsDebug(allMatches, 5);
+      const weakReason = weak
+        ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats}${voteNote})`
+        : `Stop & Match: no fingerprint match.${quietNote} (${stats}${voteNote})`;
       return this.failBurst({
-        matches: allMatches.slice(0, 3),
+        matches: allMatches.slice(0, 5),
         frameCount: frames.length,
         spikeCount: chosen.length,
         peakRms,
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: weak
-          ? `Stop & Match: weak match Group #${weak.soundId} at ${weak.confidence}% (need ≥${floor}%).${quietNote} (${stats}${voteNote})`
-          : `Stop & Match: no fingerprint match.${quietNote} (${stats}${voteNote})`,
+        reason: this.troubleshootMode
+          ? `Troubleshoot dry-run · below lock floor · top ${topDebug} — showing best guess. ${weakReason}`
+          : weakReason,
       });
     }
 
@@ -3256,18 +3392,23 @@ export class AudioMatcher {
     }
 
     // Absolute gate: never lock weak #28 — runs on FINAL top (after residual + pitch).
+    // Troubleshoot: still return ranked matches (no blank HUD) + rich top-ID debug.
     const finalReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
     if (finalReject) {
       this.lastBurstTopId = null;
+      const topDebug = formatTopIdsDebug(allMatches, 5);
+      const rejectReason = this.troubleshootMode
+        ? `Troubleshoot dry-run · hard-reject (not locked) · top ${topDebug} — showing best guess. ${finalReject} (${stats}${voteNote})`
+        : `${finalReject} (${stats}${voteNote})`;
       return this.failBurst({
-        matches: allMatches.slice(0, 3),
+        matches: allMatches.slice(0, 5),
         frameCount: frames.length,
         spikeCount: chosen.length,
         peakRms,
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: `${finalReject} (${stats}${voteNote})`,
+        reason: rejectReason,
       });
     }
 
@@ -3304,15 +3445,18 @@ export class AudioMatcher {
         chosen.length < 2
           ? ' Move the cargo 2–3 times before Stop & Match.'
           : ' Move the same cargo again (2–3 clean clicks).';
+      const ambReason = `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap).${tip}`;
       return this.failBurst({
-        matches: allMatches.slice(0, 3),
+        matches: allMatches.slice(0, 5),
         frameCount: frames.length,
         spikeCount: chosen.length,
         peakRms,
         baseline: effectiveBaseline,
         threshold,
         ...captureBase,
-        reason: `Stop & Match: ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap).${tip}`,
+        reason: this.troubleshootMode
+          ? `Troubleshoot dry-run · ambiguous (not locked) · top ${formatTopIdsDebug(allMatches, 5)} — showing best guess. ${ambReason}`
+          : ambReason,
       });
     }
 
@@ -3380,6 +3524,9 @@ export class AudioMatcher {
     this.burstFrames = [];
     this.clearMultiState();
     this.stopBurstPcmCapture();
+    // Fresh capture device — session tee must reattach; keep buffer only if
+    // Troubleshoot is still on (field test may have re-shared mid-raid).
+    this.stopSessionPcmCapture({ clear: false });
     this.shopPhase = 'in-raid';
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = analyserFftSize(this.ctx.sampleRate);
@@ -3387,6 +3534,7 @@ export class AudioMatcher {
     this.source = this.ctx.createMediaStreamSource(this.stream);
     this.source.connect(this.analyser);
     // Do not connect to destination — keep capture silent.
+    if (this.troubleshootMode) this.ensureSessionPcmCapture();
 
     this.stream.getVideoTracks().forEach((t) => {
       t.addEventListener('ended', () => {
@@ -3492,6 +3640,8 @@ export class AudioMatcher {
     this.lastBurstTopId = null;
     this.clearMultiState();
     this.stopBurstPcmCapture();
+    // Full teardown ends the test session — clear continuous Troubleshoot PCM.
+    this.stopSessionPcmCapture({ clear: true });
     this.shopPhase = 'in-raid';
     this.rmsBaseline = 0;
     if (this.ctx) {
@@ -3827,6 +3977,29 @@ export class AudioMatcher {
     const weak = allMatches[0];
 
     if (!top) {
+      if (this.troubleshootMode && weak) {
+        const topDebug = formatTopIdsDebug(allMatches, 5);
+        this.surfaceListening(
+          `Troubleshoot dry-run · below auto floor · top ${topDebug} — showing best guess.`,
+        );
+        this.onMatch?.({
+          matches: allMatches.slice(0, 5),
+          allMatches,
+          peakMs,
+          spectrumVector,
+          capturedCentroid: centroid,
+          source: 'auto',
+          diagnostics: {
+            peakRms: peakMs / 1000,
+            noiseFloor: this.noiseFloor,
+            rmsBaseline: this.rmsBaseline,
+            onsetDurationMs: this.sliceMs,
+            sampleRate: this.ctx?.sampleRate ?? 0,
+            captureMode: this.captureSource,
+          },
+        });
+        return allMatches.slice(0, 5);
+      }
       this.surfaceListening(
         weak
           ? `Auto… weak match ignored (Group ${weak.soundId} ${weak.confidence}% < ${autoFloor}% floor)`
@@ -3837,6 +4010,30 @@ export class AudioMatcher {
 
     const sinkReject = hardRejectDullSink(top) ?? directedSinkRejectReason(top, centroid);
     if (sinkReject) {
+      // Default: blank auto path (no lock). Troubleshoot: emit best-guess HUD.
+      if (this.troubleshootMode) {
+        const topDebug = formatTopIdsDebug(allMatches, 5);
+        this.surfaceListening(
+          `Troubleshoot dry-run · hard-reject (not locked) · top ${topDebug}. ${sinkReject}`,
+        );
+        this.onMatch?.({
+          matches: allMatches.slice(0, 5),
+          allMatches,
+          peakMs,
+          spectrumVector,
+          capturedCentroid: centroid,
+          source: 'auto',
+          diagnostics: {
+            peakRms: peakMs / 1000,
+            noiseFloor: this.noiseFloor,
+            rmsBaseline: this.rmsBaseline,
+            onsetDurationMs: this.sliceMs,
+            sampleRate: this.ctx?.sampleRate ?? 0,
+            captureMode: this.captureSource,
+          },
+        });
+        return allMatches.slice(0, 5);
+      }
       this.surfaceListening(sinkReject);
       return [];
     }
@@ -3878,6 +4075,29 @@ export class AudioMatcher {
       !metal6Lock &&
       !id2Lock
     ) {
+      if (this.troubleshootMode) {
+        const topDebug = formatTopIdsDebug(allMatches, 5);
+        this.surfaceListening(
+          `Troubleshoot dry-run · ambiguous (not locked) · top ${topDebug}. Use Move Item burst or read best guess.`,
+        );
+        this.onMatch?.({
+          matches: allMatches.slice(0, 5),
+          allMatches,
+          peakMs,
+          spectrumVector,
+          capturedCentroid: centroid,
+          source: 'auto',
+          diagnostics: {
+            peakRms: peakMs / 1000,
+            noiseFloor: this.noiseFloor,
+            rmsBaseline: this.rmsBaseline,
+            onsetDurationMs: this.sliceMs,
+            sampleRate: this.ctx?.sampleRate ?? 0,
+            captureMode: this.captureSource,
+          },
+        });
+        return allMatches.slice(0, 5);
+      }
       this.surfaceListening(
         `Auto… ambiguous (Group #${top.soundId} ${top.confidence}% vs #${runner?.soundId} ${runner?.confidence}%, need ≥${needGap}pt gap). Use Move Item burst instead.`,
       );

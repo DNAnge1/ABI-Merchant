@@ -334,44 +334,115 @@ export function BurstCaptureControls(props: {
   /** Post-stop happy path: wrong result → Report issue (opens miss modal). */
   onReportIssue?: () => void;
   showReportIssue?: boolean;
+  /** Advanced Troubleshoot: continuous session WAV across soft stop / Next. */
+  troubleshoot?: boolean;
+  sessionDurationMs?: number;
+  onDownloadSession?: () => void;
+  onCopyDebug?: () => void;
+  onClearSession?: () => void;
 }) {
-  if (!props.captureUrl) return null;
+  const showBurst = Boolean(props.captureUrl);
+  const showTroubleshoot = props.troubleshoot === true;
+  if (!showBurst && !showTroubleshoot) return null;
+
+  const sessionSec =
+    props.sessionDurationMs != null
+      ? Math.round(props.sessionDurationMs / 1000)
+      : 0;
+
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2"
+      className="flex flex-col gap-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-2"
       data-burst-capture-controls
+      data-troubleshoot={showTroubleshoot ? '1' : undefined}
     >
-      <p className="m-0 text-[11px] text-[var(--muted)] grow basis-full sm:basis-auto sm:grow-0">
-        Captured burst
-        {props.captureDurationMs != null
-          ? ` · ${Math.round(props.captureDurationMs)}ms`
-          : ''}{' '}
-        — hear whether the site got the cargo noise
-      </p>
-      <button
-        type="button"
-        onClick={props.onPlayCapture}
-        className="rounded px-2.5 py-1 text-[11px] font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10"
-      >
-        ▶ Play captured audio
-      </button>
-      <button
-        type="button"
-        onClick={props.onDownloadCapture}
-        className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
-      >
-        Download WAV
-      </button>
-      {props.showReportIssue && props.onReportIssue && (
-        <button
-          type="button"
-          onClick={props.onReportIssue}
-          className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)] hover:bg-[var(--mythic)]/30"
-          data-report-issue
-          title="Wrong result? Pick the real item and send diagnostics (no audio upload)"
-        >
-          Report issue
-        </button>
+      {showTroubleshoot && (
+        <div className="flex flex-wrap items-center gap-2" data-troubleshoot-session>
+          <p className="m-0 text-[11px] text-[var(--warn)] grow basis-full sm:basis-auto sm:grow-0 font-semibold">
+            Troubleshoot · session WAV
+            {sessionSec > 0 ? ` · ${sessionSec}s` : ' · recording…'} — kept across soft stop /
+            Next item
+          </p>
+          <button
+            type="button"
+            onClick={props.onDownloadSession}
+            disabled={!props.onDownloadSession || sessionSec < 1}
+            className="rounded px-2.5 py-1 text-[11px] font-semibold bg-[var(--warn)]/15 border border-[var(--warn)] text-[var(--warn)] hover:bg-[var(--warn)]/25 disabled:opacity-40"
+            data-download-session-wav
+            title="One continuous WAV of the whole Troubleshoot test (local only)"
+          >
+            Download Session WAV
+          </button>
+          {props.onCopyDebug && (
+            <button
+              type="button"
+              onClick={props.onCopyDebug}
+              className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+              data-copy-troubleshoot-debug
+            >
+              Copy Debug
+            </button>
+          )}
+          {props.onClearSession && (
+            <button
+              type="button"
+              onClick={props.onClearSession}
+              className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--muted)] hover:border-[var(--warn)]"
+            >
+              Clear session buffer
+            </button>
+          )}
+        </div>
+      )}
+
+      {showBurst && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="m-0 text-[11px] text-[var(--muted)] grow basis-full sm:basis-auto sm:grow-0">
+            {showTroubleshoot ? 'Last onset / burst clip (optional)' : 'Captured burst'}
+            {props.captureDurationMs != null
+              ? ` · ${Math.round(props.captureDurationMs)}ms`
+              : ''}{' '}
+            — hear whether the site got the cargo noise
+          </p>
+          <button
+            type="button"
+            onClick={props.onPlayCapture}
+            className="rounded px-2.5 py-1 text-[11px] font-semibold border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10"
+          >
+            ▶ Play captured audio
+          </button>
+          <button
+            type="button"
+            onClick={props.onDownloadCapture}
+            className="rounded px-2.5 py-1 text-[11px] font-medium border border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
+          >
+            {showTroubleshoot ? 'Download onset clip' : 'Download WAV'}
+          </button>
+          {props.showReportIssue && props.onReportIssue && (
+            <button
+              type="button"
+              onClick={props.onReportIssue}
+              className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)] hover:bg-[var(--mythic)]/30"
+              data-report-issue
+              title="Wrong result? Pick the real item and send diagnostics (no audio upload)"
+            >
+              Report issue
+            </button>
+          )}
+        </div>
+      )}
+
+      {!showBurst && showTroubleshoot && props.showReportIssue && props.onReportIssue && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={props.onReportIssue}
+            className="rounded px-3 py-1.5 text-[11px] font-semibold bg-[var(--mythic)]/20 border border-[var(--mythic)] text-[var(--mythic-gold)] hover:bg-[var(--mythic)]/30"
+            data-report-issue
+          >
+            Report issue
+          </button>
+        </div>
       )}
     </div>
   );

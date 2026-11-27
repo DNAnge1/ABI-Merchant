@@ -7,8 +7,13 @@
  * Modes:
  *   reextract — full-file analyzePcm (same as fingerprint generator)
  *   live300   — ~300ms post-onset average (closer to live AnalyserNode slice)
+ *   --scoreboard — also run fingerprint Step-1 baseline scoreboard
+ *                  (pairwise + muffled Top-1 + field WAVs → docs/fingerprint-baseline.md)
  *
- * Usage: node scripts/offlineSelftest.mjs
+ * Usage:
+ *   node scripts/offlineSelftest.mjs
+ *   node scripts/offlineSelftest.mjs --scoreboard
+ *   npm run selftest:scoreboard
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -577,6 +582,18 @@ function main() {
   console.log(JSON.stringify(summary, null, 2));
   console.log(`wrote ${OUT_MD}`);
   console.log(`wrote ${OUT_JSON}`);
+
+  if (process.argv.includes('--scoreboard')) {
+    console.log('[selftest] running fingerprint scoreboard…');
+    const scoreboard = spawnSync(
+      process.execPath,
+      [join(__dirname, 'fingerprintScoreboard.mjs')],
+      { stdio: 'inherit', cwd: ROOT },
+    );
+    if (scoreboard.status !== 0) {
+      process.exit(scoreboard.status ?? 1);
+    }
+  }
 }
 
 main();

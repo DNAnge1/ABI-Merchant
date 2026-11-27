@@ -39,8 +39,8 @@ const PKG_PATH = join(ROOT, 'package.json');
 const STORE = '/cursor/stores/bc-5c080d60-6249-418b-b13a-8bf42c7f6cd6';
 const MEDIA_ROOT = join(STORE, 'media');
 /** Step-2+ scoreboard; Step-1 baseline lives at fingerprint-baseline.md (frozen). */
-const OUT_MD = join(STORE, 'docs/fingerprint-step2.md');
-const OUT_JSON = join(STORE, 'internal/fingerprint-step2.json');
+const OUT_MD = join(STORE, 'docs/fingerprint-step3.md');
+const OUT_JSON = join(STORE, 'internal/fingerprint-step3.json');
 
 const FFT_SIZE = 2048;
 const BANDS = 32;
@@ -410,31 +410,50 @@ function frameMagnitude(samples, start, window, fftSize) {
   return mag;
 }
 
+const PEAK_ANCHOR_PRE_MS = 40;
+const PEAK_BURST_SEARCH_MS = 500;
+const PEAK_FRAME_ENERGY_GATE = 0.2;
+
 /**
- * Live300 post-onset — Step 2: mean-mag within-band contrast + per-clip mean/tilt.
+ * Live300 Step 3: peak-anchored ~300ms, energy-gated frames, contrast + mean/tilt.
  * energyVector keeps peak-norm band avgs for lobe/tilt cues.
  */
 function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
   const window = hannWindow(FFT_SIZE);
   const hop = Math.floor(FFT_SIZE / 4);
   const hopEnv = Math.max(1, Math.floor(sampleRate * 0.01));
-  let onset = 0;
-  let maxRms = 0;
+  const envelope = [];
   for (let i = 0; i + hopEnv <= samples.length; i += hopEnv) {
     let sum = 0;
     for (let k = 0; k < hopEnv; k++) sum += samples[i + k] * samples[i + k];
-    const rms = Math.sqrt(sum / hopEnv);
-    if (rms > maxRms) maxRms = rms;
+    envelope.push(Math.sqrt(sum / hopEnv));
   }
+  let maxRms = 0;
+  for (const r of envelope) if (r > maxRms) maxRms = r;
   const floor = Math.max(0.02, maxRms * 0.25);
-  for (let i = 0; i + hopEnv <= samples.length; i += hopEnv) {
-    let sum = 0;
-    for (let k = 0; k < hopEnv; k++) sum += samples[i + k] * samples[i + k];
-    if (Math.sqrt(sum / hopEnv) >= floor) {
-      onset = i;
+  let first = 0;
+  for (let i = 0; i < envelope.length; i++) {
+    if (envelope[i] >= floor) {
+      first = i;
       break;
     }
   }
+  const searchHops = Math.max(
+    1,
+    Math.ceil(((PEAK_BURST_SEARCH_MS / 1000) * sampleRate) / hopEnv),
+  );
+  let peakI = first;
+  let peakRms = envelope[first] || 0;
+  for (let i = first; i < Math.min(envelope.length, first + searchHops); i++) {
+    if (envelope[i] > peakRms) {
+      peakRms = envelope[i];
+      peakI = i;
+    }
+  }
+  const peakSample = peakI * hopEnv;
+  const preSamples = Math.floor((PEAK_ANCHOR_PRE_MS / 1000) * sampleRate);
+  const onset = Math.max(0, peakSample - preSamples);
+  const energyGate = Math.max(1e-6, peakRms * PEAK_FRAME_ENERGY_GATE);
 
   const sliceSamples = Math.floor((LIVE_SLICE_MS / 1000) * sampleRate);
   const end = Math.min(samples.length, onset + sliceSamples);
@@ -444,6 +463,12 @@ function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
   const centroids = [];
   let frames = 0;
   for (let start = onset; start + FFT_SIZE <= end; start += hop) {
+    let e = 0;
+    for (let i = 0; i < FFT_SIZE; i++) {
+      const v = samples[start + i] || 0;
+      e += v * v;
+    }
+    if (Math.sqrt(e / FFT_SIZE) < energyGate) continue;
     const mag = frameMagnitude(samples, start, window, FFT_SIZE);
     for (let i = 0; i < half; i++) magAccum[i] += mag[i];
     const bands = magnitudeToBandsRaw(mag, sampleRate, FFT_SIZE, BANDS);
@@ -452,7 +477,12 @@ function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
     frames++;
   }
   if (frames === 0) {
-    const mag = frameMagnitude(samples, Math.max(0, samples.length - FFT_SIZE), window, FFT_SIZE);
+    const mag = frameMagnitude(
+      samples,
+      Math.max(0, Math.min(peakSample, Math.max(0, samples.length - FFT_SIZE))),
+      window,
+      FFT_SIZE,
+    );
     for (let i = 0; i < half; i++) magAccum[i] = mag[i];
     const bands = magnitudeToBandsRaw(mag, sampleRate, FFT_SIZE, BANDS);
     for (let i = 0; i < BANDS; i++) bandAccum[i] = bands[i];

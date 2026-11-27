@@ -55,6 +55,7 @@ import {
   detectBrowser,
   rmsFromAnalyser,
   supportsGetDisplayMedia,
+  wavBlobIsSilent,
   type VerifyState,
 } from './utils/browserAudio';
 import {
@@ -64,6 +65,7 @@ import {
   type BootstrappedCapture,
 } from './utils/displayCapture';
 import { captureMicWithAudio } from './utils/micCapture';
+import { isRecoveredShareError } from './utils/sessionErrorKind';
 import { redLikelihoodPercent } from './utils/sizeGroups';
 import {
   appendCalibrationEvent,
@@ -223,6 +225,8 @@ export default function App() {
   const burstCaptureBlobRef = useRef<Blob | null>(null);
   const burstCaptureUrlRef = useRef<string | null>(null);
   const burstAudioRef = useRef<HTMLAudioElement | null>(null);
+  /** Last clean live-onset WAV — Download prefers this when full-burst is silent. */
+  const lastOnsetWavRef = useRef<{ blob: Blob; durationMs: number } | null>(null);
   const [manualSoundId, setManualSoundId] = useState<number | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>(IDLE_VERIFY);
@@ -563,6 +567,15 @@ export default function App() {
       });
       liveConsensusRef.current = next;
 
+      // Stash last clean onset WAV for Download when full-burst export is silent.
+      if (peek.windowFilled) {
+        const onsetWav = matcher.extractBurstOnsetWav(peek.onsetMs);
+        if (onsetWav) {
+          lastOnsetWavRef.current = { blob: onsetWav, durationMs: peek.onsetDurationMs };
+          clearRecoveredShareErrorsRef.current();
+        }
+      }
+
       // Calibration / Confusion: log each new clean onset when ground-truth is set.
       // Wait until the live300 window is filled + PCM clip is full (~400ms) —
       // logging on the first incomplete peek produced truncated #11/#25 clips.
@@ -780,6 +793,20 @@ export default function App() {
   const pushSessionErrorRef = useRef(pushSessionError);
   pushSessionErrorRef.current = pushSessionError;
 
+  /**
+   * Once audio is flowing (capture ok / Live Peek / Final lock), drop sticky
+   * share-picker errors so they don't block the HUD.
+   */
+  const clearRecoveredShareErrors = useCallback(() => {
+    setSessionErrors((prev) => prev.filter((e) => !isRecoveredShareError(e.message)));
+    setSuggestMicFallback(false);
+    setErrorModalOpen(false);
+    setStatus((s) => (s === 'error' ? 'listening' : s));
+    setStatusDetail((d) => (d && isRecoveredShareError(d) ? undefined : d));
+  }, []);
+  const clearRecoveredShareErrorsRef = useRef(clearRecoveredShareErrors);
+  clearRecoveredShareErrorsRef.current = clearRecoveredShareErrors;
+
   /** Phase 2: always surface top-N best guess from existing scores (never blank). */
   const applyBestGuess = useCallback(
     (
@@ -844,7 +871,7 @@ export default function App() {
       };
 
       if (opts.captureBlob) {
-        adoptBurstCapture(opts.captureBlob, opts.captureDurationMs ?? 0);
+        void adoptBurstCaptureSmart(opts.captureBlob, opts.captureDurationMs ?? 0);
       }
       if (opts.toastMsg) {
         setShopToast(opts.toastMsg);
@@ -896,6 +923,7 @@ export default function App() {
       stopLockGenRef.current += 1;
       setLivePreview(null);
       liveConsensusRef.current = emptyLiveConsensus();
+      clearRecoveredShareErrorsRef.current();
 
       trackCommunityScan({
         soundId: lockedScan.match.soundId,
@@ -932,7 +960,7 @@ export default function App() {
         return;
       }
 
-      // Style A — show result (firm lock or low-confidence best guess)
+      // Style A — show result; keep MediaStream + At Shop (Next resumes burst).
       matcherRef.current?.setListeningPaused(true);
       setSinglePhase('locked');
       setLockThanks(false);
@@ -1389,7 +1417,99 @@ export default function App() {
     });
   }
 
-  /** Skip / Report-issue completion: clear lock UI (Correct uses acknowledgeCorrect). */
+  /**
+   * Next item / Skip: dismiss result card and resume live narrowing for the
+   * next cargo click. Keeps MediaStream — no re-share. Restores At Shop +
+   * Start Moving burst when a Final Stop & Match had ended the burst.
+   * Aligns with Correct-keeps-listening (#74): capture session stays up.
+   */
+  async function nextCargo(opts?: { logSkip?: boolean }) {
+    const hadLock = locked;
+    const logSkip = opts?.logSkip !== false;
+    if (hadLock && logSkip && !lockThanks) {
+      logFeedback({
+        predicted: hadLock.match,
+        redPct: hadLock.redPct,
+        feedback: 'skip',
+        spectrumVector: hadLock.spectrumVector,
+        capturedCentroid: hadLock.capturedCentroid,
+      });
+    }
+    setLocked(null);
+    setLockThanks(false);
+    setLivePreview(null);
+    liveConsensusRef.current = emptyLiveConsensus();
+    lastLoggedOnsetRef.current = null;
+    setSinglePhase('ready');
+    setMissOpen(false);
+    setMissTarget(null);
+    setShopToastSticky(false);
+    stopLockGenRef.current += 1;
+    clearRecoveredShareErrors();
+
+    const matcher = matcherRef.current;
+    if (!matcher?.hasActiveCapture()) {
+      setCapturing(false);
+      setAtShop(false);
+      setRecordingMove(false);
+      setStatus('idle');
+      setStatusDetail('Capture gone — Start Listening again.');
+      setShopToast('Capture gone — Start Listening again.');
+      updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Ready' });
+      return;
+    }
+
+    // Soft-resume: keep share, stay capturing, re-arm At Shop + move burst.
+    setCapturing(true);
+    setCaptureSource(matcher.getCaptureSource());
+    matcher.setAutoDetectArmed(false);
+    matcher.setListeningPaused(false);
+
+    const multi =
+      scanStyleRef.current === 'continuous' && monitorRef.current === 'dual';
+    try {
+      if (!matcher.isAtShopGate()) {
+        setShopCalibrating(true);
+        await matcher.setAtShop(true);
+        setAtShop(true);
+      } else {
+        setAtShop(true);
+      }
+      if (multi) {
+        // Multi: leave armed path to the user / existing rearm — just clear card.
+        setRecordingMove(matcher.isBurstRecording() || matcher.isMultiContinuousArmed());
+        setStatus('listening');
+        setStatusDetail('Next cargo — Arm Multi / keep scanning.');
+        setShopToast('Next cargo — drag when ready.');
+      } else {
+        clearBurstCapture();
+        await matcher.startItemMoveBurst();
+        setRecordingMove(true);
+        setStatus('capturing');
+        setStatusDetail('Next cargo — drag it; Live Peek updates.');
+        setShopToast('Next cargo — drag it; Live Peek updates.');
+      }
+      updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Next cargo' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setShopToast(`Next item: ${msg}`);
+      setStatusDetail(msg);
+      // Still keep share — user can Start Moving manually.
+      setAtShop(matcher.isAtShopGate());
+      setCapturing(true);
+      setRecordingMove(false);
+      setStatus('listening');
+    } finally {
+      setShopCalibrating(false);
+    }
+  }
+
+  const nextCargoRef = useRef(nextCargo);
+  nextCargoRef.current = nextCargo;
+  const livePreviewRef = useRef(livePreview);
+  livePreviewRef.current = livePreview;
+
+  /** Report-issue completion: clear lock then resume next-cargo listening. */
   function finishLocked(
     feedback: 'up' | 'down' | 'skip',
     actual?: { soundId: number; itemId?: number; itemName?: string },
@@ -1398,6 +1518,10 @@ export default function App() {
     // Correct must keep the card — use acknowledgeCorrect instead.
     if (feedback === 'up') {
       acknowledgeCorrect();
+      return;
+    }
+    if (feedback === 'skip') {
+      void nextCargo({ logSkip: true });
       return;
     }
     logFeedback({
@@ -1421,25 +1545,22 @@ export default function App() {
         allMatches: [locked.match, ...locked.alt],
       });
     }
-    setLocked(null);
-    setLockThanks(false);
-    setSinglePhase('ready');
-    setMissOpen(false);
-    setMissTarget(null);
-    // Stay burst-only after skip/miss — don't leave auto-onset hot for heals.
-    matcherRef.current?.setAutoDetectArmed(false);
-    matcherRef.current?.setListeningPaused(false);
-    updatePip({ group: 0, confidence: 0, redPct: 0, status: 'Ready' });
+    // After miss report — same soft next-cargo resume (don't tear down share).
+    void nextCargo({ logSkip: false });
   }
 
   finishLockedRef.current = (fb) => finishLocked(fb);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (singlePhaseRef.current !== 'locked') return;
+      const hasCard =
+        singlePhaseRef.current === 'locked' ||
+        lockedRef.current != null ||
+        livePreviewRef.current != null;
+      if (!hasCard) return;
       if (e.code === 'Space' || e.code === 'Escape') {
         e.preventDefault();
-        finishLockedRef.current('skip');
+        void nextCargoRef.current({ logSkip: true });
       }
     };
     window.addEventListener('keydown', onKey);
@@ -1706,6 +1827,7 @@ export default function App() {
         setCaptureSource(matcherRef.current.getCaptureSource());
         setStatus('listening');
         setStatusDetail(undefined);
+        clearRecoveredShareErrors();
         return;
       }
     }
@@ -1716,6 +1838,7 @@ export default function App() {
       setCapturing(true);
       const src = matcherRef.current?.getCaptureSource() ?? 'display';
       setCaptureSource(src);
+      clearRecoveredShareErrors();
       postCommunityEvent(src === 'microphone' ? 'capture_mic' : 'capture_display');
     } catch (err) {
       setCapturing(false);
@@ -1751,6 +1874,7 @@ export default function App() {
       setCapturing(true);
       setCaptureSource('microphone');
       setSuggestMicFallback(false);
+      clearRecoveredShareErrors();
       postCommunityEvent('capture_mic');
     } catch (err) {
       setCapturing(false);
@@ -1869,29 +1993,69 @@ export default function App() {
     setBurstCaptureUrl(url);
   }
 
-  function playBurstCapture() {
-    if (!burstCaptureUrl) return;
-    if (burstAudioRef.current) {
-      burstAudioRef.current.pause();
-      burstAudioRef.current = null;
+  /** Prefer last onset clip when the full-burst WAV is empty/silent. */
+  async function adoptBurstCaptureSmart(blob: Blob | null, durationMs: number) {
+    const silent = await wavBlobIsSilent(blob);
+    if (!silent && blob) {
+      adoptBurstCapture(blob, durationMs);
+      return;
     }
-    const audio = new Audio(burstCaptureUrl);
-    burstAudioRef.current = audio;
-    void audio.play().catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setShopToast(`Could not play captured audio: ${msg}`);
-    });
+    const onset = lastOnsetWavRef.current;
+    if (onset) {
+      adoptBurstCapture(onset.blob, onset.durationMs);
+      return;
+    }
+    if (blob) adoptBurstCapture(blob, durationMs);
+  }
+
+  async function resolveDownloadBlob(): Promise<{ blob: Blob; label: string } | null> {
+    const burst = burstCaptureBlobRef.current;
+    if (burst && !(await wavBlobIsSilent(burst))) {
+      return { blob: burst, label: 'burst' };
+    }
+    const onset = lastOnsetWavRef.current;
+    if (onset) return { blob: onset.blob, label: 'onset' };
+    if (burst) return { blob: burst, label: 'burst' };
+    return null;
+  }
+
+  function playBurstCapture() {
+    void (async () => {
+      const resolved = await resolveDownloadBlob();
+      if (!resolved) return;
+      if (burstAudioRef.current) {
+        burstAudioRef.current.pause();
+        burstAudioRef.current = null;
+      }
+      const url = URL.createObjectURL(resolved.blob);
+      const audio = new Audio(url);
+      burstAudioRef.current = audio;
+      audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+      void audio.play().catch((err) => {
+        URL.revokeObjectURL(url);
+        const msg = err instanceof Error ? err.message : String(err);
+        setShopToast(`Could not play captured audio: ${msg}`);
+      });
+    })();
   }
 
   function downloadBurstCapture() {
-    const blob = burstCaptureBlobRef.current;
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `abi-burst-capture-${Date.now()}.wav`;
-    a.click();
-    URL.revokeObjectURL(url);
+    void (async () => {
+      const resolved = await resolveDownloadBlob();
+      if (!resolved) return;
+      const url = URL.createObjectURL(resolved.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download =
+        resolved.label === 'onset'
+          ? `abi-onset-clip-${Date.now()}.wav`
+          : `abi-burst-capture-${Date.now()}.wav`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (resolved.label === 'onset') {
+        setShopToast('Downloaded last onset clip (full burst was silent).');
+      }
+    })();
   }
 
   async function handleStartMoveBurst() {
@@ -1933,10 +2097,11 @@ export default function App() {
     setRecordingMove(keepMulti);
     try {
       const result = await matcherRef.current.stopItemMoveBurst();
-      adoptBurstCapture(result.captureBlob, result.captureDurationMs);
+      await adoptBurstCaptureSmart(result.captureBlob, result.captureDurationMs);
       // Always toast diagnostics (peak/floor/frames) — never a silent no-op.
       setShopToast(result.reason);
       setStatusDetail(result.reason);
+      clearRecoveredShareErrors();
       if (!result.ok) {
         setStatus('listening');
         if (keepMulti) setShopToastSticky(true);
@@ -1964,22 +2129,22 @@ export default function App() {
         setRecordingMove(true);
         return;
       }
-      // Single: pause analysis like the circle — keep stream + Final lock card.
-      // At Shop clears so the next move needs an explicit At Shop click.
+      // Single: keep MediaStream + At Shop + capturing. Final card stays until
+      // Next item — do not pause/destroy share or force At Shop again (raid risk).
       const keptToast = result.reason;
       const hasFinal = result.ok || result.matches.length > 0;
-      pauseAnalysisKeepCapture();
-      setCapturing(false);
-      setAtShop(false);
+      setRecordingMove(false);
+      setCapturing(true);
+      setAtShop(true);
       if (hasFinal) {
         setSinglePhase('locked');
         setStatus('done');
         setStatusDetail(keptToast);
-        setShopToast(keptToast);
+        setShopToast(`${keptToast} · Next item keeps listening`);
       } else {
-        setStatus('idle');
+        setStatus('listening');
         setStatusDetail(
-          'Paused — capture held. Start Listening to resume (same device).',
+          'Still At Shop — Start Moving Item for another try (share held).',
         );
       }
     } catch (err) {
@@ -1989,6 +2154,7 @@ export default function App() {
       setShopToast(`Stop & Match error: ${msg}`);
       pushSessionError(`Stop & Match error: ${msg}`);
       setRecordingMove(false);
+      // Soft: pause analysis only — keep share so raid doesn't force re-pick.
       pauseAnalysisKeepCapture();
       setCapturing(false);
       setAtShop(false);
@@ -2701,7 +2867,9 @@ export default function App() {
                         }
                 }
                 onSkip={
-                  multiMode || lockThanks ? undefined : () => finishLocked('skip')
+                  multiMode
+                    ? undefined
+                    : () => void nextCargo({ logSkip: !lockThanks })
                 }
                 feedbackThanks={
                   multiMode ? slots[0]?.feedbackThanks === true : lockThanks

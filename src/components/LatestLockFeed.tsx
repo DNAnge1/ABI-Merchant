@@ -100,20 +100,44 @@ function Pill(props: {
 function FeedbackRow(props: {
   onThumbsUp?: () => void;
   onThumbsDown?: () => void;
+  /** Dismiss card + resume live narrowing for the next cargo (keeps MediaStream). */
   onSkip?: () => void;
   /** After 👍 Correct — hide vote controls, keep the card, short thank-you. */
   thanks?: boolean;
+  /** Live Peek — only Next (no Correct / Report). */
+  livePreview?: boolean;
 }) {
+  const nextBtn = props.onSkip ? (
+    <button
+      type="button"
+      onClick={props.onSkip}
+      className="rounded-lg px-3.5 py-2 text-[12px] font-semibold bg-[var(--accent)] text-[#041412] border border-transparent"
+      data-next-cargo
+      title="Dismiss result and listen for the next cargo — keeps screen share"
+    >
+      Next item
+    </button>
+  ) : null;
+
   if (props.thanks) {
     return (
       <div
-        className="mt-3 pt-3 border-t border-white/8"
+        className="mt-3 pt-3 border-t border-white/8 space-y-2"
         data-correct-thanks
         role="status"
       >
         <p className="m-0 text-[12px] font-medium text-[var(--ok)]">
           Thanks — keep shopping.
         </p>
+        {nextBtn}
+      </div>
+    );
+  }
+  if (props.livePreview) {
+    if (!nextBtn) return null;
+    return (
+      <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/8">
+        {nextBtn}
       </div>
     );
   }
@@ -140,15 +164,7 @@ function FeedbackRow(props: {
           Correct
         </button>
       )}
-      {props.onSkip && (
-        <button
-          type="button"
-          onClick={props.onSkip}
-          className="rounded px-3 py-1.5 text-[11px] border border-[var(--border)] text-[var(--muted)]"
-        >
-          Skip
-        </button>
-      )}
+      {nextBtn}
     </div>
   );
 }
@@ -489,14 +505,13 @@ export function LatestLockFeed(props: {
           paybackPercent={ev.paybackPercent}
           pills={pills}
         >
-          {!props.livePreview && (
-            <FeedbackRow
-              onThumbsUp={props.onThumbsUp}
-              onThumbsDown={props.onThumbsDown}
-              onSkip={props.onSkip}
-              thanks={props.feedbackThanks === true}
-            />
-          )}
+          <FeedbackRow
+            onThumbsUp={props.livePreview ? undefined : props.onThumbsUp}
+            onThumbsDown={props.livePreview ? undefined : props.onThumbsDown}
+            onSkip={props.onSkip}
+            thanks={!props.livePreview && props.feedbackThanks === true}
+            livePreview={props.livePreview === true}
+          />
           <div className="mt-3">
             <OutlineBtn onClick={() => setDetailsOpen(true)}>View Details</OutlineBtn>
           </div>

@@ -2746,14 +2746,35 @@ export class AudioMatcher {
 
   /** Stop burst buffer, isolate loudest transients above shop baseline, average & match. */
   async stopItemMoveBurst(): Promise<BurstMatchResult> {
+    // Slice last clean onset WAV *before* PCM tee is cleared — ScriptProcessor
+    // often yields a silent full-burst blob while lobeVote still matched.
+    const lastOnsetMs = this.burstLastCleanOnsetAt;
+    const onsetClip =
+      lastOnsetMs > 0 ? this.extractBurstOnsetWav(lastOnsetMs) : null;
     const pcm = this.stopBurstPcmCapture();
-    const captureDurationMs =
+    let captureBlob = pcm.blob;
+    let captureDurationMs =
       pcm.sampleRate > 0 ? (pcm.samples.length / pcm.sampleRate) * 1000 : 0;
+    let captureSamples = pcm.samples.length;
+    // Prefer last onset clip when the full-burst WAV is empty / near-silent.
+    if (onsetClip && (pcm.pcmSource === 'empty' || (() => {
+      let peak = 0;
+      for (let i = 0; i < pcm.samples.length; i++) {
+        peak = Math.max(peak, Math.abs(pcm.samples[i]));
+        if (peak >= 0.004) return false;
+      }
+      return true;
+    })())) {
+      captureBlob = onsetClip;
+      // ~400ms onset window (pad 80 + body 320)
+      captureDurationMs = 400;
+      captureSamples = Math.round((400 / 1000) * pcm.sampleRate);
+    }
     const captureBase = {
-      captureBlob: pcm.blob,
+      captureBlob,
       captureSampleRate: pcm.sampleRate,
       captureDurationMs,
-      captureSamples: pcm.samples.length,
+      captureSamples,
     };
     const empty = {
       matches: [] as MatchResult[],

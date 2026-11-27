@@ -86,6 +86,27 @@ export function rmsFromAnalyser(analyser: AnalyserNode): number {
   return Math.sqrt(sum / buf.length);
 }
 
+/** Peak abs amplitude of a 16-bit mono WAV (0…1). Empty / non-WAV → 0. */
+export async function wavBlobPeakAbs(blob: Blob): Promise<number> {
+  const buf = await blob.arrayBuffer();
+  if (buf.byteLength < 46) return 0;
+  const view = new DataView(buf);
+  let peak = 0;
+  for (let i = 44; i + 1 < buf.byteLength; i += 2) {
+    peak = Math.max(peak, Math.abs(view.getInt16(i, true) / 0x8000));
+  }
+  return peak;
+}
+
+/** True when WAV is missing or below the same ~0.004 floor used for burst PCM. */
+export async function wavBlobIsSilent(
+  blob: Blob | null | undefined,
+  peakFloor = 0.004,
+): Promise<boolean> {
+  if (!blob || blob.size < 46) return true;
+  return (await wavBlobPeakAbs(blob)) < peakFloor;
+}
+
 /** Encode mono Float32 PCM (−1…1) as a 16-bit WAV Blob for Play / Download. */
 export function encodeWavMono(samples: Float32Array, sampleRate: number): Blob {
   const numSamples = samples.length;

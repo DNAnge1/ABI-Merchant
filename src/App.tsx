@@ -79,12 +79,18 @@ import {
 } from './utils/calibrationStore';
 import {
   buildMissReport,
+  copyTextToClipboard,
   readCalibrationDebugPref,
   summarizeConfusion,
   writeCalibrationDebugPref,
   type MissReportPayload,
   type RaidContextSnapshot,
 } from './utils/confusionDebug';
+import {
+  formatTopIdsDebug,
+  readTroubleshootModePref,
+  writeTroubleshootModePref,
+} from './utils/troubleshootMode';
 import {
   postMissReport,
   readCalibrationAutoSavePref,
@@ -261,6 +267,19 @@ export default function App() {
   const [calibrationDebug, setCalibrationDebug] = useState(() =>
     readCalibrationDebugPref(),
   );
+  /**
+   * Advanced Troubleshoot dry-run — not the default player path.
+   * Continuous session WAV + hard-reject best-guess HUD.
+   */
+  const [troubleshootMode, setTroubleshootMode] = useState(() =>
+    readTroubleshootModePref(),
+  );
+  /** Refresh session WAV duration chip while Troubleshoot is recording. */
+  const [sessionWavMs, setSessionWavMs] = useState(0);
+  /** Last Troubleshoot debug line (toast / Copy Debug). */
+  const [troubleshootDebugLine, setTroubleshootDebugLine] = useState<string | null>(
+    null,
+  );
   /** Advanced onset log stays collapsed by default — expand only on demand. */
   const [calibrationPanelOpen, setCalibrationPanelOpen] = useState(false);
   const [expectedSoundId, setExpectedSoundId] = useState<number | null>(null);
@@ -276,9 +295,11 @@ export default function App() {
   const expectedSoundIdRef = useRef<number | null>(null);
   const calibrationDebugRef = useRef(calibrationDebug);
   const calibrationAutoSaveRef = useRef(calibrationAutoSave);
+  const troubleshootModeRef = useRef(troubleshootMode);
   expectedSoundIdRef.current = expectedSoundId;
   calibrationDebugRef.current = calibrationDebug;
   calibrationAutoSaveRef.current = calibrationAutoSave;
+  troubleshootModeRef.current = troubleshootMode;
 
   const matcherRef = useRef<AudioMatcher | null>(null);
   const verifyCleanupRef = useRef<(() => void) | null>(null);
@@ -1117,9 +1138,13 @@ export default function App() {
         : Math.max(matcherRef.current?.getMinConfidence() ?? 60, 68);
       const lowConfidence = top.confidence < floor;
       if (lowConfidence) {
-        const msg = `${isBurst ? 'Stop & Match' : 'Auto'}: weak match Group #${top.soundId} at ${top.confidence}% (need ≥${floor}%) — showing best guess.`;
+        const topDebug = formatTopIdsDebug(payload.matches, 5);
+        const msg = troubleshootModeRef.current
+          ? `Troubleshoot · best guess · ${topDebug} (Group #${top.soundId} ${top.confidence}% < ${floor}% floor)`
+          : `${isBurst ? 'Stop & Match' : 'Auto'}: weak match Group #${top.soundId} at ${top.confidence}% (need ≥${floor}%) — showing best guess.`;
         setStatus('listening');
         setStatusDetail(msg);
+        if (troubleshootModeRef.current) setTroubleshootDebugLine(msg);
         commitBestGuess(payload.matches, {
           lowConfidence: true,
           spectrumVector: payload.spectrumVector,
@@ -1127,8 +1152,10 @@ export default function App() {
           captureBlob: payload.captureBlob,
           captureDurationMs: payload.captureDurationMs,
           toastMsg: msg,
-          pushError: true,
-          statusLabel: 'Best guess (low confidence)',
+          pushError: !troubleshootModeRef.current,
+          statusLabel: troubleshootModeRef.current
+            ? `Troubleshoot · best guess · ${topDebug}`
+            : 'Best guess (low confidence)',
         });
         return;
       }
@@ -1205,6 +1232,7 @@ export default function App() {
       },
     });
     matcher.setCandidates(ALL_SOUND_IDS);
+    matcher.setTroubleshootMode(readTroubleshootModePref());
     matcherRef.current = matcher;
     return () => {
       stopVerifySession();
@@ -1213,6 +1241,21 @@ export default function App() {
       matcherRef.current = null;
     };
   }, [stopVerifySession]);
+
+  // Keep matcher Troubleshoot flag in sync + tick session WAV duration.
+  useEffect(() => {
+    matcherRef.current?.setTroubleshootMode(troubleshootMode);
+    if (!troubleshootMode) {
+      setSessionWavMs(0);
+      return;
+    }
+    const tick = () => {
+      setSessionWavMs(matcherRef.current?.getSessionDurationMs() ?? 0);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [troubleshootMode, capturing, recordingMove]);
 
   // Optional UI demos: ?demo=lock | ?demo=grid | ?demo=stats | ?demo=shop | ?demo=shop-record
   useEffect(() => {
@@ -1733,6 +1776,7 @@ export default function App() {
   }
 
   function prepareMatcherSession() {
+    matcherRef.current?.setTroubleshootMode(troubleshootModeRef.current);
     setLocked(null);
     setLockThanks(false);
     setSinglePhase('ready');
@@ -2101,22 +2145,31 @@ export default function App() {
       // Always toast diagnostics (peak/floor/frames) — never a silent no-op.
       setShopToast(result.reason);
       setStatusDetail(result.reason);
+      if (troubleshootModeRef.current || /Troubleshoot dry-run/i.test(result.reason)) {
+        setTroubleshootDebugLine(result.reason);
+      }
       clearRecoveredShareErrors();
       if (!result.ok) {
         setStatus('listening');
         if (keepMulti) setShopToastSticky(true);
         pushSessionError(result.reason);
         // Phase 2: failed lock still shows ranked best guess when scores exist.
+        // Troubleshoot: hard-reject / below-floor always carry matches for HUD.
         if (result.matches.length > 0) {
+          const topDebug = formatTopIdsDebug(result.matches, 5);
           commitBestGuess(result.matches, {
             lowConfidence: true,
             spectrumVector: result.matches[0]?.spectrumVector,
             capturedCentroid: result.matches[0]?.capturedCentroid,
             captureBlob: result.captureBlob,
             captureDurationMs: result.captureDurationMs,
-            toastMsg: `${result.reason} — showing best guess.`,
+            toastMsg: troubleshootModeRef.current
+              ? `${result.reason}`
+              : `${result.reason} — showing best guess.`,
             pushError: false,
-            statusLabel: 'Best guess (below lock)',
+            statusLabel: troubleshootModeRef.current
+              ? `Troubleshoot · best guess · ${topDebug}`
+              : 'Best guess (below lock)',
           });
         }
       } else {
@@ -2272,6 +2325,7 @@ export default function App() {
     hideImages,
     focusGuard,
     calibrationDebug,
+    troubleshootMode,
   };
 
   const confusionSummary = useMemo(
@@ -2284,6 +2338,70 @@ export default function App() {
     writeCalibrationDebugPref(on);
     // Stay collapsed by default when enabling — Brent/power users expand on demand.
     if (!on) setCalibrationPanelOpen(false);
+  }
+
+  function setTroubleshootModePref(on: boolean) {
+    setTroubleshootMode(on);
+    writeTroubleshootModePref(on);
+    matcherRef.current?.setTroubleshootMode(on);
+    if (on) {
+      setShopToast(
+        'Troubleshoot on — best-guess HUD always; session WAV kept across soft stop / Next item.',
+      );
+    } else {
+      setSessionWavMs(0);
+      setTroubleshootDebugLine(null);
+    }
+  }
+
+  function downloadSessionWav() {
+    const blob = matcherRef.current?.exportSessionWav() ?? null;
+    if (!blob) {
+      setShopToast('No session audio yet — Start Listening with Troubleshoot on.');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `abi-troubleshoot-session-${Date.now()}.wav`;
+    a.click();
+    URL.revokeObjectURL(url);
+    const sec = Math.round((matcherRef.current?.getSessionDurationMs() ?? 0) / 1000);
+    setShopToast(`Downloaded Troubleshoot session WAV (~${sec}s).`);
+  }
+
+  async function copyTroubleshootDebug() {
+    const line =
+      troubleshootDebugLine ??
+      shopToast ??
+      statusDetail ??
+      'Troubleshoot: no reject/match line yet — Stop & Match or wait for Live Peek.';
+    const sessionSec = Math.round((matcherRef.current?.getSessionDurationMs() ?? 0) / 1000);
+    const ranked =
+      latestLock?.rankedCandidates ??
+      livePreview?.rankedCandidates ??
+      [];
+    const topLine = ranked.length
+      ? formatTopIdsDebug(
+          ranked.map((c) => ({ soundId: c.soundId, confidence: c.confidence })),
+          5,
+        )
+      : '(no HUD scores)';
+    const text = [
+      `ABI Merchant Troubleshoot ${__APP_VERSION__}`,
+      `sessionId ${sessionId}`,
+      `sessionWAV ~${sessionSec}s`,
+      `top ${topLine}`,
+      line,
+    ].join('\n');
+    const ok = await copyTextToClipboard(text);
+    setShopToast(ok ? 'Copied Troubleshoot debug.' : 'Could not copy — check clipboard permission.');
+  }
+
+  function clearTroubleshootSessionBuffer() {
+    matcherRef.current?.clearSessionPcm();
+    setSessionWavMs(0);
+    setShopToast('Troubleshoot session buffer cleared (capture still held).');
   }
 
   function startOver() {
@@ -2623,6 +2741,9 @@ export default function App() {
               if (patch.calibrationDebug != null) {
                 setCalibrationDebugPref(patch.calibrationDebug);
               }
+              if (patch.troubleshootMode != null) {
+                setTroubleshootModePref(patch.troubleshootMode);
+              }
             }}
             onNext={goNextFromSettings}
           />
@@ -2696,6 +2817,11 @@ export default function App() {
               captureDurationMs={burstCaptureMs}
               onPlayCapture={playBurstCapture}
               onDownloadCapture={downloadBurstCapture}
+              troubleshoot={troubleshootMode}
+              sessionDurationMs={sessionWavMs}
+              onDownloadSession={downloadSessionWav}
+              onCopyDebug={() => void copyTroubleshootDebug()}
+              onClearSession={clearTroubleshootSessionBuffer}
               showReportIssue={!!latestLock && !latestLock.livePreview}
               onReportIssue={() => {
                 if (multiMode) {
@@ -2960,15 +3086,32 @@ export default function App() {
               />
             )}
 
-            {!calibrationDebug && (
-              <button
-                type="button"
-                onClick={() => setCalibrationDebugPref(true)}
-                className="self-start text-[11px] text-[var(--muted)] underline-offset-2 hover:underline hover:text-[var(--accent)]"
+            <div className="flex flex-wrap items-center gap-3">
+              {!calibrationDebug && (
+                <button
+                  type="button"
+                  onClick={() => setCalibrationDebugPref(true)}
+                  className="self-start text-[11px] text-[var(--muted)] underline-offset-2 hover:underline hover:text-[var(--accent)]"
+                >
+                  Advanced · live onset log
+                </button>
+              )}
+              <label
+                className="flex items-center gap-1.5 text-[11px] text-[var(--muted)] cursor-pointer"
+                data-troubleshoot-toggle
+                title="Dry-run field testing: best-guess HUD + continuous session WAV. Not the default player path."
               >
-                Advanced · live onset log
-              </button>
-            )}
+                <input
+                  type="checkbox"
+                  checked={troubleshootMode}
+                  onChange={(e) => setTroubleshootModePref(e.target.checked)}
+                  className="accent-[var(--warn)]"
+                />
+                <span className={troubleshootMode ? 'text-[var(--warn)] font-semibold' : undefined}>
+                  Troubleshoot mode
+                </span>
+              </label>
+            </div>
 
             <AccuracyPanel
               collapsedBar

@@ -970,17 +970,22 @@ export function resolveMetal6VsLion28(
 }
 
 /**
- * Soft/force-lock: Big Metal (#2 Oil Drum) over Med Wood (#8 Acoustic Panel).
- * Near-twin FP pair (cos 0.94). Field live often tops #8 @ ~98 with #2 @ ~96.5
- * while raw shape + bass lobe still prefer metal; Stop on the full burst locks #2.
- * True #8 self-locks with shape preferring wood (+0.05+) and quieter bass (~0.19).
+ * Soft/force-lock: Big Metal (#2 Oil Drum) over wood/blunt sinks (#8/#14/#20).
+ * Near-twin FP pair (#2↔#8 cos 0.94). Field live often tops #8 @ ~98 with #2 @ ~96.5
+ * while raw shape + bass lobe still prefer metal; first-onset can also land #14
+ * (Studio Monitor) before later metal lobes. Stop on a metal-cued burst locks #2.
+ * True #8/#14 self-lock with shape preferring wood (+0.02+) and quieter bass (~0.17–0.19).
  */
 export function isId2VsId8SoftLock(
   topSoundId: number,
   runnerSoundId: number | undefined,
   topConfidence: number,
 ): boolean {
-  return topSoundId === 2 && runnerSoundId === 8 && topConfidence >= 88;
+  return (
+    topSoundId === 2 &&
+    (runnerSoundId === 8 || runnerSoundId === 14 || runnerSoundId === 20) &&
+    topConfidence >= 88
+  );
 }
 
 /** Wood/blunt IDs that steal Big Metal (#2) via live-centroid prior. */
@@ -988,8 +993,8 @@ const ID2_WOOD_SINKS = new Set([8, 14, 20]);
 
 /**
  * Restore #2 (Big Metal) when #8/#14/#20 stole via centroid prior / wood neighbor.
- * Shape + bass lobe own this pair — live centroid alone is unreliable (FP Δcent only ~84 Hz).
- * True #8 @ high conf with wood-preferring shape is left alone.
+ * Shape + bass/mid lobes own this pair — live centroid alone is unreliable (FP Δcent only ~84 Hz).
+ * True #8/#14 @ high conf with wood-preferring shape + dull bass/mid are left alone.
  */
 export function resolveId2VsId8(
   matches: MatchResult[],
@@ -1018,8 +1023,9 @@ export function resolveId2VsId8(
   // Wood clearly owns shape — protect true #8 even on a close conf race.
   const shapePrefers8 = s8 >= s2 + 0.02 && c8 >= c2 - 0.015;
   const bass = bassLobeRatio(spectrumVector);
-  // Big-metal thud keeps more sub-mid energy than med-wood knock.
-  const bassPrefers2 = bass >= 0.23;
+  const mid = midLobeRatio(spectrumVector);
+  // Big-metal thud: high bass and/or suppressed mid-body (FP #2 mid~0.37; #8~0.40).
+  const bassPrefers2 = bass >= 0.23 || (bass >= 0.205 && mid <= 0.375);
   const metalEvidence = shapePrefers2 && (bassPrefers2 || s2 >= s8 + 0.04);
 
   if (top.soundId === 2 && ID2_WOOD_SINKS.has(matches[1]?.soundId ?? -1)) {
@@ -1039,20 +1045,63 @@ export function resolveId2VsId8(
   const shapePrefers2OverSink = s2 >= sSink + 0.025 && c2 >= cSink - 0.015;
   const shapePrefersSink = sSink >= s2 + 0.02 && cSink >= c2 - 0.015;
   const nearTieGap = top.confidence - m2.confidence;
+  // Bass-led near-tie: gap ≤3 when only bass cues; mid-confirmed metal (mid≤0.375)
+  // may recover Brent's larger live gaps (#8@98.9 vs #2@93 ≈5.9; first-onset
+  // #14@95.5 vs #2@88.4 ≈7.1) without touching dull-mid true wood.
+  const midConfirmsMetal = mid <= 0.375;
   const bassLedNearTie =
-    bassPrefers2 && !shapePrefersSink && nearTieGap >= 0 && nearTieGap <= 3;
+    bassPrefers2 &&
+    !shapePrefersSink &&
+    nearTieGap >= 0 &&
+    nearTieGap <= (midConfirmsMetal ? 8 : 3);
   const metalVsSink =
     shapePrefers2OverSink && (bassPrefers2 || s2 >= sSink + 0.04);
+  // Stop ambiguous wood twins (#8 vs #14 <3pt @ ≥94) with metal lobes → prefer #2.
+  const runner = matches[1];
+  const woodTwinAmbiguous =
+    runner != null &&
+    ID2_WOOD_SINKS.has(runner.soundId) &&
+    top.confidence >= 94 &&
+    top.confidence - runner.confidence < 3 &&
+    nearTieGap >= 0 &&
+    nearTieGap <= 8 &&
+    bassPrefers2 &&
+    midConfirmsMetal &&
+    !shapePrefersSink;
 
-  // Hard wood/blunt self-lock — do not steal true #8/#14/#20.
-  if (shapePrefersSink && top.confidence >= 94) return matches;
-  if (top.soundId === 8 && shapePrefers8 && top.confidence >= 94) return matches;
-  if (!metalVsSink && !bassLedNearTie && !(metalEvidence && top.soundId === 8)) {
+  // Hard wood/blunt self-lock — do not steal true #8/#14/#20 (dull bass+mid).
+  // Strong metal lobes may still override a shape-wood lean (pitch-steal residue).
+  const strongMetalLobes = bass >= 0.24 && mid <= 0.37;
+  if (shapePrefersSink && top.confidence >= 94 && !strongMetalLobes) {
     return matches;
   }
-  // Only flip near-ties (Brent live ~1.5pt; never a clear sink lead of 5+).
-  if (nearTieGap > 4 && !metalVsSink) return matches;
-  // Strong shape vs sink may recover even a slightly larger conf gap (pitch steal).
+  if (
+    top.soundId === 8 &&
+    shapePrefers8 &&
+    top.confidence >= 94 &&
+    !strongMetalLobes
+  ) {
+    return matches;
+  }
+  if (
+    !metalVsSink &&
+    !bassLedNearTie &&
+    !woodTwinAmbiguous &&
+    !(metalEvidence && ID2_WOOD_SINKS.has(top.soundId))
+  ) {
+    return matches;
+  }
+  // Gap gate: metalVsSink / mid-confirmed bass-led / wood-twin ambiguous may
+  // recover up to 8pt; bass-only near-ties stay ≤4.
+  if (
+    nearTieGap > 4 &&
+    !metalVsSink &&
+    !woodTwinAmbiguous &&
+    !(bassLedNearTie && midConfirmsMetal)
+  ) {
+    return matches;
+  }
+  // Hard ceiling — never steal a clear sink lead of 8+.
   if (nearTieGap > 8) return matches;
   if (!matches.slice(0, 8).some((m) => m.soundId === 2)) return matches;
 

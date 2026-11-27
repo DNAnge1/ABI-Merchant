@@ -81,10 +81,14 @@ function highBandRatio(vec: number[]): number {
 export function pickupVector(
   fingerprints: FingerprintsFile,
   soundId: number,
-): { spectrum: number[]; centroid: number } | null {
+): { spectrum: number[]; energy: number[]; centroid: number } | null {
   const side = fingerprints.fingerprints[String(soundId)]?.pickup;
   if (!side?.spectrumVector?.length) return null;
-  return { spectrum: side.spectrumVector, centroid: side.spectralCentroid ?? 0 };
+  return {
+    spectrum: side.spectrumVector,
+    energy: side.energyVector?.length ? side.energyVector : side.spectrumVector,
+    centroid: side.spectralCentroid ?? 0,
+  };
 }
 
 /** Score one fingerprint pair (pickup side). */
@@ -106,7 +110,7 @@ export function scoreFingerprintPair(
     centroidDeltaHz: Math.round(Math.abs(va.centroid - vb.centroid)),
     highBandDelta:
       Math.round(
-        Math.abs(highBandRatio(va.spectrum) - highBandRatio(vb.spectrum)) * 10000,
+        Math.abs(highBandRatio(va.energy) - highBandRatio(vb.energy)) * 10000,
       ) / 10000,
   };
 }
@@ -169,7 +173,9 @@ export function liveFeatureDistances(
 } {
   const exp = pickupVector(fingerprints, expectedId);
   const pred = pickupVector(fingerprints, predictedId);
-  const pack = (v: { spectrum: number[]; centroid: number } | null) => {
+  const pack = (
+    v: { spectrum: number[]; energy: number[]; centroid: number } | null,
+  ) => {
     if (!v) return null;
     return {
       cosine: Math.round(cosineSimilarity(liveSpectrum, v.spectrum) * 10000) / 10000,
@@ -177,7 +183,7 @@ export function liveFeatureDistances(
       centroidDeltaHz: Math.round(Math.abs(liveCentroid - v.centroid)),
       highBandDelta:
         Math.round(
-          Math.abs(highBandRatio(liveSpectrum) - highBandRatio(v.spectrum)) * 10000,
+          Math.abs(highBandRatio(liveSpectrum) - highBandRatio(v.energy)) * 10000,
         ) / 10000,
     };
   };

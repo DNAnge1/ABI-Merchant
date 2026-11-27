@@ -38,8 +38,9 @@ const PKG_PATH = join(ROOT, 'package.json');
 
 const STORE = '/cursor/stores/bc-5c080d60-6249-418b-b13a-8bf42c7f6cd6';
 const MEDIA_ROOT = join(STORE, 'media');
-const OUT_MD = join(STORE, 'docs/fingerprint-baseline.md');
-const OUT_JSON = join(STORE, 'internal/fingerprint-baseline.json');
+/** Step-2+ scoreboard; Step-1 baseline lives at fingerprint-baseline.md (frozen). */
+const OUT_MD = join(STORE, 'docs/fingerprint-step2.md');
+const OUT_JSON = join(STORE, 'internal/fingerprint-step2.json');
 
 const FFT_SIZE = 2048;
 const BANDS = 32;
@@ -166,7 +167,7 @@ function interpolateEmptyBands(bandVec, bandCounts) {
   }
 }
 
-function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
+function magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands = BANDS) {
   const half = magnitudes.length;
   const bandVec = new Array(bands).fill(0);
   const bandCounts = new Array(bands).fill(0);
@@ -184,8 +185,68 @@ function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
     if (bandCounts[bi] > 0) bandVec[bi] /= bandCounts[bi];
   }
   interpolateEmptyBands(bandVec, bandCounts);
+  return bandVec;
+}
+
+function magnitudeToBands(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  const bandVec = magnitudeToBandsRaw(magnitudes, sampleRate, fftSize, bands);
   const max = Math.max(...bandVec, 1e-9);
   return bandVec.map((v) => v / max);
+}
+
+const CONTRAST_EPS = 1e-12;
+
+function withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  const half = magnitudes.length;
+  const buckets = Array.from({ length: bands }, () => []);
+  const minF = 80;
+  const maxF = Math.min(sampleRate / 2, 8000);
+  for (let i = 1; i < half; i++) {
+    const freq = (i * sampleRate) / fftSize;
+    if (freq < minF || freq > maxF) continue;
+    const t = Math.log(freq / minF) / Math.log(maxF / minF);
+    const bi = Math.min(bands - 1, Math.floor(t * bands));
+    buckets[bi].push(magnitudes[i]);
+  }
+  return buckets.map((bins) => {
+    if (!bins.length) return 0;
+    if (bins.length === 1) return Math.log(bins[0] + CONTRAST_EPS);
+    const sorted = bins.slice().sort((a, b) => a - b);
+    const lo = sorted[Math.max(0, Math.floor(sorted.length * 0.1))];
+    const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    return Math.log(hi + CONTRAST_EPS) - Math.log(Math.max(lo, CONTRAST_EPS));
+  });
+}
+
+function removeMeanAndTilt(vec) {
+  const n = vec.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumXY = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += vec[i];
+    sumXX += i * i;
+    sumXY += i * vec[i];
+  }
+  const den = n * sumXX - sumX * sumX || 1e-9;
+  const slope = (n * sumXY - sumX * sumY) / den;
+  const intercept = (sumY - slope * sumX) / n;
+  return vec.map((v, i) => v - intercept - slope * i);
+}
+
+function l2Normalize(vec) {
+  let n = 0;
+  for (const x of vec) n += x * x;
+  const norm = Math.sqrt(n) || 1e-9;
+  return vec.map((x) => x / norm);
+}
+
+function contrastMeanTiltSpectrum(magnitudes, sampleRate, fftSize, bands = BANDS) {
+  return l2Normalize(
+    removeMeanAndTilt(withinBandSpectralContrast(magnitudes, sampleRate, fftSize, bands)),
+  );
 }
 
 function spectralCentroidHz(magnitudes, sampleRate, fftSize) {
@@ -288,10 +349,12 @@ function matchSpectrumAgainstFingerprints(
   candidateSoundIds,
   kind = 'pickup',
   capturedCentroid,
+  energyVector,
 ) {
   const results = [];
   const kinds = kind === 'drop' ? ['drop'] : kind === 'auto' ? ['pickup'] : [kind];
-  const capturedHighRatio = highBandRatio(spectrumVector);
+  const liveEnergy = energyVector?.length ? energyVector : spectrumVector;
+  const capturedHighRatio = highBandRatio(liveEnergy);
 
   for (const soundId of candidateSoundIds) {
     const fp = fingerprints.fingerprints[String(soundId)];
@@ -301,7 +364,8 @@ function matchSpectrumAgainstFingerprints(
       if (!side?.spectrumVector) continue;
       const rawCos = cosineSimilarity(spectrumVector, side.spectrumVector);
       const shapeCos = centeredCosine(spectrumVector, side.spectrumVector);
-      const fpHighRatio = highBandRatio(side.spectrumVector);
+      const fpEnergy = side.energyVector?.length ? side.energyVector : side.spectrumVector;
+      const fpHighRatio = highBandRatio(fpEnergy);
       const tiltPenalty = Math.max(0, 1 - Math.abs(capturedHighRatio - fpHighRatio) * 1.8);
       let score = rawCos * 0.45 + shapeCos * 0.35 + tiltPenalty * 0.2;
       if (capturedCentroid != null && side.spectralCentroid) {
@@ -346,7 +410,10 @@ function frameMagnitude(samples, start, window, fftSize) {
   return mag;
 }
 
-/** Live300 post-onset bin-avg — same window fingerprints were built with. */
+/**
+ * Live300 post-onset — Step 2: mean-mag within-band contrast + per-clip mean/tilt.
+ * energyVector keeps peak-norm band avgs for lobe/tilt cues.
+ */
 function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
   const window = hannWindow(FFT_SIZE);
   const hop = Math.floor(FFT_SIZE / 4);
@@ -371,31 +438,33 @@ function extractLive300(samples, sampleRate = FP_SAMPLE_RATE) {
 
   const sliceSamples = Math.floor((LIVE_SLICE_MS / 1000) * sampleRate);
   const end = Math.min(samples.length, onset + sliceSamples);
+  const half = FFT_SIZE / 2;
+  const magAccum = new Float64Array(half);
   const bandAccum = new Array(BANDS).fill(0);
   const centroids = [];
   let frames = 0;
   for (let start = onset; start + FFT_SIZE <= end; start += hop) {
     const mag = frameMagnitude(samples, start, window, FFT_SIZE);
-    const bands = magnitudeToBands(mag, sampleRate, FFT_SIZE, BANDS);
+    for (let i = 0; i < half; i++) magAccum[i] += mag[i];
+    const bands = magnitudeToBandsRaw(mag, sampleRate, FFT_SIZE, BANDS);
     for (let i = 0; i < BANDS; i++) bandAccum[i] += bands[i];
     centroids.push(spectralCentroidHz(mag, sampleRate, FFT_SIZE));
     frames++;
   }
   if (frames === 0) {
     const mag = frameMagnitude(samples, Math.max(0, samples.length - FFT_SIZE), window, FFT_SIZE);
-    const bands = magnitudeToBands(mag, sampleRate, FFT_SIZE, BANDS);
-    return {
-      spectrumVector: bands,
-      centroid: spectralCentroidHz(mag, sampleRate, FFT_SIZE),
-      frames: 1,
-      onsetMs: (onset / sampleRate) * 1000,
-      peakAbs: peakAbs(samples),
-    };
+    for (let i = 0; i < half; i++) magAccum[i] = mag[i];
+    const bands = magnitudeToBandsRaw(mag, sampleRate, FFT_SIZE, BANDS);
+    for (let i = 0; i < BANDS; i++) bandAccum[i] = bands[i];
+    frames = 1;
+    centroids.push(spectralCentroidHz(mag, sampleRate, FFT_SIZE));
   }
+  for (let i = 0; i < half; i++) magAccum[i] /= frames;
   for (let i = 0; i < BANDS; i++) bandAccum[i] /= frames;
   const max = Math.max(...bandAccum, 1e-9);
   return {
-    spectrumVector: bandAccum.map((v) => v / max),
+    spectrumVector: contrastMeanTiltSpectrum(magAccum, sampleRate, FFT_SIZE, BANDS),
+    energyVector: bandAccum.map((v) => v / max),
     centroid: centroids.reduce((a, b) => a + b, 0) / centroids.length,
     frames,
     onsetMs: (onset / sampleRate) * 1000,
@@ -424,8 +493,15 @@ function applySimpleMuffle(samples, sampleRate = FP_SAMPLE_RATE, cutoffHz = MUFF
   return out;
 }
 
-function scoreOne(vec, centroid, fingerprints, ids) {
-  const ranked = matchSpectrumAgainstFingerprints(vec, fingerprints, ids, 'pickup', centroid);
+function scoreOne(vec, centroid, fingerprints, ids, energyVector) {
+  const ranked = matchSpectrumAgainstFingerprints(
+    vec,
+    fingerprints,
+    ids,
+    'pickup',
+    centroid,
+    energyVector,
+  );
   const top = ranked[0];
   const second = ranked[1];
   const expectedRank = (expectedId) => {
@@ -472,6 +548,7 @@ function diagnoseCosineInputs(fingerprints, merchant) {
     const fp = fingerprints.fingerprints[String(id)];
     const side = fp?.pickup;
     if (!side?.spectrumVector) continue;
+    const energy = side.energyVector?.length ? side.energyVector : side.spectrumVector;
     focus[id] = {
       itemNames: fp.itemNames,
       file: side.file,
@@ -479,9 +556,10 @@ function diagnoseCosineInputs(fingerprints, merchant) {
       centroid: side.spectralCentroid,
       windowMs: side.windowMs,
       ...vectorStats(side.spectrumVector),
-      bass: round4(bassLobeRatio(side.spectrumVector)),
-      mid: round4(midLobeRatio(side.spectrumVector)),
-      high: round4(highBandRatio(side.spectrumVector)),
+      bass: round4(bassLobeRatio(energy)),
+      mid: round4(midLobeRatio(energy)),
+      high: round4(highBandRatio(energy)),
+      hasEnergyVector: !!side.energyVector?.length,
     };
   }
 
@@ -489,6 +567,9 @@ function diagnoseCosineInputs(fingerprints, merchant) {
     .map((f) => f.pickup?.spectrumVector)
     .filter(Boolean);
   const anyNeg = allVecs.some((v) => v.some((x) => x < 0));
+  const allHaveEnergy = Object.values(fingerprints.fingerprints).every(
+    (f) => !f.pickup || (f.pickup.energyVector && f.pickup.energyVector.length),
+  );
   const dropPresent = Object.values(fingerprints.fingerprints).filter((f) => f.drop).length;
 
   // Optional: Up vs Down live300 for focus #2/#8 when Down OGGs exist
@@ -558,6 +639,8 @@ function diagnoseCosineInputs(fingerprints, merchant) {
       fftSize: fingerprints.fftSize,
     },
     allVectorsNonNegative: !anyNeg,
+    matchVectorsMayBeSigned: anyNeg,
+    allHaveEnergyVector: allHaveEnergy,
     dropSidesInJson: dropPresent,
     pickupOnly: fingerprints.matchSide === 'pickup' && dropPresent === 0,
     focus,
@@ -577,12 +660,11 @@ function diagnoseCosineInputs(fingerprints, merchant) {
     ),
     blendPair2vs8: blendPair,
     verdict: [
-      'Cosine inputs are non-negative peak-normalized 32-band log averages (live300-post-onset-binavg).',
-      'Fingerprints are pickup-only (Up.ogg); drop sides are null — not Up/Down blended.',
+      `Analysis=${fingerprints.analysis || 'n/a'}: match features are within-band contrast + per-clip mean/tilt (may be signed); energyVector keeps peak-norm bands for lobes.`,
+      'Fingerprints remain pickup-only (Up.ogg); drop sides null — Up/Down stay separate templates (do not blend).',
       blendPair
-        ? `Stored/re-extract Up↔Up #2/#8 cos≈${blendPair.upOnlyCosine}; hypothetical Up/Down blend would drop to ≈${blendPair.blendCosine}; Down↔Down ≈${blendPair.downOnlyCosine}.`
-        : 'Up/Down blend probe unavailable.',
-      'All-positive broadband vectors keep #2↔#8 near-twin (cos≈0.94) despite bass/mid lobe gaps.',
+        ? `Up↔Up #2/#8 cos≈${blendPair.upOnlyCosine}; Down↔Down ≈${blendPair.downOnlyCosine}; blend ≈${blendPair.blendCosine} (not used).`
+        : 'Up/Down probe unavailable.',
     ],
   };
 }
@@ -610,6 +692,7 @@ function runPairwise(fingerprints, merchant, allIds) {
     cached[id] = {
       name: loaded.sound.pickupSound,
       stored: stored?.spectrumVector,
+      storedEnergy: stored?.energyVector,
       storedCentroid: stored?.spectralCentroid,
       clean,
       muffled,
@@ -622,12 +705,24 @@ function runPairwise(fingerprints, merchant, allIds) {
     const B = cached[b];
     if (!A?.stored || !B?.stored) continue;
     const storedPair = pairMetrics(A.stored, B.stored, A.storedCentroid, B.storedCentroid);
+    if (A.storedEnergy && B.storedEnergy) {
+      storedPair.bassA = round4(bassLobeRatio(A.storedEnergy));
+      storedPair.bassB = round4(bassLobeRatio(B.storedEnergy));
+      storedPair.midA = round4(midLobeRatio(A.storedEnergy));
+      storedPair.midB = round4(midLobeRatio(B.storedEnergy));
+    }
     const cleanPair = pairMetrics(
       A.clean.spectrumVector,
       B.clean.spectrumVector,
       A.clean.centroid,
       B.clean.centroid,
     );
+    if (A.clean.energyVector && B.clean.energyVector) {
+      cleanPair.bassA = round4(bassLobeRatio(A.clean.energyVector));
+      cleanPair.bassB = round4(bassLobeRatio(B.clean.energyVector));
+      cleanPair.midA = round4(midLobeRatio(A.clean.energyVector));
+      cleanPair.midB = round4(midLobeRatio(B.clean.energyVector));
+    }
     const muffPair = pairMetrics(
       A.muffled.spectrumVector,
       B.muffled.spectrumVector,
@@ -635,10 +730,34 @@ function runPairwise(fingerprints, merchant, allIds) {
       B.muffled.centroid,
     );
     // Cross: muffled query A vs stored B / A (Top confusion cue)
-    const muffAvsFp = scoreOne(A.muffled.spectrumVector, A.muffled.centroid, fingerprints, allIds);
-    const muffBvsFp = scoreOne(B.muffled.spectrumVector, B.muffled.centroid, fingerprints, allIds);
-    const cleanAvsFp = scoreOne(A.clean.spectrumVector, A.clean.centroid, fingerprints, allIds);
-    const cleanBvsFp = scoreOne(B.clean.spectrumVector, B.clean.centroid, fingerprints, allIds);
+    const muffAvsFp = scoreOne(
+      A.muffled.spectrumVector,
+      A.muffled.centroid,
+      fingerprints,
+      allIds,
+      A.muffled.energyVector,
+    );
+    const muffBvsFp = scoreOne(
+      B.muffled.spectrumVector,
+      B.muffled.centroid,
+      fingerprints,
+      allIds,
+      B.muffled.energyVector,
+    );
+    const cleanAvsFp = scoreOne(
+      A.clean.spectrumVector,
+      A.clean.centroid,
+      fingerprints,
+      allIds,
+      A.clean.energyVector,
+    );
+    const cleanBvsFp = scoreOne(
+      B.clean.spectrumVector,
+      B.clean.centroid,
+      fingerprints,
+      allIds,
+      B.clean.energyVector,
+    );
     pairs.push({
       a,
       b,
@@ -678,8 +797,20 @@ function runTop1(fingerprints, merchant, allIds) {
       const pcm = decodeAudioToPcm(file);
       const clean = extractLive300(pcm);
       const muff = extractLive300(applySimpleMuffle(pcm));
-      const c = scoreOne(clean.spectrumVector, clean.centroid, fingerprints, allIds);
-      const m = scoreOne(muff.spectrumVector, muff.centroid, fingerprints, allIds);
+      const c = scoreOne(
+        clean.spectrumVector,
+        clean.centroid,
+        fingerprints,
+        allIds,
+        clean.energyVector,
+      );
+      const m = scoreOne(
+        muff.spectrumVector,
+        muff.centroid,
+        fingerprints,
+        allIds,
+        muff.energyVector,
+      );
       row.clean = {
         topId: c.topId,
         conf: c.confidence,
@@ -829,7 +960,13 @@ function runFieldWavs(fingerprints, allIds) {
         continue;
       }
       const live = extractLive300(pcm);
-      const s = scoreOne(live.spectrumVector, live.centroid, fingerprints, allIds);
+      const s = scoreOne(
+        live.spectrumVector,
+        live.centroid,
+        fingerprints,
+        allIds,
+        live.energyVector,
+      );
       const expRank = s.expectedRank(clip.expectedId);
       const exp = s.ranked.find((r) => r.soundId === clip.expectedId);
       row.peakAbs = round4(peak);
@@ -842,8 +979,9 @@ function runFieldWavs(fingerprints, allIds) {
       row.expectedRank = expRank;
       row.expectedConf = exp?.confidence ?? null;
       row.ok = s.topId === clip.expectedId;
-      row.bass = round4(bassLobeRatio(live.spectrumVector));
-      row.mid = round4(midLobeRatio(live.spectrumVector));
+      const energy = live.energyVector?.length ? live.energyVector : live.spectrumVector;
+      row.bass = round4(bassLobeRatio(energy));
+      row.mid = round4(midLobeRatio(energy));
       scored++;
       if (row.ok) hit++;
     } catch (err) {
@@ -867,25 +1005,40 @@ function pct(x) {
 
 function renderMarkdown(pkgVersion, report) {
   const lines = [];
+  const isStep2 = (report.diagnosis?.meta?.analysis || '').includes('contrast');
   lines.push('---');
-  lines.push('title: Fingerprint representation Step 1 baseline');
+  lines.push(
+    isStep2
+      ? 'title: Fingerprint representation Step 2 — mean/tilt + contrast'
+      : 'title: Fingerprint representation Step 1 baseline',
+  );
   lines.push(`version: ${pkgVersion}`);
-  lines.push('status: baseline');
-  lines.push('tracker: ABI-108');
+  lines.push(`status: ${isStep2 ? 'review' : 'baseline'}`);
+  lines.push(`tracker: ${isStep2 ? 'ABI-109' : 'ABI-108'}`);
   lines.push('---');
   lines.push('');
-  lines.push('# Fingerprint baseline scoreboard (Step 1)');
+  lines.push(
+    isStep2
+      ? '# Fingerprint Step 2 scoreboard (contrast + mean/tilt)'
+      : '# Fingerprint baseline scoreboard (Step 1)',
+  );
   lines.push('');
   lines.push(
     `**Harness:** \`npm run selftest:scoreboard\` · **App:** \`${pkgVersion}\` · **Generated:** ${report.generatedAt}`,
   );
   lines.push('');
-  lines.push(
-    'Surgical Step 1 only — diagnose cosine inputs + print offline scoreboard. No tilt/contrast, peak-anchored, Up/Down blend, or calibrated-muffle rewrite yet.',
-  );
+  if (isStep2) {
+    lines.push(
+      'Step 2: within-band spectral contrast + per-clip mean/tilt. Primary gates = field WAV Top-1 + clean 38/38. Harsh LP is secondary. Stop before Step 3.',
+    );
+  } else {
+    lines.push(
+      'Surgical Step 1 only — diagnose cosine inputs + print offline scoreboard.',
+    );
+  }
   lines.push('');
 
-  lines.push('## Why #2 vs #8 cosine ≈ 0.94');
+  lines.push(isStep2 ? '## Representation notes' : '## Why #2 vs #8 cosine ≈ 0.94');
   lines.push('');
   for (const v of report.diagnosis.verdict) {
     lines.push(`- ${v}`);
